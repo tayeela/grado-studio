@@ -4,7 +4,8 @@
      (поле views, тот же формат) и служат листам альбома: удалённый вид переводит свои листы на текущую карту.
      Рамка вида (#119): вид — это ещё и «где». Кнопка-рамка в строке вида рисует на карте прямоугольник с пропорциями
      (А-формат, 4 : 3, 16 : 9, свои) или размером в метрах; блок «Карта» на листе выбирает вид и показывает его рамку
-     (viewframes.js, viewframesmap.js). Пока окно открыто, рамки видов видны на карте. -->
+     (viewframes.js, viewframesmap.js). Пока окно открыто, рамки видов видны на карте. Строку вида тянут на лист в «Макете
+     листа» — там встаёт карта этого вида (SheetEditor.vue dropView). -->
 <template>
   <div class="pane views">
     <div class="bar">
@@ -16,8 +17,8 @@
     <p v-if="!project.views.length" class="hint">Видов пока нет. Настройте карту (какие слои видны, их стиль, подложку) и сохраните вид —
       например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком.</p>
     <table v-else class="vl">
-      <tr v-for="v in project.views" :key="v.id" :class="{ cur: v.id === viewCur }">
-        <td class="nm" :title="`Показать вид «${v.name}»: ${plural(nOn(v), ['видимый слой', 'видимых слоя', 'видимых слоёв'])}${v.extent ? ', с масштабом' : ''}`" @click="show(v)">
+      <tr v-for="v in project.views" :key="v.id" :class="{ cur: v.id === viewCur }" draggable="true" @dragstart="dragOut(v, $event)">
+        <td class="nm" :title="`Показать вид «${v.name}»: ${plural(nOn(v), ['видимый слой', 'видимых слоя', 'видимых слоёв'])}${v.extent ? ', с масштабом' : ''}. Перетащите строку на лист в «Макете листа» — там встанет карта этого вида`" @click="show(v)">
           <div class="t"><Eye :size="14" /><span>{{ v.name }}</span></div>
           <div class="n">{{ plural(nOn(v), ["слой", "слоя", "слоёв"]) }}{{ v.extent ? " · с масштабом" : "" }}<span v-if="v.frame" class="fr"> · рамка {{ sizeT(v.frame) }}</span></div></td>
         <td class="act">
@@ -47,7 +48,7 @@
         <label>Ширина, м<input type="number" min="1" step="10" :value="Math.round(fv.frame.w)" @change="setSide('w', +$event.target.value)"></label>
         <label>Высота, м<input type="number" min="1" step="10" :value="Math.round(fv.frame.h)" @change="setSide('h', +$event.target.value)"></label>
       </div>
-      <p class="hint">{{ fv.frame ? `На карте тяните рамку внутри — сдвиг, за угол — размер (Shift — без пропорций).${uses(fv.id) ? ` Вид стоит на листах: ${uses(fv.id)}.` : " Выберите этот вид в блоке «Карта» на листе."}` : "У вида ещё нет рамки: нарисуйте её на карте или возьмите экран карты." }}</p>
+      <p class="hint">{{ fv.frame ? `На карте тяните рамку внутри — сдвиг, за угол — размер (Shift — без пропорций).${uses(fv.id) ? ` Вид стоит на листах: ${uses(fv.id)}.` : " Перетащите строку вида на лист в «Макете листа» или выберите вид в блоке «Карта»."}` : "У вида ещё нет рамки: нарисуйте её на карте или возьмите экран карты." }}</p>
       <div class="frow">
         <wa-button size="s" @click="draw(fv)"><Frame :size="14" /> {{ fv.frame ? "Нарисовать заново" : "Нарисовать" }}</wa-button>
         <wa-button size="s" title="Рамка по тому, что сейчас видно на карте" @click="byScreen(fv)"><Scan :size="14" /> По экрану</wa-button>
@@ -71,7 +72,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { BookmarkPlus, Eye, Frame, RefreshCw, Scan, Trash2 } from "@lucide/vue";
-import { ASPECTS, frameLabel, ratioOf, withRatio } from "../viewframes.js";
+import { ASPECTS, frameLabel, ratioOf, withRatio, VIEW_MIME } from "../viewframes.js";
 import { frameFromExtent, vframes, viewOf } from "../viewframesmap.js";
 import { basemapId, project, setBasemap, viewCur, viewNow } from "../store.js";
 import LayerSwatch from "./LayerSwatch.vue";
@@ -96,6 +97,8 @@ function add() {
   notice.value = `Вид «${t}» сохранён`;
 }
 /* Слой, которого в виде нет (добавлен позже), скрывается — как у рабочей страницы. */
+// строку вида тянут на лист «Макета листа»: туда уходит id вида
+function dragOut(v, e) { e.dataTransfer.setData(VIEW_MIME, v.id); e.dataTransfer.setData("text/plain", v.name); e.dataTransfer.effectAllowed = "copy"; }
 function show(v) {
   const by = new Map(v.layers.map(x => [x.key, x]));
   project.layers.forEach(l => {

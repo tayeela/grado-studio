@@ -24,6 +24,7 @@ import { FORMAT_T, KINDS, pageSize, frameRect, newBlock, snapBox, problems, refo
 import { stampOps } from "./stamp.js";
 import { withGroups, group, ungroup, regroup, flip, moveBy, moveTo, sizeTo, rotateBy, styleOf, paint } from "./arrange.js";
 import { COMMANDS, parse, hints, titleOf } from "./commands.js";
+import { blockFromView, dropRect, VIEW_MIME } from "../viewframes.js";
 import { blockNode, INK, SCREEN_ONLY, sheetFonts } from "./draw.js";
 import Ribbon from "./Ribbon.vue";
 import ItemsPanel from "./ItemsPanel.vue";
@@ -317,8 +318,30 @@ function onUp() {
     const r = rectOf(d.p0, d.p1), big = r.w > 2 && r.h > 1;
     const b = newBlock(tool.value, sheet.value, big ? r : null);
     if (!big) { b.x = +d.p0.x.toFixed(2); b.y = +d.p0.y.toFixed(2); }   // щелчок — размер по умолчанию от точки щелчка
+    // новая легенда при карте на листе сразу следует за её видом: строки — слои вида, не образец
+    const m0 = b.kind === "legend" && props.maps?.legend && sheet.value.blocks.find(x => x.kind === "map");
+    if (m0) Object.assign(b, { follow: true, map: m0.id });
     commit(s => s.blocks.push(b)); tool.value = "select"; select([b.id]);
   }
+}
+
+/* ---------- вид, брошенный на лист (#119, ч.3): из окна «Виды» тянут строку вида ---------- */
+function dragView(e) { if (props.maps?.views && e.dataTransfer?.types?.includes(VIEW_MIME)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }
+// на карту листа — карта встаёт на вид; на пустое место — новая карта по пропорциям рамки вида
+function dropView(e) {
+  const id = e.dataTransfer?.getData(VIEW_MIME), v = id && props.maps?.views?.().find(x => x.id === id); if (!v) return;
+  e.preventDefault(); doing = "Вид на лист";
+  try {
+    const p = toMM(e.clientX, e.clientY), hit = mapAt(p);
+    if (hit) { patch(hit.id, { view: id, ...(blockFromView(hit, v) || {}) }); select([hit.id]); }
+    else {
+      const b = { ...newBlock("map", sheet.value), ...dropRect(p, frameRect(sheet.value), v.frame), view: id };
+      Object.assign(b, blockFromView(b, v) || {});
+      commit(s => s.blocks.push(b)); select([b.id]);
+    }
+    said.value = v.frame ? `Карта стоит на виде «${v.name}»: место и масштаб — из его рамки на карте` : `Карта стоит на виде «${v.name}»: у вида нет рамки — нарисуйте её в окне «Виды»`;
+  } finally { doing = ""; }
+  host.value?.focus();
 }
 
 /* ---------- направляющие от линеек ---------- */
@@ -379,7 +402,7 @@ function exec(id, args) {
   if (id === "legend:layers") {                       // строки легенды — из видимых слоёв проекта
     // у легенды, привязанной к карте с видом, — слои этого вида
     const m = {}, mapOf = x => sheet.value.blocks.find(y => y.kind === "map" && y.id === x.map) || sheet.value.blocks.find(y => y.kind === "map");
-    bs.filter(x => x.kind === "legend").forEach(x => { const items = props.maps?.legend?.(mapOf(x)?.view); if (items?.length) m[x.id] = { items }; });
+    bs.filter(x => x.kind === "legend").forEach(x => { const mp = mapOf(x), items = props.maps?.legend?.(mp?.view); if (items?.length) m[x.id] = { items, follow: true, map: mp?.id || x.map }; });   // и дальше следует за видом
     return patchMany(m);
   }
   if (id === "export:pdf") return printPdf();
@@ -540,8 +563,8 @@ defineExpose({ fit, act });
           <div class="sed-corner" title="Тяните от линейки, чтобы поставить направляющую"></div>
           <canvas ref="rulerX" class="sed-rx" @pointerdown="rulerDown('x', $event)" title="Тяните вниз — горизонтальная направляющая"></canvas>
           <canvas ref="rulerY" class="sed-ry" @pointerdown="rulerDown('y', $event)" title="Тяните вправо — вертикальная направляющая"></canvas>
-          <div ref="host" class="sed-stage" tabindex="0" aria-label="Лист" @mouseleave="cursor = null; drawRulers()"></div>
-          <div v-if="!sheet.blocks.length && tool === 'select'" class="sed-empty">Лист пуст. Нарисуйте на нём карту (кнопка «Карта» на ленте) и выберите ей вид в «Свойствах» — место и масштаб возьмутся из рамки вида на карте. Надписи, легенду и картинки ставят так же.</div>
+          <div ref="host" class="sed-stage" tabindex="0" aria-label="Лист" @mouseleave="cursor = null; drawRulers()" @dragover="dragView" @drop="dropView"></div>
+          <div v-if="!sheet.blocks.length && tool === 'select'" class="sed-empty">Лист пуст. Перетащите сюда вид из окна «Виды» — встанет карта с местом и масштабом по рамке вида. Или нарисуйте карту кнопкой «Карта» на ленте и выберите ей вид в «Свойствах». Надписи, легенду и картинки ставят так же.</div>
         </div>
       </section>
       <aside class="sed-side right">
