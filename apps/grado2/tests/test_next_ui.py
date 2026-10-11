@@ -204,6 +204,9 @@ class NextUi(unittest.TestCase):
         frames = (src / "albumframes.js").read_text(encoding="utf-8")
         self.assertIn("editSheet(", frames)
         self.assertIn('get("gradoTop")', frames)                           # под перехватом команд черчения, как frames.js
+        # #29: на рамке — короткое имя «Лист 5 · А3 · 1:2000», полное название — подсказкой над рамкой
+        self.assertIn("label: `${n} · ${fmtT(s)} · 1:${fmt(Math.round(sc))}`, title:", bridge)
+        self.assertIn("fr.title || fr.label", frames)
         self.assertIn("export function editSheet(", (src / "albumhost.js").read_text(encoding="utf-8"))
         self.assertIn("attachFrames(map)", (src / "panels" / "MapPanel.vue").read_text(encoding="utf-8"))
         panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
@@ -223,6 +226,59 @@ class NextUi(unittest.TestCase):
         panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
         for k in ("a.roles(i)", "a.role(cur.value, r.id)", "a.resetRole(cur.value, r.id)"):
             self.assertIn(k, panel)
+
+    def test_album_photos_and_satellite(self):
+        # фотофиксация и спутник во вкладке (шаг 2 фаза 2, #94): снимки — тем же addPhotoFiles движка (1600 px, GPS из EXIF, до 12),
+        # спутник — тем же satFile, только папку загрузок спрашивает окно нового интерфейса, а не prompt скрытой страницы
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        bridge = (web / "albumapi.js").read_text(encoding="utf-8")
+        for k in ("photos(i)", "addPhotoFiles(i, [...files])", "dropPhoto(i, k)", "satFile(i, false, dir)", "dlDir()"):
+            self.assertIn(k, bridge)
+        self.assertIn("async function satFile(i, ask, dir0)", (web / "sheets.js").read_text(encoding="utf-8"))
+        panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        for k in ("a.addPhotos(cur.value, files)", "a.dropPhoto(cur.value, k)", "a.sat(cur.value, dir)", 'data-act="sat"', 'data-act="photo"', "/api/progress"):
+            self.assertIn(k, panel)
+
+    def test_album_sheet_layers_drag(self):
+        # перетаскивание во вкладке: роль на лист, слой проекта на лист или строку роли, очередь источников — правила и действия
+        # с отменой берутся у окна «Слои и листы» движка (SheetLayout.dropCheck, dropRole, dropLayer, reorderQueue)
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        sl = (web / "sheetlayers.js").read_text(encoding="utf-8")
+        for k in ("function check(to, w, copy)", "function drop(to, w, copy)", "function bank()", "reorderQueue(i, gid, from, to)"):
+            self.assertIn(k, sl)
+        self.assertRegex(sl, r"window\.SheetLayers = \{[^}]*\bcheck, drop, bank, reorder\b")
+        bridge = (web / "albumapi.js").read_text(encoding="utf-8")
+        for k in ("SheetLayers?.check(to, what, copy)", "SheetLayers?.drop(to, what, copy)", "SheetLayers?.bank()", "SheetLayers?.reorder(i, gid, from, to)"):
+            self.assertIn(k, bridge)
+        panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        for k in ("a.dropCheck(i,", "a.drop(i, w, copy)", "a.reorderSrc(cur.value, r.id, from, to)", "a.bank()", '@drop="e => dropOn(e, i)"'):
+            self.assertIn(k, panel)
+
+    def test_album_without_popup_window(self):
+        # окна браузера «Подробно» больше нет (шаг 2 фаза 2, #94): импорт из файла, содержание листа, «В центр», масштаб схем,
+        # формат слайдов и «ГИС ОГД в DXF» — во вкладке и окне «Данные»; движок по-прежнему скрытая рамка (лист в лист прежний PDF)
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        host = (src / "albumhost.js").read_text(encoding="utf-8")
+        self.assertNotIn("openAlbum", host)
+        self.assertNotIn("window.open(", host)
+        panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        self.assertNotRegex(panel, r"<wa-button[^>]*>[^<]*Подробно")
+        for k in ("a.importFile(f)", "a.importAnswer('replace')", "a.importAnswer('add')", "a.setView(cur, e.target.value)",
+                  "a.resetCenter(cur)", "a.setScheme(v)", "a.setSlide(e.target.value)"):
+            self.assertIn(k, panel)
+        bridge = (web / "albumapi.js").read_text(encoding="utf-8")
+        for k in ("importFile(file) { return readAlbumFile(file); }", "importAnswer(mode) { return importAlbum(mode); }",
+                  "setView(i, v)", "resetCenter(i)", "setSlide(v)", "setScheme(v)", "ogdSheet(i)", "keepOgd(codes)"):
+            self.assertIn(k, bridge)
+        # «ГИС ОГД в DXF»: лист из движка, выбор слоёв портала в окне «Данные», выгрузка фоном на сервере, ход после перезагрузки
+        self.assertIn("a.ogdSheet(album.cur)", host)
+        data = (src / "data.js").read_text(encoding="utf-8")
+        for k in ('"/api/ogd_all/start"', '"/api/ogd_all/status"', '"/api/ogd_all/cancel"', '"/api/ogd_all/file"', "export function ogdResume()"):
+            self.assertIn(k, data)
+        dp = (src / "panels" / "DataPanel.vue").read_text(encoding="utf-8")
+        for k in ('data-act="ogd-dxf"', "a.keepOgd(codes)", "startOgd(", 'class="job ogdjob"'):
+            self.assertIn(k, dp)
+        self.assertIn("ogdResume();", (src / "App.vue").read_text(encoding="utf-8"))
 
     def test_album_label_layout_window(self):
         # «Макет надписей» (шаг 2 фаза 2): лист — картинка печати по запросу движка (albumApi.spec), правки — в лист альбома

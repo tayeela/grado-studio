@@ -772,8 +772,8 @@ function dlDir(ask) {
   }
   return d;
 }
-async function satFile(i, ask) {
-  const sh = ALBUM.sheets[i], s = albumSpec([sh]).sheets[0], dir = dlDir(ask); if (!dir) return;
+async function satFile(i, ask, dir0) {   // dir0 — папка загрузок, которую спросило окно нового интерфейса (albumapi.js sat)
+  const sh = ALBUM.sheets[i], s = albumSpec([sh]).sheets[0], dir = dir0 || dlDir(ask); if (!dir) return;
   const t = new Date(), p2 = n => String(n).padStart(2, "0");
   const stem = `sputnik_${i + 1}_${t.getFullYear()}${p2(t.getMonth() + 1)}${p2(t.getDate())}-${p2(t.getHours())}${p2(t.getMinutes())}${p2(t.getSeconds())}`;
   const req = { ...(s.rect && s.center ? { center: s.center, rect: s.rect, scale: s.scale } : { bbox: frameBox(sh) }), base: dir + "/" + stem };

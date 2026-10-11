@@ -26,7 +26,14 @@
       <div class="sh"><span class="num">2</span>Загрузка данных</div>
       <div class="btns">
         <wa-button size="s" class="wide" variant="brand" :disabled="!cover || !!loading" :title="cover ? 'Окно всех источников: ЕГРН, ГИС ОГД, ЕГКО, OpenStreetMap, Яндекс, рельеф' : 'Сначала задайте границу территории'"
-                   @click="openPicker"><Download :size="14" /> Выбрать источники и загрузить…</wa-button>
+                   @click="openPicker()"><Download :size="14" /> Выбрать источники и загрузить…</wa-button>
+      </div>
+      <!-- «ГИС ОГД в DXF» (меню «Выгрузка»): выгрузка идёт на сервере фоном, ход — здесь -->
+      <div v-if="ogd.running" class="job ogdjob" role="status" aria-live="polite">
+        <div class="jh"><wa-spinner></wa-spinner><b>ГИС ОГД в DXF по {{ ogd.where }}: слой {{ ogd.done }} из {{ ogd.total || "…" }}</b>
+          <wa-button size="s" appearance="outlined" title="Остановить: текущий слой дочитывается, потом выгрузка встанет" @click="stopOgd">Остановить</wa-button></div>
+        <wa-progress-bar :value="ogd.total ? Math.round(ogd.done / ogd.total * 100) : 0" label="Ход выгрузки ГИС ОГД"></wa-progress-bar>
+        <p class="hint">{{ ogd.current ? `Сейчас «${ogd.current}»${ogd.msg ? ` (${ogd.msg})` : ""}. ` : "" }}С объектами на листе: {{ ogd.found }}.{{ ogd.left ? ` Осталось около ${ogd.left}.` : "" }} Работать можно дальше; архив скачается сам.</p>
       </div>
       <div class="imp">
         <wa-button size="s" appearance="outlined" title="DXF, DWG, GeoJSON, KML/KMZ, Shapefile — новым слоем; можно перетащить файл на карту" @click="pick('layer')"><FileUp :size="14" /> Свой файл…</wa-button>
@@ -116,7 +123,7 @@
       <wa-button slot="footer" size="s" variant="brand" :disabled="!nums.trim()" @click="byNumbers">Сделать границей</wa-button>
     </wa-dialog>
 
-    <wa-dialog class="picker" label="Исходные данные" :open="pk.open" @wa-after-hide="pk.open = false">
+    <wa-dialog class="picker" :label="pk.dxf ? 'ГИС ОГД в DXF — ' + pk.dxf.where.replace(/^листу/, 'лист') : 'Исходные данные'" :open="pk.open" @wa-after-hide="pk.open = false; pk.dxf = null">
       <div class="pbar">
         <wa-input size="s" type="search" placeholder="Поиск слоя или папки" with-clear :value="pk.q" @input="e => (pk.q = e.target.value)"></wa-input>
         <wa-checkbox size="s" :checked="pk.only" title="Скрыть слои ГИС ОГД, у которых в области нет объектов" @change="e => (pk.only = e.target.checked)">ГИС ОГД — только с объектами</wa-checkbox>
@@ -129,16 +136,18 @@
                    :title="p[2] + '.\nСлои (' + presetKeys(p).length + '): ' + presetKeys(p).map(k => SOURCES[k].title).join(', ')" @click="togglePreset(p)">{{ p[1] }} · {{ presetKeys(p).length }}</wa-button>
       </div>
       <div class="tree"><TreeNode v-for="n in tree" :key="n.num" :n="n" :depth="0" /><p v-if="!tree.length" class="hint">Ничего не найдено.</p></div>
-      <span slot="footer" class="hint foot">{{ pk.counts ? "" : "Считаю объекты ГИС ОГД в области… " }}Отмечено: <b>{{ pk.sel.size }}</b>. Большая область для НСПД и OpenStreetMap загружается по частям.</span>
+      <span v-if="pk.dxf" slot="footer" class="hint foot">{{ pk.counts ? "" : "Считаю объекты ГИС ОГД на листе… " }}Слоёв портала отмечено: <b>{{ nOgdSel }}</b>. В DXF — каждый слой портала своим слоем, лист бумаги с видовым экраном в масштабе листа.</span>
+      <span v-else slot="footer" class="hint foot">{{ pk.counts ? "" : "Считаю объекты ГИС ОГД в области… " }}Отмечено: <b>{{ pk.sel.size }}</b>. Большая область для НСПД и OpenStreetMap загружается по частям.</span>
       <wa-button slot="footer" size="s" appearance="plain" @click="pk.open = false">Отмена</wa-button>
-      <wa-button slot="footer" size="s" variant="brand" :disabled="!pk.sel.size" @click="loadPicked"><Download :size="14" /> Загрузить в проект</wa-button>
+      <wa-button v-if="pk.dxf" slot="footer" size="s" variant="brand" :disabled="!nOgdSel || ogd.running" data-act="ogd-dxf" @click="runDxf"><FileDown :size="14" /> ГИС ОГД в DXF</wa-button>
+      <wa-button v-else slot="footer" size="s" variant="brand" :disabled="!pk.sel.size" @click="loadPicked"><Download :size="14" /> Загрузить в проект</wa-button>
     </wa-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { Check, ChevronRight, CircleAlert, CircleCheck, CircleMinus, Database, Download, FileInput, FileUp, Grid2x2, Info, Landmark, PenLine, Spline, SquareDashed, X } from "@lucide/vue";
+import { Check, ChevronRight, CircleAlert, CircleCheck, CircleMinus, Database, Download, FileDown, FileInput, FileUp, Grid2x2, Info, Landmark, PenLine, Spline, SquareDashed, X } from "@lucide/vue";
 import * as turf from "@turf/turf";
 import { project } from "../store.js";
 import { dataRev, lyr } from "../edit.js";
@@ -146,8 +155,9 @@ import { sel, selected } from "../features.js";
 import { plural } from "../geom.js";
 import {
   ERRORS, FG, FILE_ACCEPT, SOURCES, fgFind, fgLoad, fgPick, fgSearch, checked, coverBox, coverOn, coverText, existingSummary, exampleTerritory, importBoundary, importFiles,
-  job, keepChecked, loadKeys, loadSources, loading, localSys, terrTool, territoryByNumbers, territoryFromSelection,
+  job, keepChecked, loadKeys, loadSources, loading, localSys, ogd, startOgd, stopOgd, terrTool, territoryByNumbers, territoryFromSelection,
 } from "../data.js";
+import { call } from "../albumhost.js";
 
 const props = defineProps({ params: Object });
 
@@ -225,7 +235,7 @@ const PRESETS = [
 ];
 const TREE_GROUPS = [["nspd", "ЕГРН · НСПД"], ["gisogd", "ГИС ОГД — подборки ГРАДО"], ["ogd", "ГИС ОГД — все слои портала"],
   ["egko", "ЕГКО — картооснова ГИС ОГД"], ["osm", "OpenStreetMap"], ["yandex", "Яндекс Карты (для анализа и эскиза, не для сдачи)"], ["terrain", "Рельеф"]];
-const pk = reactive({ open: false, q: "", only: true, sel: new Set(), counts: null, ogd: null, opened: new Map() });
+const pk = reactive({ open: false, q: "", only: true, sel: new Set(), counts: null, ogd: null, opened: new Map(), dxf: null });   // dxf — окно открыто для «ГИС ОГД в DXF» (запрос ogd.req)
 const isOgd = k => k.startsWith("ogd.");
 const presetKeys = p => p[3].filter(k => SOURCES[k]);
 const presetOn = p => { const ks = presetKeys(p); return ks.length > 0 && ks.every(k => pk.sel.has(k)); };
@@ -278,16 +288,30 @@ const TreeNode = defineComponent({
   },
 });
 
-async function openPicker() {
-  const bb = coverBox(); if (!bb) return;
-  pk.sel = checked(); pk.q = ""; pk.counts = null; pk.open = true;
+/* dxf — запрос «ГИС ОГД в DXF» (лист, его рамка, прежний выбор слоёв портала): объекты считаются по листу; в первый раз
+   отмечаются слои портала, у которых на листе есть объекты (как окно выбора рабочей страницы, ogdpick.js) */
+async function openPicker(dxf = null) {
+  const bb = dxf ? dxf.bbox : coverBox(); if (!bb) return;
+  const sel = checked(); if (dxf) (dxf.codes || []).forEach(c => sel.add("ogd." + c));
+  const first = !!dxf && ![...sel].some(isOgd);
+  pk.sel = sel; pk.q = ""; pk.counts = null; pk.dxf = dxf; pk.open = true;
   if (!Object.keys(SOURCES).length) await loadSources();
   try { if (!pk.ogd) pk.ogd = (await (await fetch("/api/ogd_all/tree")).json()).tree || []; } catch { pk.ogd = []; }
   try {
-    const r = await fetch("/api/ogd_all/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bbox: bb }) });
+    const r = await fetch("/api/ogd_all/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dxf ? { sheet: dxf.sheet } : { bbox: bb }) });
     pk.counts = r.ok ? (await r.json()).counts || {} : {};
   } catch { pk.counts = {}; }
+  if (first && pk.dxf === dxf) ogdWithObjects();
 }
+const nOgdSel = computed(() => [...pk.sel].filter(isOgd).length);
+/* «ГИС ОГД в DXF»: выбор — в проект (отмеченное и коды портала альбома), выгрузка — data.js startOgd */
+async function runDxf() {
+  const req = pk.dxf, codes = [...pk.sel].filter(isOgd).map(k => k.slice(4)); if (!req || !codes.length) return;
+  keepChecked(pk.sel); pk.open = false;
+  try { await call(a => a.keepOgd(codes)); } catch { }
+  startOgd(req, codes);
+}
+watch(() => ogd.req, r => { if (!r) return; ogd.req = null; openPicker(r); }, { immediate: true });
 function loadPicked() {
   const keys = [...pk.sel];
   tree.value.flatMap(leaves).filter(l => isOgd(l.key) && pk.sel.has(l.key)).forEach(l => { SOURCES[l.key] ||= { title: `${l.name} (ОГД)`, kind: "gisogd" }; });
