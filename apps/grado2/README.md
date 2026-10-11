@@ -10,7 +10,7 @@
 | `print_io.py` | листы и альбом в PDF, SVG и PPTX через рендер и вёрстку ядра | `server.py` (печать), `album_io.py`, `rail_icons.py`, `tests/test_t86_pptx_speed.py` |
 | `layout_io.py` | лист из «Макета листа» нового интерфейса в PDF и SVG, карта блока картинкой: карта — печать альбома, остальное — как рисует редактор | `server.py` (`/api/print/layout`, `/api/print/map_svg`; листы в проекте — ключ `layouts`, `save_project` его сохраняет), `ui/src/panels/sheetmaps.js`, `tests/test_layout_io.py` |
 | `fonts.py` | шрифты для подписей альбома: готовые, шрифты компьютера, свои файлы; OTF и TTC переводит в TTF для печати | `print_io.py` (семейство «f:<id>»), `server.py` (`/api/fonts`), `ui/src/panels/FontPicker.vue`, `tests/test_fonts.py` |
-| `label_qa.py` | самопроверка оформления листа: подписи на линиях слоёв, под угловыми надписями и легендой, у рамки карты (#55) | `print_io.py` (`layout_qa`, ответ печати), `tests/test_label_qa.py` |
+| `label_qa.py` | самопроверка оформления листа: подписи под угловыми надписями и легендой, у рамки карты, подписанные дважды (#55) | `print_io.py` (`layout_qa`, ответ печати), `tests/test_label_qa.py` |
 | `album_io.py` | альбомы по образцам владельца: «План реализации ППТ КРТ», «Градостроительная концепция» | `print_io.py`, `tests/test_t80_albums_print.py` |
 | `export_io.py` | экспорт GeoJSON для QGIS (в МСК) и таблица ТЭП с перечнем листов в XLSX | `server.py` (экспорт), `tests/test_export.py` |
 | `file_io.py` | импорт GeoJSON, KML/KMZ, Shapefile и DXF в GeoJSON в WGS84 | `server.py` (импорт файлов), `dxf_io.py`, `tests/test_file_io.py` |

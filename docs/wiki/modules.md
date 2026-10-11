@@ -47,11 +47,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_now`, `HubError`, `Conflict`, `_norm_album`, `_layer_key_ok`, `_norm_meta`, `album_summary`, `split_project`, `join_sections`, `_check_sections`, `_clean_name`, `_clean_login`, `_check_password`, `_clean_client`, `_check_pid`, `_is_num`, `_clean_text`, `_clean_anchor`, `_hash_password`, `_color`, `Subscription`, `Hub`, `default_root`, `_read_password`, `main`
 
-### `apps/grado2/label_qa.py` — 212 стр.
+### `apps/grado2/label_qa.py` — 150 стр.
 
-Самопроверка оформления листа (#55, аудит #53): подписи карты, пересечённые линиями слоёв, закрытые легендой или угловой надписью, стоящие у рамки карты ближе 2,5 мм; угловые надписи, пересечённые линиями.
+Самопроверка оформления листа (#55, аудит #53): подписи карты, закрытые легендой или угловой надписью, стоящие у рамки карты ближе 2,5 мм, подписанные на карте дважды.
 
-Функции: `_is_obstacle`, `_white`, `label_box`, `_corners`, `_aabb`, `_hit`, `_overlap`, `_Segs`, `_paths`, `page_conflicts`, `_dedupe`, `phrase`, `album_conflicts`
+Функции: `_white`, `label_box`, `_corners`, `_aabb`, `_overlap`, `page_conflicts`, `_dedupe`, `phrase`, `_times`, `album_conflicts`
 
 ### `apps/grado2/layout_io.py` — 387 стр.
 
@@ -73,7 +73,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `busy`, `main`
 
-### `apps/grado2/print_io.py` — 2587 стр.
+### `apps/grado2/print_io.py` — 2586 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
