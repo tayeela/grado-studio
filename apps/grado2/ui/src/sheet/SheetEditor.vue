@@ -11,7 +11,9 @@
      Устройство команд — с deckcraft (MIT OR Apache-2.0, commands.js): каждая кнопка ленты — команда с отменой, её же можно
      набрать в командной строке внизу («ВЫРОВНЯТЬ ВЛЕВО», «СДВИГ 10 0», «МАСШТАБ 1:2000»; ↑ — прошлые команды). Оттуда же
      (arrange.js): группы (щелчок выбирает всю группу, Alt+щелчок — один элемент), отражение, «Формат по образцу»;
-     Alt на ручке размера — от середины, Shift — с пропорциями. -->
+     Alt на ручке размера — от середины, Shift — с пропорциями.
+     Блок «Карта» с видом (#119, проп maps: views, sync, frameTo): место и масштаб — из рамки вида на карте; «Сдвиг карты
+     в рамке» двигает саму рамку вида, «Как на карте» отвязывает блок от вида. -->
 <script setup>
 import { onBeforeUnmount, onMounted, ref, computed, watch } from "vue";
 import Konva from "konva";
@@ -59,6 +61,7 @@ const GRID = "#d3dae3", GRID5 = "#aeb8c5";        // сетка: тонкие л
 const RULER = 22;
 let stage, paper, blocks, guideL, over, tr, k = 1, hovered = false, space = false;
 
+const views = computed(() => props.maps?.views?.() || []);     // виды проекта для блока «Карта» (#119)
 const selBlocks = computed(() => sel.value.map(id => sheet.value.blocks.find(b => b.id === id)).filter(Boolean));
 const issues = computed(() => problems(sheet.value));
 const anyLocked = computed(() => sheet.value.blocks.some(b => b.locked));
@@ -70,7 +73,7 @@ function out() { lastOut = JSON.stringify(sheet.value); emit("update:modelValue"
 // запись истории помнит, что сделано (как HistoryEntry.label у deckcraft): «Отменено: Выровнять»
 let doing = "";
 function remember() { hist.u.push({ s: JSON.stringify(sheet.value), t: doing || "правка" }); doing = ""; if (hist.u.length > 200) hist.u.shift(); hist.r = []; }
-function commit(fn) { remember(); fn(sheet.value); syncHist(); draw(); out(); }
+function commit(fn) { remember(); fn(sheet.value); props.maps?.sync?.(sheet.value); syncHist(); draw(); out(); }   // блоки с видом — по рамке вида
 function step(dir) {
   const from = dir < 0 ? hist.u : hist.r, to = dir < 0 ? hist.r : hist.u; if (!from.length) return;
   const e = from.pop(); to.push({ s: JSON.stringify(sheet.value), t: e.t }); sheet.value = JSON.parse(e.s);
@@ -83,7 +86,9 @@ const syncHist = () => { canUndo.value = hist.u.length > 0; canRedo.value = hist
 const blk = (s, id) => s.blocks.find(b => b.id === id);
 const patch = (id, p) => commit(s => Object.assign(blk(s, id), p));
 const patchMany = map => { if (Object.keys(map).length) commit(s => Object.entries(map).forEach(([id, p]) => Object.assign(blk(s, id), p))); };
-watch(() => props.modelValue, v => { if (JSON.stringify(v) !== lastOut) { sheet.value = normalize(clone(v)); sel.value = []; draw(); } }, { deep: true });
+// лист поменяли снаружи (другой лист, рамка вида на карте): выбор остаётся на элементах, которые есть
+watch(() => props.modelValue, v => { if (JSON.stringify(v) !== lastOut) { sheet.value = normalize(clone(v)); sel.value = sel.value.filter(id => sheet.value.blocks.some(b => b.id === id)); draw(); } }, { deep: true });
+const viewName = id => props.maps?.views?.().find(v => v.id === id)?.name || "";
 
 /* ---------- вид: масштаб экрана, сдвиг, линейки ---------- */
 function setView(nk, ox, oy) { k = nk; stage.scale({ x: k, y: k }); stage.position({ x: ox, y: oy }); zoom.value = k; draw(); }
@@ -295,7 +300,10 @@ function onUp() {
   const d = drag; drag = null; over.destroyChildren(); over.batchDraw(); host.value.style.cursor = tool.value === "content" ? "move" : "";
   if (d.kind === "content") {
     const b = blk(sheet.value, d.id), dx = (d.p1?.x ?? d.p0.x) - d.p0.x, dy = (d.p1?.y ?? d.p0.y) - d.p0.y;
-    if (b?.center && Math.hypot(dx, dy) > .05) patch(b.id, { center: moveCenter(b.center, b.scale, -dx, -dy) });
+    if (!b?.center || Math.hypot(dx, dy) <= .05) return;
+    const c = moveCenter(b.center, b.scale, -dx, -dy);
+    if (b.view && props.maps?.frameTo?.(b.view, c)) { said.value = `Сдвинута рамка вида «${viewName(b.view)}» — все листы с этим видом`; return; }
+    patch(b.id, { center: c });
     return;
   }
   if (d.kind === "marquee") {
@@ -356,13 +364,16 @@ function exec(id, args) {
   const [a, b] = id.split(":"), bs = selBlocks.value, free = bs.filter(x => !x.locked);
   if (id === "map:here") {                            // «Как на карте»: место и масштаб окна «Карта»
     const h = props.maps?.here?.(), ms = bs.filter(x => x.kind === "map"); if (!h || !ms.length) return;
-    const m = {}; ms.forEach(x => { m[x.id] = h.scale > 0 ? { center: h.center, scale: h.scale } : { center: h.center }; }); return patchMany(m);
+    const m = {}; ms.forEach(x => { m[x.id] = { view: undefined, ...(h.scale > 0 ? { center: h.center, scale: h.scale } : { center: h.center }) }; }); return patchMany(m);   // и отвязать от вида
   }
   if (id === "legend:layers") {                       // строки легенды — из видимых слоёв проекта
-    const items = props.maps?.legend?.(); if (!items?.length) return;
-    const m = {}; bs.filter(x => x.kind === "legend").forEach(x => { m[x.id] = { items }; }); return patchMany(m);
+    // у легенды, привязанной к карте с видом, — слои этого вида
+    const m = {}, mapOf = x => sheet.value.blocks.find(y => y.kind === "map" && y.id === x.map) || sheet.value.blocks.find(y => y.kind === "map");
+    bs.filter(x => x.kind === "legend").forEach(x => { const items = props.maps?.legend?.(mapOf(x)?.view); if (items?.length) m[x.id] = { items }; });
+    return patchMany(m);
   }
   if (id === "export:pdf") return printPdf();
+  if (id === "view:show") { const v = bs.find(x => x.view)?.view; if (v) props.maps?.showFrame?.(v); return; }
   if (id === "help") { said.value = "Команды: " + COMMANDS.map(c => c.ru[0]).join(", "); return; }
   if (id === "group") { const m = group(bs); if (!Object.keys(m).length) { said.value = "Для группы выберите два элемента и больше"; return; } return patchMany(m); }
   if (id === "ungroup") return patchMany(ungroup(bs));
@@ -470,6 +481,7 @@ onMounted(() => {
   stage.on("wheel", e => {
     e.evt.preventDefault(); const d = e.evt.deltaY;
     const mb = tool.value === "content" && !e.evt.ctrlKey && !e.evt.metaKey ? mapAt(pt()) : null;   // колесо над картой — масштаб карты
+    if (mb?.view) { said.value = `Масштаб задаёт рамка вида «${viewName(mb.view)}»: растяните её на карте`; return; }
     if (mb) { if (Math.abs(d) > 2) patch(mb.id, { scale: nextScale(mb.scale, d > 0 ? 1 : -1) }); return; }
     zoomAt(Math.exp(-Math.max(-60, Math.min(60, d)) * .004), stage.getPointerPosition());
   });
@@ -519,7 +531,7 @@ defineExpose({ fit, act });
       <aside class="sed-side right">
         <div class="sed-tab"><span>Свойства</span></div>
         <div class="sed-scroll">
-          <PropsPanel :sheet="sheet" :sel="selBlocks" :has-maps="!!maps" @patch="propPatch" @format="setFormat" @set="setSheet" @act="act" />
+          <PropsPanel :sheet="sheet" :sel="selBlocks" :has-maps="!!maps" :views="views" @patch="propPatch" @format="setFormat" @set="setSheet" @act="act" />
         </div>
       </aside>
     </div>

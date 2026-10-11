@@ -101,11 +101,11 @@ export function attachFrames(map) {
       return false;
     },
   });
-  it.set("albumFrames", true);
+  it.set("albumFrames", true); it.set("gradoFrame", true);
   // рамка — сразу под перехватом команд черчения (cad.js gradoTop): щелчок по рамке доходит до неё раньше выбора и сдвига карты
   const place = () => { const c = map.getInteractions(), arr = c.getArray(); if (arr.includes(it)) c.remove(it); const top = arr.findIndex(i => i.get("gradoTop")); c.insertAt(top < 0 ? arr.length : top, it); };
   place();
-  const onAdd = ev => { if (ev.element !== it && !ev.element.get("gradoTop")) place(); };
+  const onAdd = ev => { if (ev.element !== it && !ev.element.get("gradoTop") && !ev.element.get("gradoFrame")) place(); };   // две рамки (листы, виды) не переставляют друг друга по кругу
   map.getInteractions().on("add", onAdd);
 
   // курсор: над углом выбранной рамки — размер, над рамкой — сдвиг
