@@ -193,6 +193,53 @@ class NextUi(unittest.TestCase):
         for k in ("albumFile(v)", "ogdDxf()", "winApi.open('album')", '{ id: "album", title: "Листы и альбом" }'):
             self.assertIn(k, app)
 
+    def test_album_frames_on_the_new_map(self):
+        # рамки листов альбома на карте нового интерфейса (шаг 2 фаза 2, #94): рамки считает движок (albumapi state().frames —
+        # те же sheetCenter, sheetScale, frameMM, что у frames.js), карта рисует их, пока вкладка на виду; сдвиг и угол пишут
+        # center и scale листа в раздел album проекта
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        bridge = (web / "albumapi.js").read_text(encoding="utf-8")
+        for k in ("frames: frames()", "sheetOnMap(s, true)", "sheetCenter(s)", "sheetScale(s)", "frameMM(s)"):
+            self.assertIn(k, bridge)
+        frames = (src / "albumframes.js").read_text(encoding="utf-8")
+        self.assertIn("editSheet(", frames)
+        self.assertIn('get("gradoTop")', frames)                           # под перехватом команд черчения, как frames.js
+        self.assertIn("export function editSheet(", (src / "albumhost.js").read_text(encoding="utf-8"))
+        self.assertIn("attachFrames(map)", (src / "panels" / "MapPanel.vue").read_text(encoding="utf-8"))
+        panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        self.assertIn("album.tab = e.isVisible", panel)
+        self.assertIn("album.fit++", panel)
+
+    def test_album_sheet_roles(self):
+        # «Слои листа» во вкладке (шаг 2 фаза 2): роли листа считает окно «Слои и листы» движка (SheetLayers.rows — те же
+        # roleRows, queueRows, покрытие рамки), глаз и «вернуть к образцу» — его toggleRole и resetRoleUI (с отменой Cmd+Z)
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        sl = (web / "sheetlayers.js").read_text(encoding="utf-8")
+        self.assertIn("function rows(idx)", sl)
+        self.assertRegex(sl, r"window\.SheetLayers = \{[^}]*\brows\b")
+        bridge = (web / "albumapi.js").read_text(encoding="utf-8")
+        for k in ("SheetLayers?.rows(i)", "SheetLayers?.toggleRole(i, gid)", "SheetLayers?.resetRoleUI(i, gid)"):
+            self.assertIn(k, bridge)
+        panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        for k in ("a.roles(i)", "a.role(cur.value, r.id)", "a.resetRole(cur.value, r.id)"):
+            self.assertIn(k, panel)
+
+    def test_album_label_layout_window(self):
+        # «Макет надписей» (шаг 2 фаза 2): лист — картинка печати по запросу движка (albumApi.spec), правки — в лист альбома
+        # (edits, items, layGuides) через editSheet; направляющие переживают пересборку листа по шаблону (sheets.js carryHand)
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        self.assertIn("spec(i) {", (web / "albumapi.js").read_text(encoding="utf-8"))
+        self.assertIn("if (old.layGuides) fresh.layGuides = old.layGuides;", (web / "sheets.js").read_text(encoding="utf-8"))
+        lay = (src / "panels" / "AlbumLayout.vue").read_text(encoding="utf-8")
+        for k in ("a.spec(idx.value)", "/api/print/svg", "Snap.snap(", "editSheet(idx.value, patch)", "layGuides", "function alignSel"):
+            self.assertIn(k, lay)
+        self.assertIn('.component("albumlay", AlbumLayout)', (src / "main.js").read_text(encoding="utf-8"))
+        self.assertIn('{ id: "albumlay", title: "Макет надписей" }', (src / "App.vue").read_text(encoding="utf-8"))
+        self.assertIn('winApi.open("albumlay")', (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8"))
+        host = (src / "albumhost.js").read_text(encoding="utf-8")
+        # правка листа сначала принимает отложенную правку окна: иначе pull() заменит раздел album и унесёт её
+        self.assertRegex(host, r"export function editSheet\(i, patch\) \{\s*//[^\n]*\n\s*if \(timer\) \{ clearTimeout\(timer\); timer = null; pull\(\); \}")
+
     def test_floating_windows_follow_the_mouse(self):
         # плавающее окно идёт ровно за мышью, угол не сдвигает край (docs/ux/ui-grid.md): заплатка dockview ставится при npm ci
         # и попадает в сборку; без неё окно отставало на первое движение мыши (владелец 09.10.2026: «окна перемещаются криво»)

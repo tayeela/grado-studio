@@ -534,5 +534,18 @@
   addEventListener("keydown", onKey, true);
   addEventListener("keyup", e => { if (ST.drag && e.key === "Alt") { ST.drag.alt = false; updateDrag(); } }, true);
   WIN_OPEN[ID] = () => { init(); if (ST.min) setMin(false); render(); };
-  window.SheetLayers = { snap, restore, render, refresh, toggleRole, resetRoleUI, resetSheetUI, workingCopyOf };
+  /* роли листа данными — для вкладки «Листы и альбом» нового интерфейса (web/albumapi.js roles): то же, что средняя колонка окна */
+  function rows(idx) {
+    const sh = sheets()[idx]; if (!sh) return null;
+    const info = infoOf(sh), why = readOnly() ? "Только просмотр: слои листа меняет тот, кто правит проект" : info.why || "";
+    if (!info.layout) return { kind: info.kind || "map", editable: false, why, rows: [] };
+    const hand = handOf(sh, info), fr = frameOf(sh), all = sheets().map(x => ({ sh: x, fr: mapSheet(x) ? frameOf(x) : null }));
+    const asig = all.map(x => x.fr ? x.fr.ext.map(Math.round).join(",") : "").join(";"), probe = makeProbe(sh, fr, all, asig);
+    const R = SL().roleRows({ groups: info.layout.groups.slice().reverse() }, probe, { chosen: () => pickFor(sh, fr) || undefined });
+    return { kind: "layout", editable: info.editable && !readOnly(), why, rows: R.map(r => ({
+      id: r.id, role: r.role, title: r.title, count: r.count, on: r.on, source: r.source, cover: r.empty ? null : r.cover, empty: !!r.empty,
+      badge: r.badge || null, hand: hand.roles[r.role] ? handNote(hand.roles[r.role]) : "", layers: r.items.map(it => srcTitle(it.key)),
+      queue: r.queue ? SL().queueRows(r.queue.keys, probe, r.queue.chosen).map(x => ({ key: x.key, title: srcTitle(x.key), cover: x.cover, used: x.used, badge: x.badge || null })) : null })) };
+  }
+  window.SheetLayers = { snap, restore, render, refresh, toggleRole, resetRoleUI, resetSheetUI, workingCopyOf, rows };
 })();

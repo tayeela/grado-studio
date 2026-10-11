@@ -282,7 +282,7 @@ async function main() {
       }
       const tag = `${w}×${h} ${theme === "dark" ? "тёмная" : "светлая"}`;
       const titles = await page.evaluate(() => [...[...document.querySelectorAll("header.top wa-dropdown")].find(d => d.querySelector("wa-button[slot=trigger]")?.textContent.trim() === "Окна")
-        .querySelectorAll("wa-dropdown-item[type=checkbox]")].map(i => i.textContent.trim()).filter(t => !["Карта", "Комментарии", "Макет листа"].includes(t)));
+        .querySelectorAll("wa-dropdown-item[type=checkbox]")].map(i => i.textContent.trim()).filter(t => !["Карта", "Комментарии", "Макет листа", "Макет надписей"].includes(t)));
       const record = (list, win) => { for (const f of list) found.push({ ...f, screen: tag, step: win }); };
       record(await page.evaluate(measure), "открытие");
       if (SHOTS) await page.screenshot({ path: join(OUT, `${w}x${h}-${theme}-00-start.png`) });

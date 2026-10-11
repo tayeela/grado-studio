@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from .ttf import Font, find_font
+from .ttf import Font, custom_face, find_font
 
 EMU = 36000                                          # EMU в мм
 # семейство операции → гарнитура PowerPoint и жирность (те же шрифты, что встраивает PDF)
@@ -29,6 +29,16 @@ FONTS = {"ui": ("PT Sans", False), "ui-bold": ("PT Sans", True), "serif": ("PT S
 NS = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
       'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"')
+
+
+def _face(fam):
+    """Гарнитура PowerPoint и жирность семейства: готовые — FONTS, свой шрифт «f:…» — его имя (ttf.custom_face)."""
+    if fam in FONTS:
+        return FONTS[fam]
+    c = custom_face(fam)
+    return (c[0], c[2]) if c else None
+
+
 XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 _P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
 
@@ -323,7 +333,7 @@ class _Slide:
         if box is not None and not (box[0] <= o["x"] <= box[2] and box[1] <= o["y"] <= box[3]):
             return
         fam = o.get("font_family") or "ui"
-        fam = fam if fam in FONTS else "ui"
+        fam = fam if _face(fam) else "ui"
         font = self.pres.font(fam)
         size = float(o["size"])
         asc, dsc = font.ascent / font.units_per_em * size, -font.descent / font.units_per_em * size
@@ -336,7 +346,7 @@ class _Slide:
         mx, my = o["x"] + cx * ca - cy * sa, o["y"] + cx * sa + cy * ca
         x, y, ew, eh = self.e(mx - w / 2), self.e(my - h / 2), max(1, self.e(w)), max(1, self.e(h))
         rot = f' rot="{int(round(math.degrees(ang) * 60000)) % 21600000}"' if ang else ""
-        face, bold = FONTS[fam]
+        face, bold = _face(fam)
         algn = {"middle": "ctr", "end": "r"}.get(anchor, "l")
         glow = ""
         if o.get("halo"):                                          # ореол подписи — «свечение», как в шаблоне владельца
@@ -489,8 +499,8 @@ class PptxBackend:
         from pptx.oxml import parse_xml
         faces = {}                                                  # гарнитура → {"regular"|"bold": путь файла}
         for fam in sorted(self._used):
-            if fam in FONTS and FONTS[fam][0] != "Courier New":
-                face, bold = FONTS[fam]
+            if _face(fam) and _face(fam)[0] != "Courier New":
+                face, bold = _face(fam)
                 faces.setdefault(face, {})["bold" if bold else "regular"] = find_font(fam)
         if not faces:
             return

@@ -5,7 +5,7 @@
      Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта).
      Черчение как в AutoCAD (команды, привязки, ручки, командная строка над картой) — cad.js, подключается к этой карте;
      поиск по адресу, кадастровому номеру и № КРТ над картой — MapSearch.vue; метки комментариев и указатели участников
-     совместной работы — hubmap.js. -->
+     совместной работы — hubmap.js; рамки листов альбома — albumframes.js. -->
 <template><div class="mapbox">
   <!-- карта — одна остановка Tab: стрелки двигают, «+» и «−» меняют масштаб (клавиши OpenLayers); объекты слоя доступны
        списком в «Таблице атрибутов» (#30) -->
@@ -45,9 +45,10 @@ import { attachGraphLayers } from "../graphmap.js";
 import { basemap, gjFormat, layerSync, readOne } from "../maplayers.js";
 import { attachCad, cadApi } from "../cad.js";
 import { attachHub, hubClick } from "../hubmap.js";
+import { attachFrames } from "../albumframes.js";
 
 const el = ref(null);
-let map, ro, offCad = null, offHub = null;
+let map, ro, offCad = null, offHub = null, offFrames = null;
 const mref = shallowRef(null);           // карта для поиска над ней (MapSearch.vue)
 const fmt = gjFormat;
 
@@ -170,6 +171,7 @@ onMounted(() => {
   LS = layerSync(map); vec = LS.vec; mref.value = map;
   offCad = attachCad(map, { vec, sync: () => LS.sync(), terrSrc });     // команды черчения: щелчки, ручки, командная строка
   offHub = attachHub(map);                         // совместная работа: метки комментариев, указатели других участников
+  offFrames = attachFrames(map);                   // рамки листов альбома, пока вкладка «Листы и альбом» на виду
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
   map.on("singleclick", onClick);
@@ -209,7 +211,7 @@ onMounted(() => {
   });
 });
 
-onBeforeUnmount(() => { offCad?.(); offHub?.(); ro?.disconnect(); map?.setTarget(undefined); });
+onBeforeUnmount(() => { offCad?.(); offHub?.(); offFrames?.(); ro?.disconnect(); map?.setTarget(undefined); });
 </script>
 
 <style>

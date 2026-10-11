@@ -15,7 +15,8 @@ import { project, theme } from "./store.js";
 const { split } = collabMod.default || collabMod;
 
 /* open — движок загружен; detail — движок в отдельном окне «Подробно»; rev — номер приёма правок движка (окно перечитывает альбом) */
-export const album = reactive({ open: false, ready: false, sheets: 0, detail: false, rev: 0, say: "", want: null });   // want — выгрузка из меню, ждёт вкладку
+export const album = reactive({ lay: null, layTick: 0, open: false, ready: false, sheets: 0, detail: false, rev: 0, say: "", want: null,   // want — выгрузка из меню, ждёт вкладку
+  tab: false, cur: 0, fit: 0, frames: [] });   // вкладка на виду, выбранный лист, «приблизить к рамке», рамки листов (albumframes.js)
 /* App.vue подставляет: «Сохранить» (Ctrl+S в окне альбома), открыть другой проект и показать вкладку «Листы и альбом» */
 export const albumHooks = { save: async () => {}, open: () => {}, panel: () => {} };
 
@@ -136,6 +137,14 @@ export function call(fn) {
 }
 /* правка альбома во вкладке: движок получает проект сразу, если он уже загружен */
 export function sync() { if (live() && album.ready) push(false); }
+/* правка листа i (рамка на карте: center, scale) — в раздел album проекта, как touch() движка */
+export function editSheet(i, patch) {
+  // сначала принять отложенную правку окна (changed → pull через 300 мс): иначе она заменит раздел album целиком и унесёт эту правку
+  if (timer) { clearTimeout(timer); timer = null; pull(); }
+  const a = project.raw?.album, s = a?.sheets?.[i]; if (!s) return;
+  Object.assign(s, patch); a.meta ||= {}; a.meta.editedAt = new Date().toISOString();
+  markDirty(); album.rev++; sync();
+}
 export const engineState = () => live() && album.ready ? win.albumApi?.state() : null;
 export const startEngine = () => engine();
 

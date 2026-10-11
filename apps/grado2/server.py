@@ -7,6 +7,8 @@
   POST /api/export/sat {center, rect, scale | bbox, base} → спутник Яндекса по рамке листа в МСК для AutoCAD (zip: JPG, JGW, DXF)
   POST /api/print/pdf {meta, sheets:[…]} → альбом PDF (листы А3/А1, рамка и штамп ГОСТ), /api/print/pptx → тот же альбом
   редактируемой презентацией PowerPoint, /api/print/svg → лист для просмотра
+  GET  /api/fonts → шрифты для подписей (готовые, компьютера, свои), GET /api/fonts/file?f=… → TTF для просмотра,
+  POST /api/fonts {name, b64} → свой файл шрифта (fonts.py)
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
@@ -640,7 +642,7 @@ def body_limit(path):
         return MAX_PROJECT_BODY
     if p.startswith("/api/hub/"):
         return MAX_HUB_BODY
-    if p.startswith(("/api/import/", "/api/print/", "/api/export/")):
+    if p.startswith(("/api/import/", "/api/print/", "/api/export/")) or p == "/api/fonts":
         return MAX_BIG_BODY
     return MAX_BODY
 
@@ -2117,6 +2119,37 @@ def get_projects(c):
     return _json(200, list_projects())
 
 
+def get_fonts(c):
+    """GET /api/fonts — шрифты для подписей: готовые и с кириллицей на этом компьютере и свои (fonts.py);
+    ?refresh=1 — перечитать папки шрифтов (новый шрифт поставлен, пока программа открыта)."""
+    import fonts
+    if c.q("refresh"):
+        fonts.families(refresh=True)
+    return _json(200, fonts.listing())
+
+
+def get_font_file(c):
+    """GET /api/fonts/file?f=f:<id>[-bold] — файл TTF начертания для просмотра листа в браузере (@font-face в SVG)."""
+    import fonts
+    data = fonts.face_file(c.q("f"))
+    if data is None:
+        return _json(404, {"error": "no such font"})
+    return _file(data, "font/ttf", None, (("Cache-Control", "private, max-age=86400"),))
+
+
+def post_font(c):
+    """POST /api/fonts {"name": "Файл.ttf", "b64": …} — свой файл шрифта (TTF, OTF, TTC) → {"ids": [семейства]}."""
+    import base64
+    import fonts
+    req = c.obj()
+    try:
+        data = base64.b64decode(str(req.get("b64") or ""), validate=True)
+    except ValueError:
+        raise ValueError("b64: not base64") from None
+    ids = fonts.add_file(str(req.get("name") or "font.ttf"), data)
+    return _json(200, {"ids": ids, **fonts.listing()})
+
+
 GET_ROUTES = {
     "/api/search/cadastral": get_search_cadastral,
     "/api/search/address": get_search,
@@ -2134,6 +2167,8 @@ GET_ROUTES = {
     "/api/fgistp/layers": get_fgistp,
     "/api/projects": get_projects,
     "/api/project": get_project,
+    "/api/fonts": get_fonts,
+    "/api/fonts/file": get_font_file,
 }
 
 
@@ -2403,6 +2438,7 @@ POST_ROUTES = {
     "/api/tep": post_tep,
     "/api/place": post_place,
     "/api/rail_route": post_rail_route,
+    "/api/fonts": post_font,
 }
 
 

@@ -208,6 +208,7 @@ const PANELS = [
   { id: "comments", title: "Комментарии" },
   { id: "sheet", title: "Макет листа" },
   { id: "album", title: "Листы и альбом" },
+  { id: "albumlay", title: "Макет надписей" },
 ];
 const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, false])));
 
@@ -324,7 +325,7 @@ function addOne(id) {
   if (home) { api.addPanel({ id, component: id, title: p.title, ...home }); return; }
   // макет листа — большое окно: вкладкой рядом с картой, как макет в QGIS открывается отдельным окном во всю ширину
   // и сразу во всё окно (остальные окна прячутся, вернуть — двойной щелчок по вкладке или кнопка группы)
-  if (id === "sheet") {
+  if (id === "sheet" || id === "albumlay") {
     const panel = api.addPanel({ id, component: id, title: p.title, position: api.getPanel("map") ? { referencePanel: "map", direction: "within" } : undefined });
     panel.api.maximize();
     return;

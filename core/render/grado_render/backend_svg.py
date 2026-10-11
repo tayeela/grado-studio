@@ -17,6 +17,9 @@ _FONT_FAMILIES = {
     "serif-bold": "'PT Serif', Georgia, serif",
     "mono": "'Courier New', monospace",
 }
+# свой шрифт «f:<id>[-bold]» (любой шрифт компьютера или свой файл, ttf.custom_face): в SVG — @font-face с файлом
+# от программы (apps/grado2: GET /api/fonts/file), гарнитура «gf-<id>», жирное — тот же id с font-weight bold
+FONT_URL = "/api/fonts/file?f={family}"
 
 
 def _num(v):
@@ -44,6 +47,7 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
     body = []
     defs = []
     open_groups = 0
+    faces = set()
     for o in ops:
         if o["op"] == "clip":
             _CLIP_COUNTER[0] += 1
@@ -115,8 +119,12 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
             under = ' text-decoration="underline"' if o.get("underline") else ""
             # ключ надписи — для выбора её в редакторе макета листа
             key = f' data-key="{_esc(o["key"])}"' if o.get("key") else ""
-            op_font = (font_family if family in (None, "ui") else
-                       _FONT_FAMILIES.get(family, font_family))
+            if str(family or "").startswith("f:"):
+                faces.add(family)
+                op_font = f"'gf-{_esc(family[2:].removesuffix('-bold'))}', Arial, sans-serif"
+            else:
+                op_font = (font_family if family in (None, "ui") else
+                           _FONT_FAMILIES.get(family, font_family))
             body.append(
                 f'<text x="{o["x"]:.3f}" y="{o["y"]:.3f}"{tf} '
                 f'font-size="{_num(o["size"])}" font-family="{op_font}"'
@@ -124,6 +132,10 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
                 f'text-anchor="{anchor}" fill="{_css(o.get("color", (0, 0, 0)))}">'
                 f'{_esc(o["text"])}</text>')
     body.extend("</g>" * open_groups)
+    if faces:
+        css = "".join(f"@font-face{{font-family:'gf-{_esc(f[2:].removesuffix('-bold'))}';font-weight:{'bold' if f.endswith('-bold') else 'normal'};"
+                      f"src:url('{_esc(FONT_URL.format(family=f))}')}}" for f in sorted(faces))
+        defs.insert(0, f"<style>{css}</style>")
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}mm" height="{h}mm" '
             f'viewBox="0 0 {w} {h}">\n<defs>{"".join(defs)}</defs>\n'
             + "\n".join(body) + "\n</svg>\n")
