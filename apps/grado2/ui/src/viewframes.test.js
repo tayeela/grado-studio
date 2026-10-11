@@ -2,7 +2,7 @@
    высота блока по рамке, подпись, рамка под заданный масштаб. Запуск: cd apps/grado2/ui && npm test. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ratioOf, withRatio, fromCorners, cornersM, blockScale, blockFromView, blockHeightFor, frameLabel, frameForScale } from "./viewframes.js";
+import { ratioOf, withRatio, fromCorners, cornersM, blockScale, blockFromView, blockHeightFor, frameLabel, frameForScale, dropRect } from "./viewframes.js";
 
 const near = (a, b, e = 1e-6) => assert.ok(Math.abs(a - b) < e, `${a} ≈ ${b}`);
 
@@ -52,4 +52,14 @@ test("рамка под масштаб: блок 300 × 200 мм при 1:2 000 
   assert.equal(blockScale(b, frameForScale(b, f, 1730), { round: false }), 1730);
   near(ratioOf(frameForScale({ w: 180.5, h: 120 }, f, 1000).aspect), 180.5 / 120);
   assert.equal(frameForScale({ w: 0, h: 10 }, f, 1000), f);
+});
+
+test("вид брошен на лист: блок по пропорциям рамки, середина в точке, не выходит за рамку листа", () => {
+  const f = { x: 20, y: 5, w: 390, h: 287 };
+  assert.deepEqual(dropRect({ x: 200, y: 150 }, f, { w: 800, h: 400 }), { x: 120, y: 110, w: 160, h: 80 });
+  assert.deepEqual(dropRect({ x: 25, y: 8 }, f, { w: 800, h: 400 }), { x: 20, y: 5, w: 160, h: 80 });
+  assert.deepEqual(dropRect({ x: 400, y: 290 }, f, { w: 800, h: 400 }), { x: 250, y: 212, w: 160, h: 80 });
+  const tall = dropRect({ x: 200, y: 150 }, f, { w: 100, h: 400 });
+  assert.equal(tall.h, 287); near(tall.w, 71.75, .01);
+  assert.deepEqual(dropRect({ x: 200, y: 150 }, f, null), { x: 120, y: 95, w: 160, h: 110 });
 });
