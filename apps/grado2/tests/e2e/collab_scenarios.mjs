@@ -107,8 +107,16 @@ try {
   await B.fill("#hubLg", "bob"); await B.fill("#hubPw", "bob-password-1"); await B.clickEl("#hubGo");
   await B.until(`return $("hubLogin").hidden && !$("wHubProjects").hidden`, "вход B и окно проектов");
   await B.until(`return [...document.querySelectorAll("#hubProjList tbody tr")].some(r=>/Проверка/.test(r.textContent))`, "в списке B виден проект «Проверка»");
-  await B.clickEl('#hubProjList [data-act="open"]');
-  await B.until(`return Collab.pid && Collab.role==="editor" && $("wHubProjects").hidden`, "B открыл проект");
+  // щелчок по координатам: окно проектов только что открылось и список ещё может перестроиться (строка сдвинется,
+  // щелчок уйдёт мимо — CI 11.10.2026, #40). Не открылся за 4 с — щёлкнуть ещё раз, до трёх раз.
+  for (let i = 0; ; i++) {
+    await B.clickEl('#hubProjList [data-act="open"]');
+    try { await B.until(`return Collab.pid && Collab.role==="editor" && $("wHubProjects").hidden`, "B открыл проект", 4000); break; }
+    catch (e) {
+      if (await B.ev(`return !!Collab.pid`)) { await B.until(`return Collab.role==="editor" && $("wHubProjects").hidden`, "B открыл проект"); break; }
+      if (i >= 2) throw e;
+    }
+  }
   // шапка (название, роль) обновляется чуть позже Collab.pid — ждём её до 5 с, при сбое показываем, что в ней было
   const bOpen = await B.ev(`const ok=()=>$("hubProjName").textContent==="Проверка" && $("hubRole").textContent==="правка" && !document.body.classList.contains("hub-viewer");
     for (let i=0; i<50 && !ok(); i++) await new Promise(r=>setTimeout(r,100)); return ok() || [$("hubProjName").textContent, $("hubRole").textContent, document.body.classList.contains("hub-viewer")].join(" | ")`);

@@ -16,6 +16,7 @@
 | `test_dxf.py` | DxfRoundTrip, LinetypeProps, AcadNames | 8 |
 | `test_e2e.py` | BrowserScenarios | 3 |
 | `test_export.py` | Http, GeoJsonExport, GeoJsonExportHardening, XlsxExport, PlaceByArea | 20 |
+| `test_export_shp.py` | ShpExport, FieldNames | 4 |
 | `test_file_io.py` | FileImport, PortalFields, Fgistp, SizeCeiling | 21 |
 | `test_fonts.py` | Fonts | 8 |
 | `test_gpzones_js.py` | GpZonesJs | 1 |
@@ -33,6 +34,7 @@
 | `test_railstations_js.py` | RailStationsJs | 1 |
 | `test_roadsrc_js.py` | RoadSrcJs | 2 |
 | `test_roles_js.py` | RolesJs, LayerRolesApi | 5 |
+| `test_rowsgeom_js.py` | RowsGeomJs | 1 |
 | `test_sat.py` | FakeTiles, SatExport | 8 |
 | `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 155 |
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |

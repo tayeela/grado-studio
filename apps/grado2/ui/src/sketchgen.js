@@ -7,7 +7,8 @@ import { project } from "./store.js";
 import { CONS } from "./constraints.js";      // ставит globalThis.INSOL: blocks.js берёт инсоляцию оттуда
 import * as blocksModule from "../../web/blocks.js";
 import { LOWRISE } from "./graphfile.js";
-import { bboxOf, buf, diff, fmt, inter, m2, plural, polyLL, polys, rect, ringsXY, rot, splitParts, unionAll } from "./geom.js";
+import { chords, gapXY } from "./rowsgeom.js";
+import { bboxOf, buf, diff, fmt, inter, m2, plural, polyLL, polys, rect, ringsXY, rot, splitParts, toLL, unionAll } from "./geom.js";
 
 const BLOCKS = globalThis.BLOCKS || blocksModule.default || blocksModule;
 const openRing = r => r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r;
@@ -44,7 +45,7 @@ export function generate(site, p) {
   out = out.map(b => { const top = p.cap ? p.cap(b.f) : null, max = Math.min(b.maxF ?? Infinity, top == null ? b.floors : Math.min(b.floors, Math.floor(top / fh))); return max >= (b.minF ?? 2) ? { ...b, max, floors: max, capped: max < b.floors } : null; }).filter(Boolean);   // capped — потолок ниже задуманного
   // участок без дома (дом не поместился под потолком) остаётся свободным, а не пропадает
   out.plots = plots || []; out.streets = streets || []; out.note = note;
-  if (!p.goal) return out;
+  if (!p.goal) return parking(out, site, p);
   /* этажность под цель плотности («выращивание» внутри потолка): всем корпусам одна этажность, упёршиеся в свой
      потолок остаются на нём, недобор раздаётся остальным — пока не набрана нужная СПП или всем некуда расти */
   const need = p.goal.need;
@@ -84,6 +85,42 @@ export function generate(site, p) {
   }
   out.dropped = dropped.length;
   out.goal = spp < need * .97 ? `цель не достигнута: не хватает ${fmt((need - spp) / 1000, 1)} тыс. м²` : `цель ${p.goal.target} тыс. м²/га${dropped.length ? ` · ${plural(dropped.length, ["корпус снят", "корпуса сняты", "корпусов снято"])}: свет соседям` : ""}`;
+  return parking(out, site, p);
+}
+/* Э9: наземные стоянки многоквартирных корпусов — прямоугольные площадки 20 × 62,5 м (два ряда по 25 мест и проезд, до 50 мест:
+   СанПиН 2.2.1/2.1.1.1200, табл. 7.1.1 — открытая стоянка 11–50 мест не ближе 15 м к дому) сеткой вдоль длинной оси участка
+   с проходом 6 м, на свободной земле пятна не ближе 15 м к корпусам. Площадка «влезает», если её углы, середины сторон и центр
+   на свободной земле — точечная проверка вместо пересечений, иначе подбор вариантов замирает. Последняя площадка короче — под
+   остаток мест. Число мест — как в ТЭП (moscow_calc2.json): квартиры = СПП × 0,65 / (33 × 2,1), постоянные 0,8 на квартиру
+   (945-ПП прил. 5), гостевые 10 %, 25 м² на место с проездом. Доли подземных и многоэтажных гаражей ТЭП здесь не видны — всё
+   считается наземным; что не поместилось, уходит в заметку. */
+export const PARK = { kFlats: .65, sqm: 33, perFlat: 2.1, d: .8, guest: .1, m2: 25, gap: 15, min: 10, max: 50, depth: 20, aisle: 6 };
+export function parkNeed(spp) {
+  const perm = Math.ceil(spp * PARK.kFlats / (PARK.sqm * PARK.perFlat) * PARK.d - 1e-9);
+  return perm + Math.ceil(perm * PARK.guest - 1e-9);
+}
+function parking(out, site, p) {
+  if (LOWRISE.has(p.typ) || !out.length || !site) return out;
+  const need = parkNeed(out.reduce((s, b) => s + b.m2 * b.floors, 0)); if (!need) return out;
+  const busy = unionAll([...out.map(b => buf(b.f, PARK.gap)), ...out.streets.map(g => g.f), ...out.plots.filter(g => g.kind !== "двор").map(g => g.f)].filter(Boolean));
+  const per = PARK.max * PARK.m2 / PARK.depth;                    // длина площадки на 50 мест, м
+  let left = need;
+  for (const part of splitParts(site)) {
+    if (left <= 0) break;
+    const free = busy ? diff(part, busy) : part; if (!free || m2(free) < PARK.min * PARK.m2) continue;
+    const pcs = polys(free).map(c => turf.polygon(c)), inFree = q => { const ll = toLL(q); return pcs.some(f => turf.booleanPointInPolygon(ll, f)); };
+    const { a, b } = partFrame(ringsXY(part)[0], 0), W = rp => rp.map(q => rot(q, a, [0, 0]));
+    const ok = r => { const [x0, y0] = r[0], [x1, y1] = r[2], mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      return W(r).every(inFree) && W([[mx, y0], [x1, my], [mx, y1], [x0, my], [mx, my]]).every(inFree); };
+    for (let y = b[1]; y + PARK.depth <= b[3] && left > 0; y += PARK.depth + PARK.aisle) {
+      for (let x = b[0]; x + PARK.min * PARK.m2 / PARK.depth <= b[2] && left > 0;) {
+        const k = Math.min(PARK.max, left), r = rect(x, y, x + k * PARK.m2 / PARK.depth, y + PARK.depth);
+        if (ok(r)) { const f = polyLL(W(r)); out.streets.push({ f, kind: "стоянка", m2: m2(f), "Мест": k }); left -= k; x += per + PARK.aisle; } else x += 5;
+      }
+    }
+  }
+  out.parking = { need, placed: need - left };
+  if (left > 0) out.note = (out.note ? out.note + " · " : "") + `наземных машино-мест не поместилось ${left} из ${need} — подземный или многоэтажный гараж`;
   return out;
 }
 function place(site, p) {
@@ -108,7 +145,9 @@ function place(site, p) {
         if (L) { push(polyLL(W(rect(u, v, u + L, v + p.width))), p.floors, "секция"); u += L + brk; k++; } else u += 5;   // секция 60 м, у края — 40 м
       }
     };
-    if (p.typ === "Секции" || p.typ === "Точка + секция") {
+    if ((p.typ === "Секции" || p.typ === "Точка + секция") && p.rows === "по границе") {
+      edgeRows(part, gapLong, brk, tower, tfl, p.typ === "Точка + секция");
+    } else if (p.typ === "Секции" || p.typ === "Точка + секция") {
       for (const v of span(b[1], b[3], p.width, gapLong)) row(v, p.typ === "Точка + секция");
     } else if (p.typ === "Смешанная") {                 // секции по краям участка (вдоль улиц), внутри — башни
       const rows = span(b[1], b[3], p.width, gapLong);
@@ -135,6 +174,39 @@ function place(site, p) {
     splitParts(r).forEach(q => { if (m2(q) >= 150) push(q, floors, kind); });
   }
   function pieces(f) { return f ? splitParts(f) : []; }
+
+  /* Э10: ряды по границе участка. Вместо прямых полос по описанному прямоугольнику — кольца, отступающие внутрь от
+     границы пятна на «ширину корпуса + разрыв» (первое — по самой границе). Каждое кольцо спрямляется в хорды (отклонение
+     от контура не больше 2 м), вдоль хорды внутрь ставятся секции 60 или 40 м с разрывом 12 м в ряду; на изломе
+     соседние секции не ближе 12 м друг к другу. Изогнутая граница даёт ломаный ряд, повторяющий её. */
+  function edgeRows(part, gapLong, brk, tower, tfl, withTowers) {
+    const placed = [], step = p.width + gapLong;
+    const far = q => placed.every(r => gapXY(q, r) >= brk - .01);
+    for (let k = 0; k < 50; k++) {
+      const core = k ? buf(part, -k * step) : part; if (!core || m2(core) < 300) break;
+      let n = 0;
+      for (const piece of splitParts(core)) for (const ring of ringsXY(piece).slice(0, 1)) {
+        for (const [A, B] of chords(openRing(ring), 2)) {
+          const L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < 40) continue;
+          const d = [(B[0] - A[0]) / L, (B[1] - A[1]) / L], mid = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+          let nv = [-d[1], d[0]]; if (!turf.booleanPointInPolygon(toLL([mid[0] + nv[0], mid[1] + nv[1]]), piece)) nv = [d[1], -d[0]];
+          const at = (u, w) => [A[0] + d[0] * u + nv[0] * w, A[1] + d[1] * u + nv[1] * w];
+          const box = (u0, u1, w0, w1) => [at(u0, w0), at(u1, w0), at(u1, w1), at(u0, w1)];
+          let u = 0, j = 0;
+          while (u + 40 <= L + .1) {
+            if (withTowers && j % 2 === 1 && u + tower <= L + .1) {
+              const q = box(u, u + tower, -(tower - p.width) / 2, p.width + (tower - p.width) / 2), f = far(q) && fits(part, q);
+              if (f) { push(f, tfl, "башня", { "Ряд": k + 1 }); placed.push(q); u += tower + brk; j++; n++; continue; }
+            }
+            const len = [60, 40].find(len => u + len <= L + .1 && far(box(u, u + len, 0, p.width)) && fits(part, box(u, u + len, 0, p.width)));
+            if (len) { const q = box(u, u + len, 0, p.width); push(polyLL(q), p.floors, "секция", { "Ряд": k + 1 }); placed.push(q); u += len + brk; j++; n++; } else u += 5;
+          }
+        }
+      }
+      if (!n && k) break;
+    }
+  }
+
   // часть прямоугольника внутри пятна (одним куском), если её площадь не меньше доли share от прямоугольника
   function clipped(part, ring, share) { const f = polyLL(ring), full = m2(f); if (m2(inter(part, f)) >= full * .997) return f;
     const q = pieces(inter(part, f)).sort((x, y) => m2(y) - m2(x))[0]; return q && m2(q) >= full * share ? q : null; }
