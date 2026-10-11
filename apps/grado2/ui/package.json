@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "test": "node --test src/sheet/model.test.js",
+    "test": "node --test src/sheet/model.test.js src/sheet/commands.test.js",
     "postinstall": "patch-package"
   },
   "dependencies": {
