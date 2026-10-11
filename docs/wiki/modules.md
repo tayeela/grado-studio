@@ -21,11 +21,13 @@ DXF export/import for ГРАДО 2 on ezdxf (MIT), with the Moscow red-line line
 
 Функции: `acad_name`, `_pattern_string`, `_add_linetype`, `_rings`, `export_dxf`, `fit_view`, `oda_converter`, `oda_convert`, `_rgb`, `_code_of`, `linecode_of`, `written_system`, `import_dxf`
 
-### `apps/grado2/export_io.py` — 274 стр.
+### `apps/grado2/export_io.py` — 416 стр.
 
-Экспорт ГРАДО 2 в обменные форматы: GeoJSON для QGIS (МСК) и таблица ТЭП с перечнем листов в XLSX.
+Экспорт ГРАДО 2 в обменные форматы: GeoJSON для QGIS (МСК), SHP в раскладке ГИС ОГД (МСК) и таблица ТЭП с перечнем листов в XLSX.
 
-Функции: `_num`, `_text`, `_walk_coords`, `_to_msk`, `_parts`, `_file_name`, `export_geojson`, `_col`, `_Sheet`, `_cell`, `export_xlsx`
+Разделы по порядку: GeoJSON в МСК · SHP в раскладке ГИС ОГД · XLSX
+
+Функции: `_num`, `_text`, `_walk_coords`, `_to_msk`, `_parts`, `_file_name`, `_msk_layers`, `_notes`, `export_geojson`, `_field_name`, `_ring_area`, `_shp_rings`, `_field_spec`, `_dbf_value`, `export_shp`, `_col`, `_Sheet`, `_cell`, `export_xlsx`
 
 ### `apps/grado2/file_io.py` — 325 стр.
 
@@ -93,17 +95,17 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2914 стр.
+### `apps/grado2/server.py` — 2920 стр.
 
 ГРАДО 2: локальный сервер.
 
 Разделы по порядку: Пути, папка проектов, настройки запуска · Источники данных: ключ слоя → (вид, параметр, название) · Пределы области выгрузки, разбиение на части, подписи полей · ЕГКО: пустые строковые поля портал отдаёт одним пробелом " " — _v считает их пустыми · Яндекс: все атрибуты слоя как есть, ключевые — по-русски; площадь и длина на местности даё · поиск участка по кадастровому номеру (НСПД) · Пределы тела запроса, ход выгрузки, понятные ошибки порталов · Подложки: тайлы Esri · OSM (Overpass): выгрузка и кэш по областям · ФГИС ТП: документы территориального планирования (Минэкономразвития) · ТЭП-нормы, район по территории, пешеходный маршрут до станции · Проекты на диске: запись, версии, размер папки · HTTP: заголовки безопасности, вход по ключу, совместный режим · HTTP: Starlette (BSD) под uvicorn (BSD); тела запросов проверяет pydantic (MIT) · GET · POST · совместный режим (hub.py): маршруты /api/hub · приём запроса · Запуск: версия кода, повторный запуск, сервер
 
-Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project`, `save_project`, `album_info`, `list_projects`, `hub_enabled`, `open_hub`, `same_token`, `_bbox_check`, `_Body`, `FetchBody` и ещё 60
+Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project`, `save_project`, `album_info`, `list_projects`, `hub_enabled`, `open_hub`, `same_token`, `_bbox_check`, `_Body`, `FetchBody` и ещё 61
 
 ## Страница (apps/grado2/web/*.js)
 
-### `apps/grado2/web/albumapi.js` — 101 стр.
+### `apps/grado2/web/albumapi.js` — 170 стр.
 
 ГРАДО 2 · движок альбома для окна «Листы и альбом» нового интерфейса (ui/src/albumhost.js, panels/AlbumPanel.vue). Новый интерфейс держит эту страницу скрытой (/old?embed=album в невидимом iframe) и зовёт её код сборки и печати: альбом собирается тем же buildSection / albumSpec / albumFile, что и прежде, поэтому PDF и PPTX выходят лист в лист. Здесь только мост: состояние (ход сборки, «не готов», строка альбома), вопросы «заменить или добавить» и «не всё готово» отдаются окну нового интерфейса, а не строкам этой страницы, которых владелец не видит. Проверка — tests/test_next_ui.py.
 
@@ -282,7 +284,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · роли слоёв в расчётах. Ограничения, анализ и эскиз ищут данные по РОЛИ слоя, а не по фиксированному ключу: в проектах владельца каталожные слои лежат как `ogd.<код>` и `egko.*`, а не `gisogd.*`/`nspd.*`/`osm.*`. Роль слоя определяется так (по убыванию силы): а) вручную: поле `role` в описании слоя (роль из списка или "none" — слой не участвует в расчётах); нет поля = «авто»; б) по ключу источника (таблица SOURCE_ROLE: `nspd.zouit` → zouit, `egko.buildings` → buildings…); в) по коду каталога для `ogd.<код>` — таблица с сервера (GET /api/layer_roles, строится из SOURCES), грузится лени…
 
 
-### `apps/grado2/web/sheetlayers.js` — 551 стр.
+### `apps/grado2/web/sheetlayers.js` — 578 стр.
 
 ГРАДО 2 · окно «Слои и листы» (T86b, 06.10.2026; слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание, всё красиво и интуитивно понятно», макет — docs/ux/mockups/2026-10-06-sheet-layers.png, вариант А). Три колонки: листы альбома → роли выбранного листа (глаз, источник, покрытие рамки, состояние) → слои проекта по ролям с номерами листов. Перетаскивание (T86c, 06.10.2026): слой банка → лист или строка роли (включить), роль → другой лист (перенос, Alt — копия), источники дорог — за ручку ⋮⋮ и Alt+↑/↓; цель подсвечивается и пишет, что произойдёт; Esc отме…
 
@@ -675,7 +677,7 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 ### `tools/acceptance_run.mjs` — 177 стр.
 
-ГРАДО 2 · приёмочный прогон на настоящей территории (Хорошёво, ТиНАО) с настоящими порталами и замером времени каждого шага: граница из проекта или GeoJSON → выгрузка наборов «Существующее положение», «Ограничения», «Градостроительная документация» → «Рассчитать ограничения» → эскиз под цель плотности → варианты → альбом ППТ КРТ в PDF → DXF, GeoJSON, Excel. Всё — в новом интерфейсе (/next/), мышью, как у владельца; отдельный сервер на порту 8652 и временная папка проектов, проект владельца только читается (из него берётся граница). По умолчанию кэш пустой (временная домашняя папка, сертификаты…
+ГРАДО 2 · приёмочный прогон на настоящей территории (Хорошёво, участок в Новой Москве) с настоящими порталами и замером времени каждого шага: граница из проекта или GeoJSON → выгрузка наборов «Существующее положение», «Ограничения», «Градостроительная документация» → «Рассчитать ограничения» → эскиз под цель плотности → варианты → альбом ППТ КРТ в PDF → DXF, GeoJSON, Excel. Всё — в новом интерфейсе (/next/), мышью, как у владельца; отдельный сервер на порту 8652 и временная папка проектов, проект владельца только читается (из него берётся граница). По умолчанию кэш пустой (временная домашняя п…
 
 Функции: `arg`, `flag`, `home`, `boundary`, `step`, `tab`, `showWin`, `winText`, `winButton`, `wait`, `save`
 

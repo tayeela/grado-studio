@@ -48,6 +48,7 @@
         <h4 class="menu-h">Данные</h4>
         <wa-dropdown-item value="dxf">Чертёж DXF — слои проекта, МСК<span slot="details">МГГТ</span></wa-dropdown-item>
         <wa-dropdown-item value="geojson">GeoJSON для QGIS<span slot="details">МСК</span></wa-dropdown-item>
+        <wa-dropdown-item value="shp">SHP как в ГИС ОГД<span slot="details">МСК</span></wa-dropdown-item>
         <wa-dropdown-item value="xlsx">Excel: показатели ТЭП и листы<span slot="details">XLSX</span></wa-dropdown-item>
         <wa-divider></wa-divider>
         <h4 class="menu-h">Альбом — во вкладке «Листы и альбом»</h4>
@@ -175,9 +176,9 @@ import HubLogin from "./panels/HubLogin.vue";
 import HubWindows from "./panels/HubWindows.vue";
 import { flush as hubFlush, hub, openWin } from "./hub.js";
 import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
-import { exportDxf, exportGeojson, exportXlsx } from "./exports.js";
+import { exportDxf, exportGeojson, exportShp, exportXlsx } from "./exports.js";
 import { album, albumFile, albumHooks, ogdDxf } from "./albumhost.js";
-import { terrTool } from "./data.js";
+import { ogdResume, terrTool } from "./data.js";
 import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
 import { BASEMAPS, basemapId, current, cursor, mapOnly, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
@@ -350,7 +351,7 @@ function showHelp() {
 
 function onExport(e) {
   const v = e.detail.item.value;
-  if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "xlsx") exportXlsx();
+  if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "shp") exportShp(); else if (v === "xlsx") exportXlsx();
   else if (v === "pdf" || v === "pptx") albumFile(v); else if (v === "ogd") ogdDxf();
 }
 
@@ -444,6 +445,8 @@ function choose(name) { openDlg.value = false; guard(`Открыть «${name}»
 albumHooks.save = () => shared.value ? hubFlush() : save();     // Ctrl+S в окне «Листы и альбом»
 albumHooks.open = choose;
 albumHooks.panel = () => winApi.open("album");       // меню «Выгрузка» → PDF или PPTX альбома
+albumHooks.data = () => winApi.open("data");         // меню «Выгрузка» → «ГИС ОГД в DXF»: выбор слоёв портала в окне «Данные»
+ogdResume();                                          // выгрузка ГИС ОГД в DXF шла до перезагрузки — показать её ход и забрать файл
 function onFile(e) { const f = e.target.files[0]; e.target.value = ""; if (f) guard(`Открыть «${f.name}»?`, () => openFile(f)); }
 const when = t => t ? new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 

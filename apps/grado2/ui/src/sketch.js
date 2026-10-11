@@ -9,7 +9,7 @@ import { notice } from "./project.js";
 import { ensureLayer } from "./data.js";
 import { fullStyle } from "./symbology.js";
 import { fmt, safe } from "./geom.js";
-import { FLOOR_MODES, LOWRISE, TYPES, TYPOLOGIES } from "./graphfile.js";
+import { FLOOR_MODES, LOWRISE, ROWS, TYPES, TYPOLOGIES } from "./graphfile.js";
 import { RESULT, edited, graph, nodeById } from "./graph.js";
 import { pzzTarget, reserveRadii, reserveSocial, tepParams } from "./tep.js";
 
@@ -37,7 +37,8 @@ export function publishedControls() {
   if (p && typ !== "ИЖС") C(p, "ширина корпуса, м", { label: typ === "Блокированные" ? "Глубина дома, м" : "Ширина корпуса, м", min: 12, max: 24, step: 1, hint: typ === "Блокированные" ? "берётся от 10 до 14 м; блок 7 м по фасаду, до 6 блоков в ряду, палисадник 5 м и сад 12 м" : "" });
   if (p && !low && typ !== "Урбан-блоки") C(p, "разрыв / высота", { min: .5, max: 2, step: .05, hint: "разрыв между длинными сторонами = коэф. × высота, но не меньше 15 м (2–3 эт.) и 20 м (4 эт. и выше), СП 42.13330 п. 7.1" });
   if (p && typ === "Урбан-блоки") C(p, "понижать этажность ради инсоляции", { label: "Понижать этажность ради инсоляции соседей", type: "toggle", hint: "Программа проверяет, получают ли окна солнце, и понижает этажность секций, которые затеняют соседей. Это улучшает инсоляцию, но уменьшает площадь застройки и делает расчёт дольше. Выключено — этажность не меняется; предупреждения «Проверки норм» по инсоляции остаются." });
-  if (p) C(p, "поворот, °", { label: "Поворот относительно длинной стороны участка, °", min: -90, max: 90, step: 1, hint: "0 — ряды (кварталы) вдоль длинной стороны каждого участка, 90 — поперёк" });
+  if (p && (typ === "Секции" || typ === "Точка + секция")) C(p, "ряды", { label: "Ряды", type: "seg", opts: ROWS, hint: "прямые — полосами вдоль длинной стороны участка; по границе — кольцами от границы внутрь, ряд ломается вслед за ней (поворот не действует)" });
+  if (p && !(wv(p, "ряды") === "по границе" && (typ === "Секции" || typ === "Точка + секция"))) C(p, "поворот, °", { label: "Поворот относительно длинной стороны участка, °", min: -90, max: 90, step: 1, hint: "0 — ряды (кварталы) вдоль длинной стороны каждого участка, 90 — поперёк" });
   g.nodes.filter(n => n.type === "Геометрия/Буфер").forEach(n => C(n, "расстояние, м", { label: (n.title || "Буфер") + ", м", min: 0, max: 40, step: 1 }));
   if (t) { C(t, "доля жилья, %", { min: 0, max: 100, step: 5 }); C(t, "цель, тыс. м²/га", { label: "Целевая плотность, тыс. м²/га", min: 5, max: 45, step: 1 }); }
   return out;
@@ -92,8 +93,8 @@ export function bakeSketch(skIn, typIn, titleIn) {
   const resP = own ? [] : reserveState().plots, plots = [...(sk.plots || []), ...resP], keys = [];
   // новые слои встают наверх: сначала улицы, затем участки, корпуса — сверху
   if (sk.streets?.length) keys.unshift(addLayer(`Эскиз: улицы и проезды (${t})`, turf.featureCollection(sk.streets.map((g, i) => turf.feature(g.f.geometry, { "№": i + 1, "Вид": g.kind, "Площадь, м²": Math.round(g.m2),
-    ...(g["Мест"] ? { "Мест": g["Мест"], "Норма": "945-ПП п. 6.2.3.2: 10 % от 1,6 места на дом" } : {}) }))),
-    { mode: "cat", fill: "#e4e1da", stroke: "#b7b2a8", width: .8, opacity: .9, cat: { field: "Вид", colors: { "проезд": "#e4e1da", "улица": "#e4e1da", "гостевая стоянка": "#9fb6d9" }, off: [] } }));
+    ...(g["Мест"] ? { "Мест": g["Мест"], "Норма": g.kind === "стоянка" ? "945-ПП прил. 5: 0,8 места на квартиру и 10 % гостевых" : "945-ПП п. 6.2.3.2: 10 % от 1,6 места на дом" } : {}) }))),
+    { mode: "cat", fill: "#e4e1da", stroke: "#b7b2a8", width: .8, opacity: .9, cat: { field: "Вид", colors: { "проезд": "#e4e1da", "улица": "#e4e1da", "гостевая стоянка": "#9fb6d9", "стоянка": "#c3ccd8" }, off: [] } }));
   let plotKey = null;
   if (plots.length) keys.unshift(plotKey = addLayer(`Эскиз: участки и дворы (${t})`, turf.featureCollection(plots.map((g, i) => turf.feature(g.f.geometry, { "№": i + 1, "Вид": g.kind, "Площадь, м²": Math.round(g.m2),
     ...(g["Участок"] ? { "Участок": g["Участок"], "Места": g["Места"], "Дефицит": g["Дефицит"] } : {}), ...(g["Площадь, сот."] ? { "Площадь, сот.": g["Площадь, сот."] } : {}),
@@ -108,7 +109,7 @@ export function bakeSketch(skIn, typIn, titleIn) {
   const tn = RESULT.tepNode;
   if (tn) { tn.properties ||= {}; tn.properties.baked = key; if (resP.length && plotKey) tn.properties.reserveBaked = plotKey; else delete tn.properties.reserveBaked; }   // «Показатели» — по принятому слою
   currentId.value = key; touchData(); edited();
-  notice.value = `Эскиз сохранён слоем «${title}»: ${sk.length} корпусов${sk.plots?.length ? `, участков, дворов и хозпостроек ${sk.plots.length}` : ""}${sk.streets?.length ? `, улиц, проездов и гостевых стоянок ${sk.streets.length}` : ""}. Слои можно править, стилизовать и выгружать; схема на них больше не влияет`;
+  notice.value = `Эскиз сохранён слоем «${title}»: ${sk.length} корпусов${sk.plots?.length ? `, участков, дворов и хозпостроек ${sk.plots.length}` : ""}${sk.streets?.length ? `, улиц, проездов и стоянок ${sk.streets.length}` : ""}. Слои можно править, стилизовать и выгружать; схема на них больше не влияет`;
   return key;
 }
 

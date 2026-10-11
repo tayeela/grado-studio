@@ -1,8 +1,8 @@
 /* ГРАДО 2 · окно «Листы и альбом»: связь с движком альбома — рабочей страницей /old?embed=album (web/embed.js, albumapi.js).
    Движок без изменений (web/sheets.js, albums.js, frames.js, layout.js, ogdpick.js) собирает альбом тем же кодом, что и
-   прежде, лист в лист. Обычно он работает скрыто — невидимой рамкой iframe внутри нового интерфейса, а экран альбома —
-   вкладка panels/AlbumPanel.vue; кнопка «Подробно» открывает ту же страницу отдельным окном браузера (рамки листов на
-   карте, «Слои и листы», макет надписей), тогда движком служит оно. Движок один: скрытая рамка или окно.
+   прежде, лист в лист. Он работает скрыто — невидимой рамкой iframe внутри нового интерфейса, а весь экран альбома —
+   вкладка panels/AlbumPanel.vue, рамки листов на карте (albumframes.js) и «Макет надписей» (AlbumLayout.vue). Отдельного
+   окна браузера («Подробно») больше нет (шаг 2 фаза 2, #94): всё, что было только в нём, перенесено во вкладку.
    Проект: движок получает его целиком (applyProject рабочей страницы), когда здесь была правка, которую он ещё не видел
    (перед каждым действием и когда окно снова в фокусе); правки движка (листы, загруженные слои, виды, группы) возвращаются
    сюда по разделам совместной работы (web/collab.js split, collab.js adopt) — схема расчёта и вид карты остаются здешние. */
@@ -11,14 +11,15 @@ import * as collabMod from "../../web/collab.js";
 import { C, adopt } from "./collab.js";
 import { editTick, markDirty, notice, projectJSON } from "./project.js";
 import { project, theme } from "./store.js";
+import { ogd, stopOgd } from "./data.js";
 
 const { split } = collabMod.default || collabMod;
 
-/* open — движок загружен; detail — движок в отдельном окне «Подробно»; rev — номер приёма правок движка (окно перечитывает альбом) */
-export const album = reactive({ lay: null, layTick: 0, open: false, ready: false, sheets: 0, detail: false, rev: 0, say: "", want: null,   // want — выгрузка из меню, ждёт вкладку
+/* open — движок загружен; rev — номер приёма правок движка (окно перечитывает альбом) */
+export const album = reactive({ lay: null, layTick: 0, open: false, ready: false, sheets: 0, rev: 0, say: "", want: null,   // want — выгрузка из меню, ждёт вкладку
   tab: false, cur: 0, fit: 0, frames: [] });   // вкладка на виду, выбранный лист, «приблизить к рамке», рамки листов (albumframes.js)
 /* App.vue подставляет: «Сохранить» (Ctrl+S в окне альбома), открыть другой проект и показать вкладку «Листы и альбом» */
-export const albumHooks = { save: async () => {}, open: () => {}, panel: () => {} };
+export const albumHooks = { save: async () => {}, open: () => {}, panel: () => {}, data: () => {} };
 
 let win = null, frame = null, base = null, seenTick = -1, firstPush = true, timer = null, waiting = [];
 const META = ["territory", "checked", "groups", "views", "imports", "current_order"];   // что окно альбома может поменять в проекте
@@ -99,7 +100,7 @@ window.gradoEmbed = {
     if (w !== win) return;
     clearTimeout(timer); timer = null;
     try { pull(); } catch (e) { console.warn("albumhost: последние правки окна", e); }
-    win = null; base = null; album.open = album.ready = album.detail = false;
+    win = null; base = null; album.open = album.ready = false;
   },
   toast(t) { notice.value = t; album.say = t; },
   /* файл из скрытой рамки движка (web/albumapi.js): скачивает основное окно, с именем файла */
@@ -123,14 +124,6 @@ function engine(then) {
   document.body.appendChild(frame);
   win = frame.contentWindow; album.open = true; album.ready = false;
 }
-function dropFrame() {
-  if (!frame) return;
-  clearTimeout(timer); timer = null;
-  try { pull(); } catch (e) { console.warn("albumhost: последние правки движка", e); }
-  const f = frame; frame = null; win = null; base = null; album.open = album.ready = false;
-  f.remove();
-}
-
 /* Действие движка: проект туда, затем fn(albumApi); результат — обещание. */
 export function call(fn) {
   return new Promise((ok, bad) => engine(w => { try { ok(fn(w.albumApi)); } catch (e) { bad(e); } }));
@@ -148,24 +141,18 @@ export function editSheet(i, patch) {
 export const engineState = () => live() && album.ready ? win.albumApi?.state() : null;
 export const startEngine = () => engine();
 
-/* «Подробно»: та же страница отдельным окном браузера — рамки листов на карте, «Слои и листы», макет надписей. */
-export function openAlbum(then) {
-  if (album.detail && live() && album.ready) { win.focus(); push(false); if (then) then(win); return; }
-  dropFrame();
-  if (then) waiting.push(then);
-  if (win && !win.closed) { win.focus(); return; }
-  const w = Math.round(screen.availWidth * .85), h = Math.round(screen.availHeight * .85);
-  win = window.open(`/old?embed=album&theme=${theme.value}`, "grado-album", `popup,width=${w},height=${h}`);
-  if (!win) { waiting = []; notice.value = "Браузер не дал открыть окно «Листы и альбом»: разрешите всплывающие окна для этого сайта"; return; }
-  album.open = true; album.ready = false; album.detail = true;
-}
-
 /* PDF и PPTX из меню «Выгрузка» — вкладка «Листы и альбом» (там видно ход выгрузки и вопрос «не всё готово»). */
 export const albumFile = kind => { album.want = kind; albumHooks.panel(); };
-export const ogdDxf = () => openAlbum(w => w.document.getElementById("bOgdAll")?.click());
+/* «Выгрузка» → «ГИС ОГД в DXF»: лист — выбранный во вкладке (если он на карте) или последний на карте; окно «Данные» открывает
+   «Исходные данные» в режиме DXF (слои портала по рамке листа), выгрузку ведёт data.js startOgd. Идёт выгрузка — пункт её останавливает. */
+export async function ogdDxf() {
+  if (ogd.running) return stopOgd();
+  let r = null; try { r = await call(a => a.ogdSheet(album.cur)); } catch (e) { notice.value = "ГИС ОГД в DXF: " + (e.message || e); return; }
+  if (!r) { notice.value = "ГИС ОГД в DXF: сначала добавьте лист альбома на карте — вкладка «Листы и альбом» → «Добавить лист»"; albumHooks.panel(); return; }
+  ogd.req = JSON.parse(JSON.stringify(r)); albumHooks.data();
+}
 
 watch(theme, t => { if (live()) win.setTheme?.(t); });
 watch(() => C.role, role);
 /* открыли другой проект — окно альбома получает его сразу; число листов — для кнопки в шапке */
 watch(() => project.raw, r => { album.sheets = r?.album?.sheets?.length || 0; album.rev++; if (live() && album.ready) { firstPush = true; push(true); } }, { immediate: true });
-addEventListener("pagehide", () => { if (live() && album.detail) win.close(); });   // основное окно закрыли — окно альбома без него не работает

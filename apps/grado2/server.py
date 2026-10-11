@@ -2375,6 +2375,11 @@ def post_export_geojson(c):
     return _file(export_io.export_geojson(c.obj().get("layers")), "application/zip", "grado2-geojson-msk.zip")
 
 
+def post_export_shp(c):
+    import export_io
+    return _file(export_io.export_shp(c.obj().get("layers")), "application/zip", "grado2-shp-msk.zip")
+
+
 def post_export_xlsx(c):
     import export_io
     req = c.obj()
@@ -2433,6 +2438,7 @@ POST_ROUTES = {
     "/api/ogd_all/cancel": post_ogd_cancel,
     "/api/export/dxf": post_export_dxf,
     "/api/export/geojson": post_export_geojson,
+    "/api/export/shp": post_export_shp,
     "/api/export/xlsx": post_export_xlsx,
     "/api/fgistp/fetch": post_fgistp_fetch,
     "/api/tep": post_tep,

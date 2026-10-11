@@ -1,4 +1,4 @@
-// ГРАДО 2 · сценарии приёмки C, D, E, G, H, N из docs/ux/grado2-ux.md в новом интерфейсе (/next/), без интернета: тестовый сервер
+// ГРАДО 2 · сценарии приёмки C, D (и D2: ряды по границе, стоянки), E, G, H, N из docs/ux/grado2-ux.md в новом интерфейсе (/next/), без интернета: тестовый сервер
 // на копии tests/fixtures/next_ui_project.grado2 с границей территории вокруг его зданий; мышь и клавиши — как у владельца.
 // Запуск: CHROME=… node apps/grado2/tests/e2e/next_acceptance.mjs [--shots DIR]; нужны (cd tools && npm ci) и ~/.grado2/venv.
 // Итог: строки «ok - …» и «FAILED …», SUMMARY; код выхода 1 при провале. Вызывают tests/test_e2e.py (GRADO2_E2E=1) и CI.
@@ -137,6 +137,23 @@ try {
     check(b > 0 && b !== a, "СПП новая изменилась вслед за параметром эскиза", `${a} → ${b}`);
   });
 
+  // D2. Ряды по границе и стоянки (Э9, Э10): «Ряды: по границе» перестраивает эскиз, СПП больше нуля; блок посадки пишет
+  // места на стоянках или сколько не поместилось
+  await scenario("D2 ряды по границе и стоянки", page, async () => {
+    const a = await spp();
+    await showWin(page, "Эскиз");
+    await page.locator(".sketchp .seg wa-button", { hasText: "по границе" }).first().click();
+    await page.waitForTimeout(2500);
+    await showWin(page, "Показатели (ТЭП)");
+    await until(page, a => { const m = document.body.innerText.match(/СПП новая\s*([\d\s\u00a0]+(?:,\d+)?)\s*тыс/); return m && +m[1].replace(/\s|\u00a0/g, "").replace(",", ".") !== a; }, a,
+      "после «по границе» ТЭП пересчитался", 30000);
+    check(await spp() > 0, "эскиз «по границе»: СПП новая больше нуля", String(await spp()));
+    await showWin(page, "Схема расчёта");
+    const t = await winText(page, "Схема расчёта");
+    check(/на стоянках \d+ мест|машино-мест не поместилось/.test(t), "посадка пишет места на стоянках", (t.match(/корпус[^\n]*/) || [""])[0].slice(0, 200));
+    await showWin(page, "Эскиз");
+  });
+
   // E. Варианты: подбор, выбор варианта меняет эскиз; «Объём» открывается и рисует
   await scenario("E варианты и объём", page, async () => {
     await showWin(page, "Варианты");
@@ -159,12 +176,14 @@ try {
     await closeWin(page, "Объём");
   });
 
-  // G. Выгрузка: DXF — архив с чертежом, red_lns.shx и REDLN97.LIN; GeoJSON по слою; Excel с ТЭП
+  // G. Выгрузка: DXF — архив с чертежом, red_lns.shx и REDLN97.LIN; GeoJSON по слою; SHP как в ГИС ОГД; Excel с ТЭП
   await scenario("G выгрузка", page, async () => {
     const dxf = await download(page, "dxf");
     check(dxf.name === "grado2-dxf.zip" && ["grado2.dxf", "red_lns.shx", "REDLN97.LIN"].every(n => dxf.body.includes(n)), "DXF: zip с чертежом, red_lns.shx и REDLN97.LIN", dxf.name);
     const gj = await download(page, "geojson");
     check(gj.body.includes("README.txt") && gj.body.includes(".geojson") && gj.body.includes(Buffer.from("Граница территории".replace(/ /g, "_"))) || gj.body.includes(Buffer.from("Граница")), "GeoJSON: по файлу на слой и граница", gj.name);
+    const shp = await download(page, "shp");
+    check(shp.name === "grado2-shp-msk.zip" && [".shp", ".dbf", ".prj", ".cpg", "fields.csv"].every(n => shp.body.includes(n)), "SHP: наборы файлов слоёв и fields.csv", shp.name);
     const xl = await download(page, "xlsx");
     check(xl.name === "grado2-tep.xlsx" && xl.body.slice(0, 2).toString() === "PK", "Excel: файл ТЭП", xl.name);
   });

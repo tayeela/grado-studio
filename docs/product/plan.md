@@ -33,15 +33,15 @@ The sections below («23.09.2026») are history. Status of Э8–Э12 against th
   machine, a cold-cache timing, Хорошёво repeated with the new ТЭП, the owner's own run.
 - Э9 ТЭП and social infrastructure: partly done. Done: «Калькулятор 2.0» chain (v0.21), K1 by walking route and
   density target from ПЗЗ (v0.38), Moscow service radii by okrug (v0.38), ИЖС guest parking by 945-ПП (v0.42).
-  Open: ДОО, school and clinic as placeable plots; parking as area; a territory over two districts still takes zone
+  Open: ДОО, school and clinic as placeable plots; ground parking is drawn on the sketch since v0.99.88; a territory over two districts still takes zone
   and K2 from the centre; ВРИ cost and social compensation stay out (owner decision 7).
 - Э10 generation quality: partly done. Done: drop under a low solar ceiling (v0.28), ИЖС outbuildings, schools and
-  kindergartens as their own insolation class, relief under buildings (v0.41). Open: rows bent to the boundary,
+  kindergartens as their own insolation class, relief under buildings (v0.41). Rows bent to the boundary done in v0.99.88 («Ряды: по границе»). Open:
   north-side sections of urban blocks under 50 % insolated facades, named hand-edited variants.
 - Э11 speed: done in v0.36 (autosave 111 → 5 ms at 100 000 objects, rule counts cached, chunked norms check).
   Open: PDF text is not searchable (no ToUnicode).
-- Э12 exchange: partly done. DXF, DWG through the optional ODA converter (v0.41), PPTX (v0.66). Open: GeoJSON export
-  of the accepted sketch and constraints, XLSX of the ТЭП table and sheet list.
+- Э12 exchange: partly done. DXF, DWG through the optional ODA converter (v0.41), PPTX (v0.66). GeoJSON, XLSX and SHP in the
+  ГИС ОГД layout (v0.99.88) done; the exact field list for submission needs the ГИС ОГД regulation.
 - Since v0.48 most work went to the ППТ КРТ album, data sources, Yandex layers, the hub and the layout editor.
 - Tests: 355 unit tests pass (2 skipped). The hub events route logs a 500 during the tests, and the collaboration
   browser scenario failed 2 of 4 runs on 01.10.

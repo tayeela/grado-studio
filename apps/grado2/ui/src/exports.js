@@ -1,6 +1,6 @@
-/* ГРАДО 2 · меню «Выгрузка» нового интерфейса: чертёж DXF (МГГТ, МСК), GeoJSON для QGIS (МСК) и Excel с показателями
+/* ГРАДО 2 · меню «Выгрузка» нового интерфейса: чертёж DXF (МГГТ, МСК), GeoJSON для QGIS (МСК), SHP в раскладке ГИС ОГД (МСК) и Excel с показателями
    ТЭП и списком листов альбома — через те же адреса сервера, что у рабочей страницы (web/app.js exportLayers, exportTo,
-   bExpXls): POST /api/export/dxf, /api/export/geojson, /api/export/xlsx. Слои выгрузки — все слои проекта и граница
+   bExpXls): POST /api/export/dxf, /api/export/geojson, /api/export/shp, /api/export/xlsx. Слои выгрузки — все слои проекта и граница
    территории. Файл кладётся в папку загрузок браузера. */
 import { project } from "./store.js";
 import { busy, notice } from "./project.js";
@@ -47,6 +47,11 @@ export function exportGeojson() {
   const layers = exportLayers().map(({ name, features }) => ({ name, features })); if (!layers.length) { notice.value = NOTHING; return; }
   return exportTo("/api/export/geojson", { layers }, "grado2-geojson-msk.zip",
     "GeoJSON готов: по файлу на слой и README.txt; координаты МСК, метры; файл в папке загрузок", "GeoJSON не выгружен");
+}
+export function exportShp() {
+  const layers = exportLayers().map(({ name, features }) => ({ name, features })); if (!layers.length) { notice.value = NOTHING; return; }
+  return exportTo("/api/export/shp", { layers }, "grado2-shp-msk.zip",
+    "SHP готов: по набору файлов на слой, поля латиницей как в ГИС ОГД, их русские названия в fields.csv; координаты МСК; файл в папке загрузок", "SHP не выгружен");
 }
 
 /* Excel: показатели ТЭП (как окно «Показатели») и листы альбома из файла проекта; пустое значение — пустая ячейка, не ноль.
