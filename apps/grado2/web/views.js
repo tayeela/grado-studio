@@ -39,7 +39,7 @@ $("viewsBody").addEventListener("click", e => {
   const t = e.target.closest("button"); if (!t) return;
   if (t.id === "viewSave") { const name = $("viewName").value.trim() || `Вид ${VIEWS.length + 1}`; const v = captureView(name, $("viewExt").checked); VIEWS.push(v); VIEW_CUR = v.id; window.markDirty?.(); renderViews(); toast(`Вид «${name}» сохранён.`); }
   if (t.dataset.vshow) applyView(VIEWS.find(v => v.id === t.dataset.vshow));
-  if (t.dataset.vupd) { const i = VIEWS.findIndex(v => v.id === t.dataset.vupd), old = VIEWS[i]; VIEWS[i] = { ...captureView(old.name, !!old.extent), id: old.id }; window.markDirty?.(); renderViews(); toast(`Вид «${old.name}» обновлён.`); }
+  if (t.dataset.vupd) { const i = VIEWS.findIndex(v => v.id === t.dataset.vupd), old = VIEWS[i]; VIEWS[i] = { ...captureView(old.name, !!old.extent), id: old.id, ...(old.frame ? { frame: old.frame } : {}) }; /* рамка вида (#119) остаётся */ window.markDirty?.(); renderViews(); toast(`Вид «${old.name}» обновлён.`); }
   if (t.dataset.vdel) {
     const i = VIEWS.findIndex(v => v.id === t.dataset.vdel), used = ALBUM.sheets.filter(s => s.view === t.dataset.vdel);
     if (!confirmInline(t, `Удалить вид «${VIEWS[i].name}»?${used.length ? ` Листов с ним: ${used.length} — они перейдут на текущую карту.` : ""}`)) return;

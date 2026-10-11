@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 SHEET = Path(__file__).resolve().parents[1] / "ui" / "src" / "sheet"
-TESTS = [SHEET / "model.test.js", SHEET / "commands.test.js"]
+TESTS = [SHEET / "model.test.js", SHEET / "commands.test.js", SHEET.parent / "viewframes.test.js"]   # и рамка вида (#119)
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
