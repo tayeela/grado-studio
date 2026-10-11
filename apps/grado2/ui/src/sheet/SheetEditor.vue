@@ -7,7 +7,11 @@
      Клавиши: стрелки 0,5 мм (Shift — 5 мм), Delete, Ctrl+Z/Shift+Z, Ctrl+C/V/D/A, Ctrl+[ ], Ctrl+L, Ctrl+0, пробел — сдвиг листа.
      Карта блока — картинка печати (проп maps, panels/sheetmaps.js): «Как на карте» берёт место окна «Карта», инструмент
      «Сдвиг карты в рамке» двигает её мышью, колесо меняет масштаб; «PDF» печатает лист тем же рендером, что альбом.
-     Лист — через v-model (model.js), рисование элементов — draw.js, штамп — stamp.js. -->
+     Лист — через v-model (model.js), рисование элементов — draw.js, штамп — stamp.js.
+     Устройство команд — с deckcraft (MIT OR Apache-2.0, commands.js): каждая кнопка ленты — команда с отменой, её же можно
+     набрать в командной строке внизу («ВЫРОВНЯТЬ ВЛЕВО», «СДВИГ 10 0», «МАСШТАБ 1:2000»; ↑ — прошлые команды). Оттуда же
+     (arrange.js): группы (щелчок выбирает всю группу, Alt+щелчок — один элемент), отражение, «Формат по образцу»;
+     Alt на ручке размера — от середины, Shift — с пропорциями. -->
 <script setup>
 import { onBeforeUnmount, onMounted, ref, computed, watch } from "vue";
 import Konva from "konva";
@@ -15,6 +19,8 @@ import "../../../web/snap.js";                      // общая привязк
 import { FORMAT_T, KINDS, pageSize, frameRect, newBlock, snapBox, problems, reformat, align, distribute, sameSize, reorder,
   duplicate, bounds, rulerStep, label, moveCenter, nextScale } from "./model.js";
 import { stampOps } from "./stamp.js";
+import { withGroups, group, ungroup, regroup, flip, moveBy, moveTo, sizeTo, rotateBy, styleOf, paint } from "./arrange.js";
+import { COMMANDS, parse, hints, titleOf } from "./commands.js";
 import { blockNode, INK, SCREEN_ONLY, sheetFonts } from "./draw.js";
 import Ribbon from "./Ribbon.vue";
 import ItemsPanel from "./ItemsPanel.vue";
@@ -42,7 +48,10 @@ const cursor = ref(null);
 const host = ref(null), root = ref(null), rulerX = ref(null), rulerY = ref(null);
 const hist = { u: [], r: [] };
 const canUndo = ref(false), canRedo = ref(false), canPaste = ref(false);
-let clip = null, lastOut = null;
+let clip = null, lastOut = null, brush = null;     // brush — оформление образца для «Формата по образцу»
+const said = ref("");                                 // ответ командной строки или подпись отмены
+const cmdLine = ref(""), cmdIn = ref(null), cmdHist = [];
+let cmdAt = 0;
 
 const Snap = globalThis.Snap;
 const ACCENT = "#1f6feb", GUIDE = "#e5368f", SMART = "#e0108a", PX_MM = 96 / 25.4;
@@ -58,15 +67,19 @@ const fmt1 = v => String(+v.toFixed(1)).replace(".", ",");
 
 /* ---------- правка листа: история и выдача наружу ---------- */
 function out() { lastOut = JSON.stringify(sheet.value); emit("update:modelValue", JSON.parse(lastOut)); }
-function remember() { hist.u.push(JSON.stringify(sheet.value)); if (hist.u.length > 200) hist.u.shift(); hist.r = []; }
+// запись истории помнит, что сделано (как HistoryEntry.label у deckcraft): «Отменено: Выровнять»
+let doing = "";
+function remember() { hist.u.push({ s: JSON.stringify(sheet.value), t: doing || "правка" }); doing = ""; if (hist.u.length > 200) hist.u.shift(); hist.r = []; }
 function commit(fn) { remember(); fn(sheet.value); syncHist(); draw(); out(); }
 function step(dir) {
   const from = dir < 0 ? hist.u : hist.r, to = dir < 0 ? hist.r : hist.u; if (!from.length) return;
-  to.push(JSON.stringify(sheet.value)); sheet.value = JSON.parse(from.pop());
+  const e = from.pop(); to.push({ s: JSON.stringify(sheet.value), t: e.t }); sheet.value = JSON.parse(e.s);
+  said.value = e.t ? `${dir < 0 ? "Отменено" : "Возвращено"}: ${e.t}` : "";
   sel.value = sel.value.filter(id => sheet.value.blocks.some(b => b.id === id));
   syncHist(); draw(); out();
 }
-const syncHist = () => { canUndo.value = hist.u.length > 0; canRedo.value = hist.r.length > 0; };
+const undoT = ref(""), redoT = ref("");
+const syncHist = () => { canUndo.value = hist.u.length > 0; canRedo.value = hist.r.length > 0; undoT.value = hist.u.at(-1)?.t || ""; redoT.value = hist.r.at(-1)?.t || ""; };
 const blk = (s, id) => s.blocks.find(b => b.id === id);
 const patch = (id, p) => commit(s => Object.assign(blk(s, id), p));
 const patchMany = map => { if (Object.keys(map).length) commit(s => Object.entries(map).forEach(([id, p]) => Object.assign(blk(s, id), p))); };
@@ -186,6 +199,7 @@ let pending = null;
 function flushNodes() {                                // по концу перетаскивания или ручек — одна запись в историю на всех
   pending = null;
   const nodes = tr.nodes(); if (!nodes.length) return;
+  doing = "Перемещение или размер";
   commit(s => nodes.forEach(n => {
     const b = blk(s, n.id()); if (!b) return;
     const sx = n.scaleX(), sy = n.scaleY(); n.scale({ x: 1, y: 1 });
@@ -226,12 +240,18 @@ function onDown(e) {
     host.value.style.cursor = "grabbing"; return;
   }
   if (KINDS[tool.value]) { const p = snapPt(pt()); drag = { kind: "add", p0: p, p1: p }; return; }
+  if (tool.value === "painter") {                     // «Формат по образцу»: щелчок по элементу берёт оформление образца
+    const b = blockAt(pt()); if (!b || !brush) return;
+    const ids = ev.altKey ? [b.id] : withGroups(sheet.value.blocks, [b.id]);
+    doing = "Формат по образцу"; patchMany(paint(brush, ids.map(id => blk(sheet.value, id)).filter(x => x.id !== brush.id))); doing = "";
+    return;
+  }
   if (e.target.getParent?.() === tr || e.target === tr) return;      // ручки
   const g = e.target.findAncestor?.(".block", true);
   if (g) {
-    const id = g.id(), add = ev.shiftKey || ev.ctrlKey || ev.metaKey;
-    if (add) select(sel.value.includes(id) ? sel.value.filter(x => x !== id) : [...sel.value, id]);
-    else if (!sel.value.includes(id)) select([id]);
+    const id = g.id(), add = ev.shiftKey || ev.ctrlKey || ev.metaKey, one = ev.altKey ? [id] : withGroups(sheet.value.blocks, [id]);
+    if (add) select(sel.value.includes(id) ? sel.value.filter(x => !one.includes(x)) : [...sel.value, ...one.filter(x => !sel.value.includes(x))]);
+    else if (!sel.value.includes(id)) select(one);
     return;
   }
   if (e.target.getLayer?.() === guideL) return;
@@ -239,6 +259,15 @@ function onDown(e) {
   if (!drag.add) select([]);
 }
 // верхняя незакреплённая видимая карта под точкой листа (поворот карты не учитывается — как в печати)
+// верхний видимый незакреплённый элемент под точкой листа, с учётом поворота
+function blockAt(p) {
+  return [...sheet.value.blocks].reverse().find(b => {
+    if (b.locked || b.hidden) return false;
+    const a = -(b.rotation || 0) * Math.PI / 180, dx = p.x - b.x, dy = p.y - b.y;
+    const u = dx * Math.cos(a) - dy * Math.sin(a), v = dx * Math.sin(a) + dy * Math.cos(a);
+    return u >= 0 && u <= b.w && v >= 0 && v <= b.h;
+  });
+}
 const mapAt = p => [...sheet.value.blocks].reverse().find(b => b.kind === "map" && !b.locked && !b.hidden && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
 function snapPt(p) {
   const s = snapBox({ x0: p.x, y0: p.y, x1: p.x, y1: p.y }, sheet.value, { snapFn: Snap?.snap, tol: Snap.ZONE_PX * 1.5 / k });
@@ -272,7 +301,8 @@ function onUp() {
   if (d.kind === "marquee") {
     const r = rectOf(d.p0, d.p1); if (r.w < .5 && r.h < .5) return;
     const hit = sheet.value.blocks.filter(b => !b.locked && !b.hidden && b.x < r.x + r.w && r.x < b.x + b.w && b.y < r.y + r.h && r.y < b.y + b.h).map(b => b.id);
-    select(d.add ? [...new Set([...d.base, ...hit])] : hit);
+    const ids = withGroups(sheet.value.blocks, hit);
+    select(d.add ? [...new Set([...d.base, ...ids])] : ids);
   }
   if (d.kind === "add") {
     const r = rectOf(d.p0, d.p1), big = r.w > 2 && r.h > 1;
@@ -303,8 +333,9 @@ function rulerDown(ax, ev) {
 }
 
 /* ---------- действия ленты и клавиши ---------- */
-function setFormat(p) { remember(); sheet.value = { ...reformat(sheet.value, p), guides: { x: [], y: [] } }; syncHist(); out(); fit(); }
-function setSheet(p) { commit(s => Object.assign(s, clone(p))); }
+const propPatch = (id, p) => { doing = "Свойства"; patch(id, p); };
+function setFormat(p) { doing = "Формат листа"; remember(); sheet.value = { ...reformat(sheet.value, p), guides: { x: [], y: [] } }; syncHist(); out(); fit(); }
+function setSheet(p) { doing ||= "Свойства листа"; commit(s => Object.assign(s, clone(p))); }
 function exportPng() {
   const [pw, ph] = pageSize(sheet.value), o = stage.position(), keep = sel.value, gridOn = sheet.value.grid?.show;
   select([]); guideL.hide(); over.hide(); if (gridOn) { sheet.value.grid.show = false; drawPaper(); }
@@ -319,8 +350,10 @@ async function printPdf() {
   busy.value = "PDF собирается…";
   try { await props.maps.pdf(clone(sheet.value), props.meta, props.page); busy.value = ""; } catch (e) { busy.value = e.message || "PDF не собрался"; }
 }
-function act(id) {
-  const [a, b] = id.split(":"), bs = selBlocks.value;
+// подпись действия живёт ровно на время команды: запись истории берёт её, затем она сбрасывается
+function act(id, args = []) { doing = titleOf(id); said.value = ""; try { return exec(id, args); } finally { doing = ""; } }
+function exec(id, args) {
+  const [a, b] = id.split(":"), bs = selBlocks.value, free = bs.filter(x => !x.locked);
   if (id === "map:here") {                            // «Как на карте»: место и масштаб окна «Карта»
     const h = props.maps?.here?.(), ms = bs.filter(x => x.kind === "map"); if (!h || !ms.length) return;
     const m = {}; ms.forEach(x => { m[x.id] = h.scale > 0 ? { center: h.center, scale: h.scale } : { center: h.center }; }); return patchMany(m);
@@ -330,6 +363,26 @@ function act(id) {
     const m = {}; bs.filter(x => x.kind === "legend").forEach(x => { m[x.id] = { items }; }); return patchMany(m);
   }
   if (id === "export:pdf") return printPdf();
+  if (id === "help") { said.value = "Команды: " + COMMANDS.map(c => c.ru[0]).join(", "); return; }
+  if (id === "group") { const m = group(bs); if (!Object.keys(m).length) { said.value = "Для группы выберите два элемента и больше"; return; } return patchMany(m); }
+  if (id === "ungroup") return patchMany(ungroup(bs));
+  if (id === "regroup") { const m = regroup(sheet.value.blocks, bs); patchMany(m); return select(Object.keys(m).length ? Object.keys(m) : sel.value); }
+  if (a === "flip") return patchMany(flip(free, b));
+  if (id === "painter") {
+    if (tool.value === "painter") { tool.value = "select"; return; }
+    if (!bs.length) { said.value = "Выберите образец: элемент, оформление которого переносить"; return; }
+    brush = { ...styleOf(bs[0]), id: bs[0].id }; tool.value = "painter"; host.value?.focus(); return;
+  }
+  const need = () => { if (!free.length) said.value = "Сначала выберите незакреплённые элементы"; return free.length; };
+  if (id === "move") return need() && patchMany(moveBy(free, args[0], args[1]));
+  if (id === "pos") return need() && patchMany(moveTo(free, args[0], args[1]));
+  if (id === "size") return need() && patchMany(sizeTo(free, args[0], args[1]));
+  if (id === "rotate") return need() && patchMany(rotateBy(free, args[0]));
+  if (id === "scale") {
+    const ms = free.filter(x => x.kind === "map"); if (!ms.length) { said.value = "Выберите карту"; return; }
+    if (!(args[0] >= 100 && args[0] <= 10000000)) { said.value = "Масштаб — от 1:100 до 1:10 000 000"; return; }
+    const m = {}; ms.forEach(x => { m[x.id] = { scale: Math.round(args[0]) }; }); return patchMany(m);
+  }
   if (a === "tool") { tool.value = b; return; }
   if (a === "add") { tool.value = tool.value === b ? "select" : b; host.value?.focus(); return; }
   if (id === "undo") return step(-1);
@@ -369,13 +422,14 @@ function onKey(e) {
   if (mod && c === "KeyD") return run("dup");
   if (mod && c === "KeyA") return run("all");
   if (mod && c === "KeyL") return run(e.shiftKey ? "unlock" : "lock");
+  if (mod && c === "KeyG") return run(e.shiftKey ? "ungroup" : "group");
   if (mod && c === "BracketRight") return run(e.shiftKey ? "order:top" : "order:up");
   if (mod && c === "BracketLeft") return run(e.shiftKey ? "order:bottom" : "order:down");
   if (mod && c === "Digit0") return run("zoom:fit");
   if (mod && c === "Digit1") return run("zoom:100");
   if (mod && c === "Quote") return run("grid:show");
   if (mod) return;
-  if (e.key === "Escape") { e.preventDefault(); tool.value = "select"; return select([]); }
+  if (e.key === "Escape") { e.preventDefault(); if (tool.value === "painter") { tool.value = "select"; return; } tool.value = "select"; return select([]); }
   if (e.key === "v" || e.key === "м") { tool.value = "select"; return; }
   if (e.key === "c" || e.key === "с") { tool.value = "content"; return; }
   if (e.key === "Delete" || e.key === "Backspace") return run("del");
@@ -387,6 +441,20 @@ function onKey(e) {
   }
 }
 const onKeyUp = e => { if (e.key === " ") { space = false; listen(tool.value === "select"); if (host.value) host.value.style.cursor = ""; } };
+/* ---------- командная строка ---------- */
+function runLine() {
+  const line = cmdLine.value.trim(); if (!line) return;
+  const r = parse(line); cmdLine.value = "";
+  if (cmdHist[cmdHist.length - 1] !== line) cmdHist.push(line); cmdAt = cmdHist.length;
+  if (r.error) { said.value = r.error; return; }
+  said.value = ""; act(r.id, r.args);
+  if (!said.value && r.id !== "help") said.value = `${r.cmd.ru[0]}: ${r.cmd.t.split(":")[0].toLowerCase()}`;
+}
+function cmdKey(e) {
+  if (e.key === "Escape") { cmdLine.value = ""; host.value?.focus(); return; }
+  const d = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0; if (!d || !cmdHist.length) return;
+  e.preventDefault(); cmdAt = Math.max(0, Math.min(cmdHist.length, cmdAt + d)); cmdLine.value = cmdHist[cmdAt] || "";
+}
 function pick(id, add) { select(add ? (sel.value.includes(id) ? sel.value.filter(x => x !== id) : [...sel.value, id]) : [id]); }
 
 let ro;
@@ -417,18 +485,22 @@ onBeforeUnmount(() => {
 });
 // в режиме добавления и сдвига листа элементы и направляющие не ловят мышь: иначе рамка нового элемента утащила бы их
 function listen(on) { blocks?.listening(on); guideL?.listening(on); }
-watch(tool, t => { if (host.value) host.value.style.cursor = KINDS[t] ? "crosshair" : t === "pan" ? "grab" : t === "content" ? "move" : ""; listen(t === "select"); });
+watch(tool, t => {
+  if (host.value) host.value.style.cursor = KINDS[t] ? "crosshair" : t === "pan" ? "grab" : t === "content" ? "move" : t === "painter" ? "copy" : "";
+  listen(t === "select"); if (t !== "painter") brush = null;
+});
 defineExpose({ fit, act });
 </script>
 
 <template>
   <div ref="root" class="sed" @mouseenter="hovered = true" @mouseleave="hovered = false">
-    <Ribbon :tool="tool" :has-maps="!!maps" :can-undo="canUndo" :can-redo="canRedo" :n-sel="sel.length" :can-paste="canPaste" :grid="sheet.grid" :any-locked="anyLocked" @act="act" />
+    <Ribbon :tool="tool" :has-maps="!!maps" :can-undo="canUndo" :can-redo="canRedo" :n-sel="sel.length" :can-paste="canPaste" :grid="sheet.grid" :any-locked="anyLocked"
+      :undo-t="undoT" :redo-t="redoT" :grouped="selBlocks.some(b => b.group)" @act="act" />
     <div class="sed-main">
       <aside class="sed-side left">
         <div class="sed-tab"><span>Элементы</span></div>
         <div class="sed-scroll">
-          <ItemsPanel :blocks="sheet.blocks" :sel="sel" @pick="pick" @patch="patch" />
+          <ItemsPanel :blocks="sheet.blocks" :sel="sel" @pick="pick" @patch="propPatch" />
           <template v-if="issues.length">
             <div class="sed-h">Замечания</div>
             <button v-for="(p, i) in issues" :key="i" class="sed-issue" @click="pick(p.id)">{{ p.text }}</button>
@@ -447,12 +519,19 @@ defineExpose({ fit, act });
       <aside class="sed-side right">
         <div class="sed-tab"><span>Свойства</span></div>
         <div class="sed-scroll">
-          <PropsPanel :sheet="sheet" :sel="selBlocks" :has-maps="!!maps" @patch="patch" @format="setFormat" @set="setSheet" @act="act" />
+          <PropsPanel :sheet="sheet" :sel="selBlocks" :has-maps="!!maps" @patch="propPatch" @format="setFormat" @set="setSheet" @act="act" />
         </div>
       </aside>
     </div>
+    <form class="sed-cmd" @submit.prevent="runLine">
+      <label for="sed-cmd-in">Команда:</label>
+      <input id="sed-cmd-in" ref="cmdIn" v-model="cmdLine" list="sed-cmds" autocomplete="off" spellcheck="false"
+        placeholder="ВЫРОВНЯТЬ ВЛЕВО, СДВИГ 10 0… ? — список" @keydown="cmdKey">
+      <datalist id="sed-cmds"><option v-for="h in hints()" :key="h.v" :value="h.v">{{ h.t }}</option></datalist>
+      <span class="sed-said" :title="said">{{ said }}</span>
+    </form>
     <footer class="sed-status">
-      <span>{{ KINDS[tool] ? `${KINDS[tool]}: растяните рамку на листе или щёлкните; Esc — отмена` : tool === 'pan' ? 'Сдвиг листа: тяните мышью' : tool === 'content' ? 'Сдвиг карты в рамке: тяните мышью; колесо — масштаб карты' : 'Щелчок — выбрать, Shift — добавить, рамка по пустому месту — несколько' }}</span>
+      <span>{{ tool === 'painter' ? 'Формат по образцу: щёлкайте по элементам; Esc — закончить' : KINDS[tool] ? `${KINDS[tool]}: растяните рамку на листе или щёлкните; Esc — отмена` : tool === 'pan' ? 'Сдвиг листа: тяните мышью' : tool === 'content' ? 'Сдвиг карты в рамке: тяните мышью; колесо — масштаб карты' : 'Щелчок — выбрать, Shift — добавить, рамка по пустому месту — несколько' }}</span>
       <span class="sp"></span>
       <span v-if="busy" class="sed-busy">{{ busy }}</span>
       <span v-if="statusSel">{{ statusSel }}</span>
@@ -486,6 +565,10 @@ defineExpose({ fit, act });
 .sed-rx { position: absolute; left: 22px; top: 0; right: 0; height: 22px; width: calc(100% - 22px); cursor: s-resize; }
 .sed-ry { position: absolute; left: 0; top: 22px; bottom: 0; width: 22px; height: calc(100% - 22px); cursor: e-resize; }
 .sed-stage { position: absolute; left: 22px; top: 22px; right: 0; bottom: 0; outline: none; overflow: hidden; }
+.sed-cmd { height: 28px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-top: 1px solid var(--g-line); background: var(--g-panel); font-size: 12px; color: var(--g-mute); }
+.sed-cmd input { width: 340px; flex: none; height: 22px; font: 12px/1 var(--wa-font-family-code, ui-monospace, monospace); color: var(--g-ink); background: var(--g-bg); border: 1px solid var(--g-line); border-radius: 4px; padding: 0 6px; }
+.sed-cmd input:focus { outline: 2px solid var(--g-ring); border-color: var(--g-accent); }
+.sed-said { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--g-ink); }
 .sed-status { height: 24px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 10px; border-top: 1px solid var(--g-line); color: var(--g-mute); font-size: 12px; white-space: nowrap; overflow: hidden; }
 .sed-status .sp { flex: 1; }
 .sed-busy { color: var(--g-accent); }

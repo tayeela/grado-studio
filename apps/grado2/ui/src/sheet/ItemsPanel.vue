@@ -1,6 +1,7 @@
 <!-- ГРАДО 2 · панель «Элементы» редактора раскладки (как «Элементы» в макете QGIS): все элементы листа сверху вниз
      в порядке рисования (верхний — первый), глаз — показать или скрыть, замок — закрепить; щелчок выбирает
-     (Shift или Ctrl — добавить к выбору), двойной щелчок — переименовать. Действия выполняет SheetEditor.vue. -->
+     (Shift или Ctrl — добавить к выбору), двойной щелчок — переименовать; элементы одной группы отмечены полосой слева.
+     Действия выполняет SheetEditor.vue. -->
 <script setup>
 import { ref, nextTick } from "vue";
 import { Eye, EyeOff, Lock, LockOpen, Map, List, Type, Image, Compass, Ruler, Table, Square, Circle, MoveRight } from "@lucide/vue";
@@ -18,7 +19,7 @@ function done(b, e) { const v = e.target.value.trim(); editing.value = null; if 
 <template>
   <div class="ip">
     <div v-if="!blocks.length" class="ip-empty">На листе нет элементов. Добавьте их кнопками ленты.</div>
-    <div v-for="b in rows()" :key="b.id" class="ip-r" :class="{ on: sel.includes(b.id), dim: b.hidden }"
+    <div v-for="b in rows()" :key="b.id" class="ip-r" :class="{ on: sel.includes(b.id), dim: b.hidden, grp: b.group }" :title="b.group ? 'В группе' : undefined"
       @click="emit('pick', b.id, $event.shiftKey || $event.ctrlKey || $event.metaKey)" @dblclick="rename(b)">
       <button class="ip-i" :title="b.hidden ? 'Показать' : 'Скрыть'" :aria-label="b.hidden ? 'Показать' : 'Скрыть'" @click.stop="emit('patch', b.id, { hidden: !b.hidden })">
         <component :is="b.hidden ? EyeOff : Eye" :size="15" :stroke-width="1.6" /></button>
@@ -36,6 +37,7 @@ function done(b, e) { const v = e.target.value.trim(); editing.value = null; if 
 .ip-empty { color: var(--g-mute); padding: 6px; line-height: 1.4; }
 .ip-r { display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 4px; border-radius: 4px; cursor: default; user-select: none; }
 .ip-r:hover { background: var(--g-hover); }
+.ip-r.grp { box-shadow: inset 2px 0 0 var(--g-sel-line); }
 .ip-r.on { background: var(--g-sel); color: var(--g-accent); }
 .ip-r.dim .ip-t, .ip-r.dim .ip-k { opacity: .45; }
 .ip-i { width: 22px; height: 22px; display: grid; place-items: center; border: 0; background: none; color: var(--g-mute); border-radius: 4px; cursor: pointer; padding: 0; }
