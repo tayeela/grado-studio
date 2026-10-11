@@ -547,5 +547,32 @@
       badge: r.badge || null, hand: hand.roles[r.role] ? handNote(hand.roles[r.role]) : "", layers: r.items.map(it => srcTitle(it.key)),
       queue: r.queue ? SL().queueRows(r.queue.keys, probe, r.queue.chosen).map(x => ({ key: x.key, title: srcTitle(x.key), cover: x.cover, used: x.used, badge: x.badge || null })) : null })) };
   }
-  window.SheetLayers = { snap, restore, render, refresh, toggleRole, resetRoleUI, resetSheetUI, workingCopyOf, rows };
+  /* перетаскивание из вкладки нового интерфейса (web/albumapi.js): те же правила допустимости (dropCheck) и те же действия с отменой,
+     что у мыши и клавиши M этого окна. what: { type: "role", from, role, title } — роль с листа from; { type: "layer", key, title, row? } —
+     слой проекта (row — роль строки, на которую его бросили). check — что произойдёт (тон и слова подсветки), drop — сделать. */
+  const dropSpec = w => w.type === "layer" ? { type: "layer", key: w.key, title: w.title } : { type: "role", from: w.from, role: w.role };
+  function check(to, w, copy) {
+    TPLC.clear();
+    try { const r = SL().dropCheck(sheets(), to, dropSpec(w), { copy: !!copy, viewOf, ctx: ctxOf, row: w.type === "layer" ? w.row : undefined, titleOf: srcTitle });
+      return { ok: !!r.ok, tone: r.tone || "", text: r.text || "", workingCopy: !!r.workingCopy }; } finally { TPLC.clear(); }
+  }
+  function drop(to, w, copy) {
+    if (readOnly()) { toast("Только просмотр: слои листа меняет тот, кто правит проект."); return false; }
+    TPLC.clear();
+    try {
+      const r = SL().dropCheck(sheets(), to, dropSpec(w), { copy: !!copy, viewOf, ctx: ctxOf, row: w.type === "layer" ? w.row : undefined, titleOf: srcTitle });
+      if (!r.ok) { if (r.tone !== "none" && r.text) toast(r.text + "."); return false; }
+      const d = { type: w.type, key: w.key, role: w.role, from: w.from, label: w.title, alt: !!copy, tgt: { i: to } };
+      if (r.workingCopy) dropWorking(d); else if (w.type === "layer") dropLayer(to, w.key, w.title); else dropRole(w.from, to, w.role, !!copy);
+      return true;
+    } finally { TPLC.clear(); refresh(); }
+  }
+  /* слои проекта по ролям с номерами листов, где они включены (правая колонка окна) */
+  function bank() {
+    const L = typeof LYR !== "undefined" ? LYR : [];
+    return SL().bankGroups(L.map(l => ({ key: l.key, title: l.title })), sheets(), viewKeys).map(g => ({ title: g.title, items: g.items.map(it => ({ key: it.key, title: it.title, sheets: it.sheets.slice() })) }));
+  }
+  /* источник очереди роли на новое место (как ручка ⋮⋮ и Alt+↑/↓) */
+  const reorder = (i, gid, from, to) => !readOnly() && reorderQueue(i, gid, from, to);
+  window.SheetLayers = { snap, restore, render, refresh, toggleRole, resetRoleUI, resetSheetUI, workingCopyOf, rows, check, drop, bank, reorder };
 })();

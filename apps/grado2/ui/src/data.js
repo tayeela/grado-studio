@@ -13,6 +13,7 @@ import { lyr, mapApi, normGroups, touchData } from "./edit.js";
 import { busy, markDirty, notice } from "./project.js";
 import { setSel, sizeOf } from "./features.js";
 import { CAT, assignCats, fullStyle } from "./symbology.js";
+import { plural } from "./geom.js";
 
 export const SOURCES = reactive({});   // ключ → {title, kind, code?}: /api/sources и импорт проекта
 export const ERRORS = reactive({});    // ключ → текст ошибки последней выгрузки
@@ -472,3 +473,46 @@ export async function fgLoad() {
     FG.msg = `Загружено слоёв: ${vals.length - empty.length}, объектов в области: ${fmt(n)}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reps.length ? " " + reps.join("; ") + "." : ""}`;
   } catch (err) { FG.msg = "Слои не загружены: " + err.message; } finally { loading.value = ""; }
 }
+
+/* ---------- «ГИС ОГД в DXF»: все отмеченные слои портала по рамке листа альбома (как кнопка «ГИС ОГД в DXF» рабочей страницы, app.js runOgd) ----------
+   Выгрузка идёт на сервере фоном (/api/ogd_all/start, status, cancel, file): ход — здесь (окно «Данные» и строка состояния), по
+   окончании архив DXF (и DWG, если есть конвертер) скачивается сам. req — запрос от albumhost.js ogdDxf: лист (sheet для сервера,
+   bbox для подсчёта объектов), где он («листу 3 «…» (A3, 1:2 000)»), имя архива, граница территории, прежний выбор слоёв. */
+export const ogd = reactive({ req: null, running: false, done: 0, total: 0, current: "", found: 0, where: "", left: "", msg: "" });
+let ogdT = null;
+const minText = s => s < 90 ? `${Math.round(s)} с` : `${Math.round(s / 60)} мин`;
+async function ogdTick() {
+  let st; try { st = await api("/api/ogd_all/status"); } catch { return; }
+  if (st.running) {
+    const left = st.done ? (Date.now() / 1000 - st.started) / st.done * (st.total - st.done) : 0;
+    Object.assign(ogd, { running: true, done: st.done || 0, total: st.total || 0, current: st.current || "", found: st.found || 0, where: st.where || ogd.where || "листу",
+      left: left > 5 ? minText(left) : "", msg: st.message || "" });
+    return;
+  }
+  clearInterval(ogdT); ogdT = null;
+  const was = ogd.running; ogd.running = false;
+  if (!was) return;                                                     // ничего не шло — молчим (проверка при открытии)
+  if (!st.file) { notice.value = st.message || "Выгрузка ГИС ОГД остановлена."; return; }
+  const a = document.createElement("a"); a.href = "/api/ogd_all/file"; a.download = st.file; document.body.appendChild(a); a.click(); a.remove();
+  const miss = (st.errors || []).map(e => "«" + String(e).split(": ")[0] + "»");
+  notice.value = `ГИС ОГД готово по ${st.where || ogd.where}: ${plural(st.found || 0, ["слой", "слоя", "слоёв"])}, ${plural(st.objects || 0, ["объект", "объекта", "объектов"])}. `
+    + (st.dwg ? "В архиве DWG, DXF" : "В архиве DXF (в AutoCAD — вкладка листа с видовым экраном)") + " и таблицы атрибутов."
+    + (miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : "") + " Файл — в папке загрузок браузера.";
+}
+export function watchOgd() { clearInterval(ogdT); ogd.running = true; ogdT = setInterval(ogdTick, 1500); ogdTick(); }
+/* запуск: codes — коды слоёв портала; занятый сервер («уже идёт») — показываем ход той выгрузки */
+export async function startOgd(req, codes) {
+  ogd.where = req.where;
+  try { await api("/api/ogd_all/start", { sheet: req.sheet, codes, where: req.where, boundary: req.boundary || null, name: req.name }); }
+  catch (e) {
+    if (/уже идёт|already/i.test(e.message)) { notice.value = "Выгрузка ГИС ОГД уже идёт — показываю её ход. Новая начнётся, когда эта закончится."; watchOgd(); return false; }
+    notice.value = "Выгрузка ГИС ОГД не началась: " + e.message; return false;
+  }
+  notice.value = `Выгрузка всех отмеченных слоёв ГИС ОГД по ${req.where}. Ход — в окне «Данные»; работать можно дальше.`;
+  watchOgd(); return true;
+}
+export async function stopOgd() {
+  try { await api("/api/ogd_all/cancel", {}); notice.value = "Остановка: текущий слой дочитывается, потом выгрузка ГИС ОГД встанет."; } catch (e) { notice.value = "Не остановлено: " + e.message; }
+}
+/* открыли программу во время выгрузки (начатой раньше или в другой вкладке) — показываем её ход */
+export function ogdResume() { api("/api/ogd_all/status").then(st => { if (st.running) watchOgd(); }).catch(() => { }); }

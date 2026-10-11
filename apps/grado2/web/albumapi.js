@@ -21,7 +21,7 @@
   }
   const sheetAt = i => i == null ? null : ALBUM.sheets[i] || null;
   /* рамки листов для карты нового интерфейса (ui/src/albumframes.js), как frames.js: середина (долгота, широта), размер
-     на местности (м), размер карты листа (мм) для правки угла, свой лист или лист раздела (пунктир), подпись рамки */
+     на местности (м), размер карты листа (мм) для правки угла, свой лист или лист раздела (пунктир), подпись рамки, полное название */
   const fmtT = s => (SIZE_T[s.size] || s.size).replace(" без штампа", "") + (isPaper(s.size) && s.orient === "P" ? " книжн." : "");
   function frames() {
     return ALBUM.sheets.map((s, i) => {
@@ -30,7 +30,8 @@
       if (!c || !(sc > 0)) return null;
       const n = `Лист ${i + 1}`, t = s.title && s.title !== n ? s.title : "";
       return { id: s.id, i, c, scale: sc, mm, wh: mm.map(v => v * sc / 1000), own: !(s.fit || s.keys),
-        label: `${n}${t ? ` «${t.length > 28 ? t.slice(0, 27).trimEnd() + "…" : t}»` : ""} · ${fmtT(s)} · 1:${fmt(Math.round(sc))}` };
+        // на карте — короткое имя (#29: длинный заголовок закрывал фрагмент), полное — подсказкой над рамкой и в свойствах
+        label: `${n} · ${fmtT(s)} · 1:${fmt(Math.round(sc))}`, title: t ? `${n}. ${t}` : n };
     }).filter(Boolean);
   }
   window.albumApi = {
@@ -45,6 +46,11 @@
         rows: Object.fromEntries(ALBUM.sheets.map(s => [s.id, { size: sizeShort(s), scale: scaleText(s), auto: !s.scale,
           noScale: !!(s.frozen || s.panels || ["tep", "title", "photos"].includes(s.kind)), frozen: !!s.frozen, tpl: !!(s.keys || s.panels) }])),
         sizes: SIZE_T, scales: SCALES, frames: frames(),
+        /* файл с листами ждёт ответа «заменить или добавить» (или «большой файл — всё равно?»): вопрос задаёт окно */
+        imp: IMPORT ? { name: IMPORT.name, n: IMPORT.album?.sheets.length || 0, have: ALBUM.sheets.length, big: !!IMPORT.file, mb: mb(IMPORT.size || 0) } : null,
+        /* содержание своего листа (вид карты или таблица ТЭП), формат слайдов раздела, масштаб схем 5–9 — как строки прежнего окна */
+        views: VIEWS.map(v => ({ id: v.id, name: v.name })), slides: Object.keys(SLIDE).map(k => [k, SIZE_T[k]]), slide: ALBUM.meta.slide || "P",
+        scheme: schemeSetting(), schemeScales: SCALES.filter(v => v <= 10000),
       };
     },
     /* «Собрать»: альбом ППТ КРТ, ситуационный план, раздел 1. Поверх чужих листов движок спрашивает — ответ answer(mode). */
@@ -96,6 +102,69 @@
     /* глаз роли на листе i (только этот лист) и «вернуть к образцу» */
     role(i, gid) { window.SheetLayers?.toggleRole(i, gid); },
     resetRole(i, gid) { window.SheetLayers?.resetRoleUI(i, gid); },
+    /* перетаскивание во вкладке: роль на другой лист (перенос, copy — копия), слой проекта на лист или строку роли; порядок источников */
+    dropCheck(to, what, copy) { return window.SheetLayers?.check(to, what, copy) || null; },
+    drop(to, what, copy) { return !!window.SheetLayers?.drop(to, what, copy); },
+    bank() { return window.SheetLayers?.bank() || []; },
+    reorderSrc(i, gid, from, to) { return !!window.SheetLayers?.reorder(i, gid, from, to); },
+    /* фотофиксация (лист «Материалы фотофиксации»): снимки листа i для окна — имя, размер, есть ли точка съёмки (GPS), картинка */
+    photos(i) {
+      const s = sheetAt(i);
+      return s?.kind === "photos" ? (s.photos || []).map((ph, k) => ({ k, name: ph.name || `Снимок ${k + 1}`, w: ph.w, h: ph.h, at: !!ph.at, src: "data:image/jpeg;base64," + ph.data })) : null;
+    },
+    /* добавить снимки (File из окна нового интерфейса): тот же addPhotoFiles — 1600 px, JPEG, точка из EXIF GPS, не больше 12 */
+    addPhotos(i, files) {
+      if (isViewer()) return say("Только просмотр: снимки добавляет тот, кто правит проект.");
+      return addPhotoFiles(i, [...files]);
+    },
+    /* убрать снимок k (k не задан — все) */
+    dropPhoto(i, k) {
+      const s = sheetAt(i); if (!s?.photos || isViewer()) return;
+      if (k == null) s.photos = []; else s.photos.splice(k, 1);
+      touch();
+    },
+    /* спутник Яндекса по рамке листа — архив DXF + снимок в МСК для AutoCAD; dir — папка загрузок (полный путь), её спрашивает окно */
+    sat(i, dir) {
+      if (!sheetAt(i) || !dir) return;
+      try { localStorage.setItem("grado2.dlDir", dir); } catch { }
+      return satFile(i, false, dir);
+    },
+    /* «Содержание» своего листа: "" — текущая карта, id вида, "__tep" — таблица ТЭП (как строка «Содержание» прежнего окна) */
+    setView(i, v) {
+      const sh = sheetAt(i); if (!sh || isViewer() || sh.keys || sh.panels || sh.frozen) return;
+      sh.kind = v === "__tep" ? "tep" : "map"; sh.view = sh.kind === "tep" ? "" : String(v || "");
+      if (sh.kind === "tep") { sh.tpl = { set: "tep" }; if (!sh.title || sh.title === newSheet().title) sh.title = "Технико-экономические показатели"; }
+      else if (sh.tpl?.set === "tep") delete sh.tpl;
+      touch();
+    },
+    /* «Вернуть в центр»: лист снова по центру территории */
+    resetCenter(i) { const sh = sheetAt(i); if (sh && !isViewer()) { delete sh.center; touch(); } },
+    /* формат слайдов раздела: собранные слайды раздела переводятся сразу (масштаб — заново) */
+    setSlide(v) {
+      if (isViewer() || !SLIDE[v]) return;
+      ALBUM.meta.slide = v; ALBUM.sheets.filter(x => String(x.id).startsWith("sec1_")).forEach(x => { x.size = v; x.scale = 0; }); touch();
+    },
+    /* масштаб схем 5–9 альбома ППТ КРТ: 0 — авто, "cover" — по границам выгрузки, число — 1:N; ответ — что сказать владельцу */
+    setScheme(v) {
+      if (isViewer()) return "";
+      ALBUM.meta.schemeScale = v === "cover" ? "cover" : +v || undefined; touch();
+      return v === "cover" ? "Масштаб схем — по границам выгрузки: рамка не меньше области загрузки данных, сит. плана и территории. Данные карты за прежней рамкой докачает «Собрать» → «Альбом ППТ КРТ»."
+        : +v ? `Масштаб схем 1:${fmt(+v)}. Данные карты за прежней рамкой докачает «Собрать» → «Альбом ППТ КРТ».` : "Масштаб схем — авто, по размеру территории.";
+    },
+    /* «Собрать» → «Из файла…»: листы из проекта .grado2 или готовой вёрстки; вопрос «заменить или добавить» — state().imp и importAnswer */
+    importFile(file) { return readAlbumFile(file); },
+    importAnswer(mode) { return importAlbum(mode); },
+    /* «ГИС ОГД в DXF»: лист для выгрузки — выбранный в окне (i), если он на карте, иначе последний лист на карте; запрос для /api/ogd_all/start */
+    ogdSheet(i) {
+      const fr = (sheetAt(i) && window.sheetOnMap?.(sheetAt(i))) ? sheetAt(i) : [...ALBUM.sheets].reverse().find(sh => window.sheetOnMap?.(sh));
+      if (!fr) return null;
+      const k = ALBUM.sheets.indexOf(fr), sheet = ogdSheet(fr), b = frameBox(fr);
+      return { i: k, sheet, bbox: b, codes: ALBUM.meta.ogdCodes || [], boundary: TERR?.geometry || null,
+        where: `листу ${k + 1} «${fr.title}» (${SIZE_T[fr.size] || fr.size}, 1:${fmt(sheet.scale)})`, name: `ОГД ${fr.title || `лист ${k + 1}`} 1-${sheet.scale}` };
+    },
+    /* выбор слоёв портала для DXF — в проект (как окно выбора прежней страницы) */
+    keepOgd(codes) { if (!isViewer()) { ALBUM.meta.ogdCodes = [...codes]; touch(); } },
+    dlDir() { try { return localStorage.getItem("grado2.dlDir") || ""; } catch { return ""; } },
     touch() { touch(); },
   };
 })();
