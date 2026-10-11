@@ -48,6 +48,7 @@
         <h4 class="menu-h">Данные</h4>
         <wa-dropdown-item value="dxf">Чертёж DXF — слои проекта, МСК<span slot="details">МГГТ</span></wa-dropdown-item>
         <wa-dropdown-item value="geojson">GeoJSON для QGIS<span slot="details">МСК</span></wa-dropdown-item>
+        <wa-dropdown-item value="shp">SHP как в ГИС ОГД<span slot="details">МСК</span></wa-dropdown-item>
         <wa-dropdown-item value="xlsx">Excel: показатели ТЭП и листы<span slot="details">XLSX</span></wa-dropdown-item>
         <wa-divider></wa-divider>
         <h4 class="menu-h">Альбом — во вкладке «Листы и альбом»</h4>
@@ -175,7 +176,7 @@ import HubLogin from "./panels/HubLogin.vue";
 import HubWindows from "./panels/HubWindows.vue";
 import { flush as hubFlush, hub, openWin } from "./hub.js";
 import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
-import { exportDxf, exportGeojson, exportXlsx } from "./exports.js";
+import { exportDxf, exportGeojson, exportShp, exportXlsx } from "./exports.js";
 import { album, albumFile, albumHooks, ogdDxf } from "./albumhost.js";
 import { terrTool } from "./data.js";
 import { history, mapApi, redo, undo } from "./edit.js";
@@ -350,7 +351,7 @@ function showHelp() {
 
 function onExport(e) {
   const v = e.detail.item.value;
-  if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "xlsx") exportXlsx();
+  if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "shp") exportShp(); else if (v === "xlsx") exportXlsx();
   else if (v === "pdf" || v === "pptx") albumFile(v); else if (v === "ogd") ogdDxf();
 }
 

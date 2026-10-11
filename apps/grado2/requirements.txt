@@ -10,3 +10,4 @@ fonttools>=4.50
 starlette>=0.47
 uvicorn>=0.35
 pydantic>=2.11
+pyshp>=2.3
