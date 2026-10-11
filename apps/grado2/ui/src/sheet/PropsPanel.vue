@@ -4,7 +4,8 @@
      непрозрачность, скрыть и закрепить. Выбрано несколько — подсказка про выравнивание. Правки уходят событиями.
      У карты — «Вид» (#119): вид проекта с рамкой на карте задаёт слои, место и масштаб блока («Вписать» или «Заполнить»,
      круглый масштаб), «Блок по рамке» подгоняет высоту блока под пропорции рамки. Масштаб, заданный числом, меняет размер
-     рамки на карте; вид стоит на нескольких картах — подсказка и «Отдельный вид» (копия вида только для этого блока). -->
+     рамки на карте; вид стоит на нескольких картах — подсказка и «Отдельный вид» (копия вида только для этого блока).
+     Легенда «Следует за видом карты» (follow) берёт строки из вида своей карты и меняется вместе с ним. -->
 <script setup>
 import { ref, computed } from "vue";
 import NumField from "./NumField.vue";
@@ -35,7 +36,7 @@ function file(e) {
   const r = new FileReader(); r.onload = () => p({ src: r.result, file: f.name }); r.readAsDataURL(f);
 }
 const legendRows = computed(() => (b.value?.items || []).map(x => x.t).join("\n"));
-function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({ items: t.filter(s => s.trim()).map((s, i) => ({ ...(old[i] || { s: "fill", c: "#6b7280", f: "#e5e7eb" }), t: s.trim() })) }); }
+function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({ follow: false, items: t.filter(s => s.trim()).map((s, i) => ({ ...(old[i] || { s: "fill", c: "#6b7280", f: "#e5e7eb" }), t: s.trim() })) }); }
 </script>
 
 <template>
@@ -150,8 +151,12 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
       <template v-if="b.kind === 'legend'">
         <div class="pp-h">Легенда</div>
         <label class="pp-f">Заголовок<input :value="b.title" @change="p({ title: $event.target.value })"></label>
+        <label class="tg" title="Строки — из слоёв вида карты; сменили вид или его слои — легенда меняется сама"><input type="checkbox" :checked="!!b.follow" :disabled="!hasMaps" @change="$event.target.checked ? emit('act', 'legend:layers') : p({ follow: false })"><i></i>Следует за видом карты</label>
+        <label v-if="maps.length > 1" class="pp-f">Карта легенды<select :value="b.map || maps[0].id" @change="p({ map: $event.target.value })">
+          <option v-for="m in maps" :key="m.id" :value="m.id">{{ label(m) }}</option></select></label>
         <label class="pp-f">Строки (по одной в строке)<textarea rows="5" :value="legendRows" @change="legendText($event.target.value)"></textarea></label>
-        <button class="pp-btn" :disabled="!hasMaps" title="Строки — видимые слои проекта, сверху вниз, с их цветами" @click="emit('act', 'legend:layers')">Из слоёв карты</button>
+        <div v-if="b.follow" class="pp-note">Правка строк вручную отвяжет легенду от вида.</div>
+        <button class="pp-btn" :disabled="!hasMaps" title="Строки — видимые слои карты легенды (или её вида), сверху вниз, с их цветами" @click="emit('act', 'legend:layers')">Из слоёв карты</button>
       </template>
 
       <template v-if="b.kind === 'table'">

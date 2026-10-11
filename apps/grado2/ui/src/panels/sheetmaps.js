@@ -5,7 +5,8 @@
    диапазоны, правила; ЛГР — красной линией). Картинки карт кэшируются по месту, масштабу, размеру и слоям.
    Блок с видом (b.view, #119) берёт слои и оформление вида, а место и масштаб — из рамки вида (viewframes.js blockFromView;
    sync() правит блоки листа, frameTo() двигает рамку вида при «Сдвиге карты в рамке», frameScale() меняет её размер
-   под масштаб, заданный числом, ownView() делает копию вида для одного листа). */
+   под масштаб, заданный числом, ownView() делает копию вида для одного листа; легенда с follow
+   берёт строки из вида своей карты). */
 import { project, shown, scale, viewNow } from "../store.js";
 import { breaks, fullStyle, legendItems as classesOf, swatchColor, symbolOf } from "../symbology.js";
 import { blockBounds } from "../sheet/model.js";
@@ -148,13 +149,20 @@ export function views() {
   }));
   return project.views.map(v => ({ id: v.id, name: v.name, frame: v.frame || null, on: use[v.id]?.on || 0, sheets: use[v.id]?.sheets || [] }));
 }
-/* место и масштаб блоков с видом — по рамке вида; меняет лист на месте, → true, если что-то поменялось */
+/* место и масштаб блоков с видом — по рамке вида; легенда «следует за видом» (b.follow) — строки из слоёв вида своей
+   карты (b.map). Меняет лист на месте, → true, если что-то поменялось */
 export function sync(sheet) {
   let changed = false;
-  (sheet?.blocks || []).forEach(b => {
+  const blocks = sheet?.blocks || [];
+  blocks.forEach(b => {
     if (b.kind !== "map" || !b.view) return;
     const r = blockFromView(b, viewOf(b.view)); if (!r) return;
     if (JSON.stringify(r.center) !== JSON.stringify(b.center) || r.scale !== b.scale) { Object.assign(b, r); changed = true; }
+  });
+  blocks.forEach(b => {
+    if (b.kind !== "legend" || !b.follow) return;
+    const m = blocks.find(x => x.kind === "map" && x.id === b.map) || blocks.find(x => x.kind === "map"), items = legendItems(m?.view);
+    if (JSON.stringify(items) !== JSON.stringify(b.items)) { b.items = items; changed = true; }
   });
   return changed;
 }

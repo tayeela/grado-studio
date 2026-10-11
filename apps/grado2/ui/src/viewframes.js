@@ -1,7 +1,7 @@
 /* ГРАДО 2 · рамка вида (#119): вид = что видно (слои, оформление, подложка) + где (рамка на карте). Рамку рисуют на
    карте с пропорциями или размером, блок «Карта» на листе выбирает вид и показывает его рамку — как фрейм InDesign
    или карта макета QGIS. Здесь чистые расчёты в метрах МСК без OpenLayers и Vue: пропорции, рамка по двум углам,
-   середина и масштаб блока по рамке («Вписать» / «Заполнить», круглый масштаб), рамка под заданный масштаб.
+   середина и масштаб блока по рамке («Вписать» / «Заполнить», круглый масштаб), рамка под заданный масштаб, блок под брошенный на лист вид.
    Зовут viewframesmap.js (рамки на карте), ViewsPanel.vue, SheetPanel.vue и sheetmaps.js; проверяет viewframes.test.js. */
 import { SCALES } from "./sheet/model.js";
 
@@ -57,6 +57,17 @@ export function frameForScale(b, frame, scale) {
   if (!(b.w > 0 && b.h > 0 && scale > 0)) return frame;
   const r2 = v => Math.round(v * 100) / 100, m = v => String(Math.round(v * 10) / 10).replace(".", ",");
   return { ...frame, w: r2(b.w * scale / 1000), h: r2(b.h * scale / 1000), aspect: `${m(b.w)}:${m(b.h)}` };
+}
+// вид тянут из окна «Виды» на лист (ViewsPanel.vue → SheetEditor.vue): тип данных перетаскивания
+export const VIEW_MIME = "application/x-grado-view";
+/* блок карты, когда вид бросили на лист (#119, ч.3): ширина base мм (не шире рамки листа f), высота — по пропорциям
+   рамки вида, середина — в точке p, блок целиком внутри рамки листа. Без рамки у вида — пропорции блока по умолчанию */
+export function dropRect(p, f, frame, base = 160) {
+  const r = frame?.w > 0 && frame?.h > 0 ? frame.h / frame.w : 110 / 160, r2 = v => Math.round(v * 100) / 100;
+  let w = Math.min(base, f.w), h = w * r;
+  if (h > f.h) { h = f.h; w = h / r; }
+  const x = Math.min(Math.max(p.x - w / 2, f.x), f.x + f.w - w), y = Math.min(Math.max(p.y - h / 2, f.y), f.y + f.h - h);
+  return { x: r2(x), y: r2(y), w: r2(w), h: r2(h) };
 }
 /* высота блока под пропорции рамки при той же ширине (кнопка «Блок по рамке») */
 export const blockHeightFor = (b, frame) => frame?.w > 0 ? Math.round(b.w * frame.h / frame.w * 100) / 100 : b.h;

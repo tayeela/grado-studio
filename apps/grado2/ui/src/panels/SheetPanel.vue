@@ -77,7 +77,8 @@ function open() {
 }
 watch(() => project.layouts, l => { if (toRaw(l) !== mine) open(); }, { immediate: true });
 // рамку вида сдвинули или растянули на карте — блоки карты с этим видом встают по ней на всех листах
-watch(() => project.views.map(v => [v.id, v.frame]), () => sheets.value.forEach(sync), { deep: true });
+// и легенды «за видом» — по слоям вида
+watch(() => JSON.stringify(project.views), () => sheets.value.forEach(sync));
 onMounted(() => { vframes.on++; });
 onBeforeUnmount(() => { vframes.on--; });
 
