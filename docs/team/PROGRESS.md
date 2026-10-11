@@ -35,6 +35,11 @@ agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasti
 RULE: A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on
 fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
 
+- 11.10.2026, выкладка по постоянному слову владельца (10.10 23:34: «как все проверки закончатся не жди моего да а сливай и выкладывай все что готово»)
+  — v0.99.86 (PR #110 `team/t60 → main`, слияние 6d6911e): #102 альбом фаза 2, #103 приёмка и установщик Windows, #104 и #108 шаг 5,
+  #109 подписи поверх линий — не огрех (#59, ответ на #54 вопросы 2–3). Проверено: `E2E=1 tools/gate.sh` на дереве team/t60, проверки
+  GitHub на #110 зелёные. Не проверено: пересборка альбома Гольяново (порталы из облака недоступны), версия на сайте (вход).
+
 - 10.10.2026, выкладка по слову владельца («выкладывай») — v0.99.79 (PR #106 `team/t60 → main`, слияние 068dee1): PR #105 — шаг 3 плана,
   Гольяново: лист 2 без анклава «Восточный», выноска «разрабатываемая территория (N га)» (#62); самопроверка подписей на линиях,
   под угловыми надписями и легендой, у рамки — `apps/grado2/label_qa.py` (#55); #63 без кода. Проверено: `E2E=1 tools/gate.sh` на том же
