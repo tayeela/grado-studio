@@ -3,7 +3,8 @@
      с опорной точкой, поворот, свои настройки вида (масштаб карты, текст надписи, файл картинки…), рамка, фон,
      непрозрачность, скрыть и закрепить. Выбрано несколько — подсказка про выравнивание. Правки уходят событиями.
      У карты — «Вид» (#119): вид проекта с рамкой на карте задаёт слои, место и масштаб блока («Вписать» или «Заполнить»,
-     круглый масштаб), «Блок по рамке» подгоняет высоту блока под пропорции рамки. -->
+     круглый масштаб), «Блок по рамке» подгоняет высоту блока под пропорции рамки. Масштаб, заданный числом, меняет размер
+     рамки на карте; вид стоит на нескольких картах — подсказка и «Отдельный вид» (копия вида только для этого блока). -->
 <script setup>
 import { ref, computed } from "vue";
 import NumField from "./NumField.vue";
@@ -106,9 +107,15 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
             <label class="pp-f">Рамка в блоке<select :value="b.fit || 'fit'" @change="p({ fit: $event.target.value })">
               <option value="fit">Вписать — рамка видна целиком</option><option value="fill">Заполнить — блок закрыт целиком</option></select></label>
             <label class="tg"><input type="checkbox" :checked="b.round !== false" @change="p({ round: $event.target.checked })"><i></i>Круглый масштаб (1:2 000, 1:2 500…)</label>
-            <div class="pp-note">Масштаб по рамке: {{ fmtScale(b.scale) }}.</div>
+            <label class="pp-f">Масштаб<select :value="SCALES.includes(b.scale) ? b.scale : ''" @change="$event.target.value && emit('act', 'scale', [+$event.target.value])">
+              <option v-if="!SCALES.includes(b.scale)" value="">{{ b.scale ? fmtScale(b.scale) : 'не задан' }}</option>
+              <option v-for="s in SCALES" :key="s" :value="s">{{ fmtScale(s) }}</option></select></label>
+            <label class="pp-f">Свой масштаб, 1:<NumField :model-value="b.scale" :min="100" :step="100" :digits="0" label="Масштаб" @update:model-value="emit('act', 'scale', [$event])" /></label>
+            <div class="pp-note">Масштаб меняет размер рамки вида на карте, середина остаётся. Растянули рамку на карте — масштаб считается по ней.</div>
+            <div v-if="vw.on > 1" class="pp-note pp-warn">Вид стоит на картах: {{ vw.on }} ({{ vw.sheets.join(', ') }}). Сдвиг и масштаб меняют их все.</div>
             <button class="pp-btn" title="Высота блока — под пропорции рамки вида, ширина та же" @click="p({ h: blockHeightFor(b, vw.frame) })">Блок по рамке</button>
             <button class="pp-btn" :disabled="!hasMaps" title="Показать рамку вида на карте" @click="emit('act', 'view:show')">Рамка на карте</button>
+            <button class="pp-btn" :disabled="!hasMaps" title="Копия вида со своей рамкой — только для этой карты, другие листы не меняются" @click="emit('act', 'view:own')">Отдельный вид</button>
           </template>
         </template>
         <label class="pp-f">Подложка<select :value="b.basemap || 'none'" @change="p({ basemap: $event.target.value })">
@@ -206,6 +213,7 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
 .pp-row { display: flex; gap: 4px; align-items: center; }
 .pp-sp { flex: 1; }
 .pp-note { color: var(--g-mute); font-size: 12px; line-height: 1.4; }
+.pp-warn { color: #8a5a00; }
 .pp-list { line-height: 1.5; }
 select, input:not([type]), textarea { font: inherit; border: 1px solid var(--g-line-strong); border-radius: 5px; padding: 3px 8px; background: var(--g-panel); color: inherit; min-width: 0; width: 100%; box-sizing: border-box; height: 26px; }
 textarea { height: auto; resize: vertical; padding: 4px 8px; }
