@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-11, ГРАДО 2 v0.99.87: проверка установщика Windows убрана из сборки; учебный участок в Новой Москве (решение владельца)
 - 2026-10-11, ГРАДО 2 v0.99.86: подписи поверх линий — не огрех (#59, ответ владельца на #54 вопросы 2–3).
 - 2026-10-10, ГРАДО 2 v0.99.85: слит team/t60 с приёмкой и установщиком Windows (PR #103, v0.99.81–82) в ветку альбома.
 - 2026-10-10, ГРАДО 2 v0.99.84: слит свежий team/t60 в ветку альбома (PR #102).
@@ -21,4 +22,3 @@
 - 2026-10-09, ГРАДО 2 v0.99.74: new interface (/next/) — floating windows follow the mouse, larger targets, readable «Схема расчёта», automatic layout check (step 1 of plans/plan-dalshe-2026-10-09.md).
 - 2026-10-09, ГРАДО 2 v0.99.73: new interface (/next/) tidied after the owner's screenshot («элементы не по уровню, скачут, не влезают, ползунки, перемещение окон криво»).
 - 2026-10-09, ГРАДО 2 v0.99.72: new interface (/next/) audit fixes — six Haiku 5.5 auditors by area, fixes by four Opus 5.5 agents.
-- 2026-10-09, ГРАДО 2 v0.99.71 (on its branch v0.99.57): the server runs on Starlette and uvicorn, request bodies are checked by pydantic (part of #69).
