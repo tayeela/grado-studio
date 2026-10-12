@@ -1,7 +1,7 @@
 /* ГРАДО 2 · окно «Листы и альбом»: связь с движком альбома — рабочей страницей /old?embed=album (web/embed.js, albumapi.js).
    Движок без изменений (web/sheets.js, albums.js, frames.js, layout.js, ogdpick.js) собирает альбом тем же кодом, что и
    прежде, лист в лист. Он работает скрыто — невидимой рамкой iframe внутри нового интерфейса, а весь экран альбома —
-   вкладка panels/AlbumPanel.vue, рамки листов на карте (albumframes.js) и «Макет надписей» (AlbumLayout.vue). Отдельного
+   вкладка panels/AlbumPanel.vue, рамки листов на карте (те же рамки, что у видов, — viewframesmap.js) и «Макет надписей» (AlbumLayout.vue). Отдельного
    окна браузера («Подробно») больше нет (шаг 2 фаза 2, #94): всё, что было только в нём, перенесено во вкладку.
    Проект: движок получает его целиком (applyProject рабочей страницы), когда здесь была правка, которую он ещё не видел
    (перед каждым действием и когда окно снова в фокусе); правки движка (листы, загруженные слои, виды, группы) возвращаются
@@ -17,7 +17,7 @@ const { split } = collabMod.default || collabMod;
 
 /* open — движок загружен; rev — номер приёма правок движка (окно перечитывает альбом) */
 export const album = reactive({ lay: null, layTick: 0, open: false, ready: false, sheets: 0, rev: 0, say: "", want: null,   // want — выгрузка из меню, ждёт вкладку
-  tab: false, cur: 0, fit: 0, frames: [] });   // вкладка на виду, выбранный лист, «приблизить к рамке», рамки листов (albumframes.js)
+  tab: false, cur: 0, fit: 0, frames: [] });   // вкладка на виду, выбранный лист, «приблизить к рамке», рамки листов (viewframesmap.js)
 /* App.vue подставляет: «Сохранить» (Ctrl+S в окне альбома), открыть другой проект и показать вкладку «Листы и альбом» */
 export const albumHooks = { save: async () => {}, open: () => {}, panel: () => {}, data: () => {} };
 
@@ -140,6 +140,19 @@ export function editSheet(i, patch) {
 }
 export const engineState = () => live() && album.ready ? win.albumApi?.state() : null;
 export const startEngine = () => engine();
+/* Рамки листов альбома — те же рамки, что у видов (viewframesmap.js): пока открыты «Виды» или «Макет листа», движок
+   запускается (если в проекте есть листы) и рамки перечитываются раз в секунду, как во вкладке «Листы и альбом». */
+let fpoll = 0, lastFrames = "";
+function pollFrames() {
+  const f = engineState()?.frames; if (!f) return;
+  const t = JSON.stringify(f); if (t !== lastFrames) { lastFrames = t; album.frames = f; }
+}
+export function wantFrames(on) {
+  clearInterval(fpoll); fpoll = 0;
+  if (!on) return;
+  if (album.sheets) startEngine();
+  pollFrames(); fpoll = setInterval(pollFrames, 1000);
+}
 
 /* PDF и PPTX из меню «Выгрузка» — вкладка «Листы и альбом» (там видно ход выгрузки и вопрос «не всё готово»). */
 export const albumFile = kind => { album.want = kind; albumHooks.panel(); };

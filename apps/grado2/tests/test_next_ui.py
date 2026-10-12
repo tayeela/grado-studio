@@ -215,17 +215,37 @@ class NextUi(unittest.TestCase):
         bridge = (web / "albumapi.js").read_text(encoding="utf-8")
         for k in ("frames: frames()", "sheetOnMap(s, true)", "sheetCenter(s)", "sheetScale(s)", "frameMM(s)"):
             self.assertIn(k, bridge)
-        frames = (src / "albumframes.js").read_text(encoding="utf-8")
-        self.assertIn("editSheet(", frames)
+        # с v0.99.96 рамки листов — те же рамки, что у видов (viewframesmap.js, id «alb:…»): одна логика на карте
+        frames = (src / "viewframesmap.js").read_text(encoding="utf-8")
+        self.assertIn('export const ALB = "alb:"', frames)
+        self.assertIn("editSheet(f.i, patch)", frames)
+        self.assertIn("sheetFromCorners(drag.a, m, v.mm)", frames)              # угол листа держит пропорции карты листа
         self.assertIn('get("gradoTop")', frames)                           # под перехватом команд черчения, как frames.js
         # #29: на рамке — короткое имя «Лист 5 · А3 · 1:2000», полное название — подсказкой над рамкой
         self.assertIn("label: `${n} · ${fmtT(s)} · 1:${fmt(Math.round(sc))}`, title:", bridge)
-        self.assertIn("fr.title || fr.label", frames)
+        self.assertIn("tip: f.title", frames)
+        self.assertIn("watch(() => album.fit", frames)
+        self.assertFalse((src / "albumframes.js").exists())
         self.assertIn("export function editSheet(", (src / "albumhost.js").read_text(encoding="utf-8"))
-        self.assertIn("attachFrames(map)", (src / "panels" / "MapPanel.vue").read_text(encoding="utf-8"))
+        self.assertIn("export function wantFrames(", (src / "albumhost.js").read_text(encoding="utf-8"))
         panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
         self.assertIn("album.tab = e.isVisible", panel)
         self.assertIn("album.fit++", panel)
+
+    def test_album_sheets_open_in_sheet_layout(self):
+        # шаг 2 переноса альбома (v0.99.97): листы альбома ППТ КРТ — в том же списке «Макета листа», группой «Альбом ППТ КРТ»;
+        # открываются картинкой той же печати, что PDF альбома (albumapi preview), карта листа — общая рамка «alb:…»
+        src = NEXT.parents[1] / "ui" / "src"
+        panel = (src / "panels" / "SheetPanel.vue").read_text(encoding="utf-8")
+        self.assertIn('label="Альбом ППТ КРТ"', panel)
+        self.assertIn('<AlbumSheetView v-if="acur >= 0"', panel)
+        self.assertIn("id.startsWith(ALB)", panel)                         # «В макете листа» из вкладки: sheetNav.id = «alb:<id>»
+        view = (src / "sheet" / "AlbumSheetView.vue").read_text(encoding="utf-8")
+        self.assertIn("a.preview(p.i)", view)
+        self.assertIn('a.file("pdf", p.i)', view)
+        self.assertIn("vframes.sel = ALB + f.id", view)
+        alb = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        self.assertIn('openOwn(ALB + sel.id)', alb)
 
     def test_album_sheet_roles(self):
         # «Слои листа» во вкладке (шаг 2 фаза 2): роли листа считает окно «Слои и листы» движка (SheetLayers.rows — те же
