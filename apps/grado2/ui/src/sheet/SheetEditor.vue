@@ -563,8 +563,8 @@ defineExpose({ fit, act });
           <div class="sed-corner" title="Тяните от линейки, чтобы поставить направляющую"></div>
           <canvas ref="rulerX" class="sed-rx" @pointerdown="rulerDown('x', $event)" title="Тяните вниз — горизонтальная направляющая"></canvas>
           <canvas ref="rulerY" class="sed-ry" @pointerdown="rulerDown('y', $event)" title="Тяните вправо — вертикальная направляющая"></canvas>
-          <div ref="host" class="sed-stage" tabindex="0" aria-label="Лист" @mouseleave="cursor = null; drawRulers()" @dragover="dragView" @drop="dropView"></div>
-          <div v-if="!sheet.blocks.length && tool === 'select'" class="sed-empty">Лист пуст. Перетащите сюда вид из окна «Виды» — встанет карта с местом и масштабом по рамке вида. Или нарисуйте карту кнопкой «Карта» на ленте и выберите ей вид в «Свойствах». Надписи, легенду и картинки ставят так же.</div>
+          <div ref="host" class="sed-stage" role="application" tabindex="0" aria-label="Лист" @mouseleave="cursor = null; drawRulers()" @dragover="dragView" @drop="dropView"></div>
+          <div v-if="!sheet.blocks.length && tool === 'select'" class="sed-empty">Лист пуст: перетащите вид из окна «Виды»</div>
         </div>
       </section>
       <aside class="sed-side right">
@@ -604,6 +604,10 @@ defineExpose({ fit, act });
 .sed-side { flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--g-panel); }
 .sed-side.left { width: 236px; border-right: 1px solid var(--g-line); }
 .sed-side.right { width: 280px; border-left: 1px solid var(--g-line); }
+/* узкое окно макета (рядом с картой): лист важнее списка «Элементы» — он уходит, «Свойства» уже (UX-аудит 12.10 п. 1);
+   во всё окно — двойной щелчок по вкладке, список возвращается */
+.sed { container-type: inline-size; }
+@container (max-width: 900px) { .sed-side.left { display: none; } .sed-side.right { width: 248px; } }
 .sed-scroll { flex: 1; overflow: auto; }
 .sed-tab { height: 30px; flex: none; display: flex; align-items: flex-end; padding: 0 8px; border-bottom: 1px solid var(--g-line); }
 .sed-tab span { padding: 0 2px 6px; border-bottom: 2px solid var(--g-accent); margin-bottom: -1px; font-weight: 500; }
@@ -611,11 +615,11 @@ defineExpose({ fit, act });
 .sed-issue { display: block; width: calc(100% - 12px); margin: 0 6px; text-align: left; font: inherit; color: var(--g-warn); background: none; border: 0; padding: 4px; border-radius: 4px; cursor: pointer; }
 .sed-issue:hover { background: #fdf1ec; }
 .sed-center { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.sed-canvas { flex: 1; position: relative; min-height: 0; background: var(--g-bg); }
+.sed-canvas { flex: 1; position: relative; min-height: 0; min-width: 0; overflow: hidden; background: var(--g-bg); }
 .sed-corner { position: absolute; left: 0; top: 0; width: 22px; height: 22px; background: var(--g-panel); border-right: 1px solid var(--g-line); border-bottom: 1px solid var(--g-line); }
 .sed-rx { position: absolute; left: 22px; top: 0; right: 0; height: 22px; width: calc(100% - 22px); cursor: s-resize; }
 .sed-ry { position: absolute; left: 0; top: 22px; bottom: 0; width: 22px; height: calc(100% - 22px); cursor: e-resize; }
-.sed-empty { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); max-width: 360px; padding: 12px 16px; border-radius: 8px; background: var(--g-panel); color: var(--g-mute); font-size: 13px; line-height: 1.45; text-align: center; pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.sed-empty { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); max-width: min(360px, calc(100% - 64px)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px 14px; border-radius: 8px; background: var(--g-panel); color: var(--g-mute); font-size: 13px; line-height: 1.45; text-align: center; pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
 .sed-stage { position: absolute; left: 22px; top: 22px; right: 0; bottom: 0; outline: none; overflow: hidden; }
 .sed-cmd { height: 28px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-top: 1px solid var(--g-line); background: var(--g-panel); font-size: 12px; color: var(--g-mute); }
 .sed-cmd input { width: 340px; flex: none; height: 22px; font: 12px/1 var(--wa-font-family-code, ui-monospace, monospace); color: var(--g-ink); background: var(--g-bg); border: 1px solid var(--g-line); border-radius: 4px; padding: 0 6px; }

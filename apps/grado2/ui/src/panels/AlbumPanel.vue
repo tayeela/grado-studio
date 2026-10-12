@@ -20,7 +20,7 @@
         <wa-button size="s" appearance="outlined" :disabled="!own.length || ownBusy" :loading="ownBusy" title="Все листы проекта по порядку одним PDF" @click="ownPdf"><FileDown :size="14" /> PDF</wa-button>
       </div>
     </div>
-    <p v-if="!own.length" class="empty">Листов пока нет. «Новый лист» — пустой лист, как в «Макете листа»: на нём рисуют рамку карты и выбирают ей вид. Вид — это слои и рамка на карте, её рисуют в окне «Виды» и тянут на нужную территорию.</p>
+    <p v-if="!own.length" class="empty">Листов пока нет: нажмите «Новый лист».<span class="gq" tabindex="0" role="note" title="Новый лист — пустой лист, как в «Макете листа»: на нём рисуют рамку карты и выбирают ей вид. Вид — это слои и рамка на карте, её рисуют в окне «Виды» и тянут на нужную территорию." aria-label="Новый лист — пустой лист, как в «Макете листа»: на нём рисуют рамку карты и выбирают ей вид. Вид — это слои и рамка на карте, её рисуют в окне «Виды» и тянут на нужную территорию.">?</span></p>
     <ol v-else class="list" aria-label="Листы проекта">
       <li v-for="(s, i) in own" :key="s.id" :title="'Открыть в «Макете листа»: ' + (s.title || 'без названия')" tabindex="0" @click="openOwn(s.id)" @keydown.enter="openOwn(s.id)">
         <span class="n">{{ i + 1 }}</span>
@@ -139,7 +139,7 @@
       </div>
     </wa-details>
 
-    <p v-if="!sheets.length" class="empty">В альбоме листов нет. «Собрать» → «Альбом ППТ КРТ» соберёт листы по правилам ППТ КРТ: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан.</p>
+    <p v-if="!sheets.length" class="empty">В альбоме листов нет: «Собрать» → «Альбом ППТ КРТ».<span class="gq" tabindex="0" role="note" title="Сборка ставит листы по правилам ППТ КРТ: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан." aria-label="Сборка ставит листы по правилам ППТ КРТ: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан.">?</span></p>
     <ol v-else class="list" role="listbox" aria-label="Листы альбома" @keydown="keys">
       <li v-for="(s, i) in sheets" :key="s.id" role="option" :aria-selected="i === cur" :tabindex="i === cur ? 0 : -1"
           :class="{ on: i === cur, bad: !!why(s), ['drop-' + (dnd.at === i ? dnd.tone || 'wait' : '')]: dnd.at === i }"
