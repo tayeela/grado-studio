@@ -5,7 +5,7 @@
      Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта).
      Черчение как в AutoCAD (команды, привязки, ручки, командная строка над картой) — cad.js, подключается к этой карте;
      поиск по адресу, кадастровому номеру и № КРТ над картой — MapSearch.vue; метки комментариев и указатели участников
-     совместной работы — hubmap.js; рамки листов альбома — albumframes.js; рамки видов (#119) — viewframesmap.js. -->
+     совместной работы — hubmap.js; рамки листов альбома — albumframes.js; рамки видов (#119) и область загрузки данных — viewframesmap.js. -->
 <template><div class="mapbox">
   <!-- карта — одна остановка Tab: стрелки двигают, «+» и «−» меняют масштаб (клавиши OpenLayers); объекты слоя доступны
        списком в «Таблице атрибутов» (#30) -->
@@ -36,9 +36,7 @@ import { mskOf, sel, selected, setSel, toggleSel } from "../features.js";
 import { loadLibs, scaleDen } from "../symbology.js";
 import Draw from "ol/interaction/Draw.js";
 import Modify from "ol/interaction/Modify.js";
-import Text from "ol/style/Text.js";
 import { fromExtent } from "ol/geom/Polygon.js";
-import Feature from "ol/Feature.js";
 import { coverBox, coverOn, importFiles, setTerritory, terrTool } from "../data.js";
 import { notice } from "../project.js";
 import { attachGraphLayers } from "../graphmap.js";
@@ -82,16 +80,7 @@ function setTerrTool(t) {
   terrLayer?.changed();
 }
 
-/* Область загрузки данных: синий пунктир, пока окно «Данные» на виду. */
-const coverSrc = new VectorSource();
-const coverStyle = new Style({ stroke: new Stroke({ color: "#1a5fb4", width: 1.5, lineDash: [6, 5] }),
-  text: new Text({ text: "область загрузки данных", font: "12px Onest, system-ui, sans-serif", placement: "line", fill: new Fill({ color: "#1a5fb4" }),
-    stroke: new Stroke({ color: "#fff", width: 3 }), textBaseline: "bottom", offsetY: -3 }) });
-function drawCover() {
-  coverSrc.clear(true);
-  const b = coverOn.value && coverBox(); if (!b) return;
-  coverSrc.addFeature(new Feature(fromExtent(b).transform("EPSG:4326", "EPSG:3857")));
-}
+/* Область загрузки данных — синяя рамка, пока окно «Данные» на виду: рисует и двигает её viewframesmap.js, как рамки видов. */
 let terrLayer = null;
 
 /* слои проекта на карте — maplayers.js (то же для карт окна «Сравнение»); здесь — ещё подсветка выбора */
@@ -139,7 +128,7 @@ let viewPending = true;
 function opened() {
   LS.clear();
   sync();
-  drawTerr(); drawCover();
+  drawTerr();
   viewPending = true; applyView();
 }
 function applyView() {
@@ -165,14 +154,14 @@ function zoomTo(keys, duration = 200) {
 onMounted(() => {
   map = new Map({
     target: el.value, layers: [basemap(basemapId.value, theme.value), terrLayer = new VectorLayer({ source: terrSrc, zIndex: 9999, style: () => terrTool.value === "edit" ? [terrHalo, terrStyle] : terrStyle }),
-      new VectorLayer({ source: coverSrc, zIndex: 9998, style: coverStyle }), new VectorLayer({ source: selSrc, zIndex: 10000, style: f => SELSTYLE[gkind(f)] })],
+      new VectorLayer({ source: selSrc, zIndex: 10000, style: f => SELSTYLE[gkind(f)] })],
     view: new View({ center: fromLonLat([37.62, 55.75]), zoom: 11 }),
     interactions: defaultInteractions({ shiftDragZoom: false }),   // Shift+рамка — выбор, как в рабочей странице
   });
   LS = layerSync(map); vec = LS.vec; mref.value = map;
   offCad = attachCad(map, { vec, sync: () => LS.sync(), terrSrc });     // команды черчения: щелчки, ручки, командная строка
   offHub = attachHub(map);                         // совместная работа: метки комментариев, указатели других участников
-  offViews = attachViewFrames(map);                // рамки видов, пока открыты «Виды» или «Макет листа»
+  offViews = attachViewFrames(map);                // рамки видов, пока открыты «Виды» или «Макет листа», и область загрузки, пока на виду «Данные»
   offFrames = attachFrames(map);                   // рамки листов альбома, пока вкладка «Листы и альбом» на виду
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
@@ -196,12 +185,14 @@ onMounted(() => {
   watch(() => project.raw, opened);
   watch([() => project.layers, () => project.groups, dataRev], sync, { deep: true });
   watch(sel, drawSel);
-  watch(() => project.territory, () => { drawTerr(); drawCover(); });
-  watch(coverOn, on => {
-    drawCover(); if (!on || !coverSrc.getFeatures().length) return;
-    const ex = coverSrc.getExtent(), v = map.getView();      // область за краем экрана — карта отдаляется, чтобы пунктир было видно весь
-    if (!containsExtent(v.calculateExtent(map.getSize()), ex)) v.fit(ex, { padding: [40, 40, 40, 40], duration: 250 });
-  });
+  // область загрузки за краем экрана — карта отдаляется, чтобы рамку было видно всю: окно «Данные» показали или границу задали заново
+  const showCover = () => {
+    const b = coverOn.value && coverBox(); if (!b) return;
+    const ex = fromExtent(b).transform("EPSG:4326", "EPSG:3857").getExtent(), v = map.getView();
+    if (!containsExtent(v.calculateExtent(map.getSize()), ex)) v.fit(ex, { padding: [70, 40, 40, 40], duration: 250 });   // сверху — место для подписи рамки под поиском
+  };
+  watch(() => project.territory, () => { drawTerr(); setTimeout(showCover, 300); });
+  watch(coverOn, showCover);
   watch(terrTool, setTerrTool);
   /* файл, брошенный на карту, — импорт слоя (файл проекта открывается меню «Проект») */
   el.value.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); el.value.classList.add("dropfile"); } });
