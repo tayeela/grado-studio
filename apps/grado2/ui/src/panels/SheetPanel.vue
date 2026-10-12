@@ -3,8 +3,8 @@
      удалить, все листы одним PDF; листы — часть проекта (store.js project.layouts, ключ layouts файла): правка листа — правка
      проекта, её держит автосохранение и пишет «Сохранить», как и правки слоёв (project.js). Карта блока — настоящая карта проекта в масштабе блока, «PDF»
      печатает лист тем же рендером, что альбом (sheetmaps.js). Штамп берёт поля альбома (album.meta файла). Новый
-     лист пустой (без заготовки): карту рисуют на листе и выбирают ей вид. Это свои листы проекта; альбом ППТ КРТ
-     собирается отдельно — кнопкой «Листы и альбом» в шапке (строка-пояснение справа). Удаление листа — через диалог Web Awesome.
+     лист пустой (без заготовки): карту рисуют на листе и выбирают ей вид. Те же листы списком — в окне «Листы и альбом»
+     (AlbumPanel.vue): оттуда «Новый лист» и щелчок по листу открывают его здесь (store.js sheetNav). Удаление листа — через диалог Web Awesome.
      Блок карты с видом (#119) следует за рамкой вида: сдвинули или растянули рамку на карте — листы с этим видом
      меняются сами (sheetmaps.js sync); пока окно открыто, рамки видов видны на карте (viewframesmap.js). -->
 <template>
@@ -36,14 +36,14 @@ import { ref, reactive, toRaw, watch, onMounted, onBeforeUnmount } from "vue";
 import { FilePlus2, Copy, Trash2, FileDown } from "@lucide/vue";
 import SheetEditor from "../sheet/SheetEditor.vue";
 import { newSheet, newId } from "../sheet/model.js";
-import { project } from "../store.js";
+import { project, sheetNav } from "../store.js";
 import { mapImage, here, legendItems, printPdf, printAll, views, sync, frameTo, frameScale, ownView } from "./sheetmaps.js";
 import { vframes } from "../viewframesmap.js";
 
 const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf, views, sync, frameTo, frameScale, ownView, showFrame: id => { vframes.sel = id; vframes.fit = id; } };
 const clone = x => JSON.parse(JSON.stringify(x));
 const sheets = ref([]), cur = ref(0), askDrop = ref(false);
-const HINT = "Здесь — свои листы проекта. Альбом ППТ КРТ собирается в «Листы и альбом» вверху окна.";
+const HINT = "Те же листы — в окне «Листы и альбом». Карта листа — рамка вида на карте (окно «Виды»).";
 const state = reactive({ kind: "", text: "" });
 const meta = () => project.raw?.album?.meta || {};
 let mine = null, base = "";             // mine — список листов, который панель сама положила в project.layouts
@@ -71,11 +71,13 @@ async function all() {
 function open() {
   const list = (project.layouts || []).map(s => ({ ...clone(s), id: s.id || newId("sheet") }));
   sheets.value = list.length ? list : [fresh("Новый лист")];
-  cur.value = 0;
+  cur.value = Math.max(0, sheets.value.findIndex(s => s.id === sheetNav.id));   // открыли из «Листов и альбома» — на том листе
   state.kind = ""; state.text = list.length ? `Листов в проекте: ${list.length}` : "";
   base = JSON.stringify(sheets.value);                // то, что уже в проекте (или нетронутый новый лист): правкой не считать
 }
 watch(() => project.layouts, l => { if (toRaw(l) !== mine) open(); }, { immediate: true });
+// «Листы и альбом»: щелчок по листу или «Новый лист» — этот лист здесь
+watch(() => sheetNav.tick, () => { const i = sheets.value.findIndex(s => s.id === sheetNav.id); if (i >= 0) cur.value = i; });
 // рамку вида сдвинули или растянули на карте — блоки карты с этим видом встают по ней на всех листах
 // и легенды «за видом» — по слоям вида
 watch(() => JSON.stringify(project.views), () => sheets.value.forEach(sync));

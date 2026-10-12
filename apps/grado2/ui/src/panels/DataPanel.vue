@@ -1,6 +1,6 @@
 <!-- ГРАДО 2 · окно «Данные» нового интерфейса (как окно «Данные» и «Исходные данные» рабочей страницы, web/app.js и
      web/ogdpick.js): граница территории (нарисовать, изменить, из файла, по участкам, из выбранного, пример), область
-     загрузки синим пунктиром на карте, что уже в проекте по источникам (число объектов, дата, ошибка, история
+     загрузки синей рамкой на карте (её тянут и растягивают, как рамку вида, — viewframesmap.js), что уже в проекте по источникам (число объектов, дата, ошибка, история
      перевыгрузок), документы ФГИС ТП и их слои, сводка существующего положения в границе, импорт файлов и окно выбора источников: дерево ЕГРН,
      подборок и всех слоёв ГИС ОГД, ЕГКО, OSM, Яндекса и рельефа с готовыми наборами и числом объектов в области.
      Логика — data.js. -->
@@ -10,6 +10,8 @@
     <section class="step">
       <div class="sh"><span class="num" :class="{ ok: !!project.territory }"><Check v-if="project.territory" :size="12" /><template v-else>1</template></span>Граница территории</div>
       <p class="lead" :class="{ none: !project.territory }">{{ coverInfo }}</p>
+      <!-- своя область загрузки (рамку сдвинули или растянули на карте): вернуть — снова по границе, видам и листам -->
+      <wa-button v-if="own" size="s" appearance="plain" class="reset" title="Область загрузки снова ставится сама: граница с запасом, рамки видов и листов" @click="setCover(null)"><RotateCcw :size="14" /> Область — по границе и видам</wa-button>
       <div class="btns">
         <wa-button size="s" :appearance="terrTool === 'draw' ? 'filled' : 'outlined'" :variant="terrTool === 'draw' ? 'brand' : 'neutral'"
                    title="Обвести контур щелчками на карте, двойной щелчок завершает, Esc — отмена" @click="toggle('draw')"><PenLine :size="14" /> Нарисовать</wa-button>
@@ -147,14 +149,14 @@
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { Check, ChevronRight, CircleAlert, CircleCheck, CircleMinus, Database, Download, FileDown, FileInput, FileUp, Grid2x2, Info, Landmark, PenLine, Spline, SquareDashed, X } from "@lucide/vue";
+import { Check, ChevronRight, CircleAlert, CircleCheck, CircleMinus, Database, Download, FileDown, FileInput, FileUp, Grid2x2, Info, Landmark, PenLine, RotateCcw, Spline, SquareDashed, X } from "@lucide/vue";
 import * as turf from "@turf/turf";
 import { project } from "../store.js";
 import { dataRev, lyr } from "../edit.js";
 import { sel, selected } from "../features.js";
 import { plural } from "../geom.js";
 import {
-  ERRORS, FG, FILE_ACCEPT, SOURCES, fgFind, fgLoad, fgPick, fgSearch, checked, coverBox, coverOn, coverText, existingSummary, exampleTerritory, importBoundary, importFiles,
+  ERRORS, FG, FILE_ACCEPT, SOURCES, fgFind, fgLoad, fgPick, fgSearch, checked, coverBox, coverOn, coverOwn, coverRev, coverText, setCover, existingSummary, exampleTerritory, importBoundary, importFiles,
   job, keepChecked, loadKeys, loadSources, loading, localSys, ogd, startOgd, stopOgd, terrTool, territoryByNumbers, territoryFromSelection,
 } from "../data.js";
 import { call } from "../albumhost.js";
@@ -166,10 +168,11 @@ const GROUP = { gisogd_admin: "Административное деление �
   yandex: "Яндекс Карты (для анализа и эскиза, в сдаваемые материалы не включать)" };
 const fmt = v => Number(v).toLocaleString("ru-RU");
 
-const cover = computed(() => (project.territory, project.raw, coverBox()));
+const cover = computed(() => (project.territory, project.raw, coverRev.value, JSON.stringify(project.views), coverBox()));
+const own = computed(() => (project.raw, coverRev.value, coverOwn()));
 const srcOpen = ref(false);
 const errKeys = computed(() => (dataRev.value, Object.keys(ERRORS)));
-const coverInfo = computed(() => (project.territory, project.raw, coverText()));
+const coverInfo = computed(() => (project.territory, project.raw, coverRev.value, JSON.stringify(project.views), coverText()));
 const summary = computed(() => (dataRev.value, project.territory, existingSummary()));
 const groups = computed(() => {
   dataRev.value;
@@ -333,6 +336,7 @@ onBeforeUnmount(() => { clearInterval(tick); off?.dispose?.(); coverOn.value = f
 
 <style>
 /* шаги «граница → загрузка → в проекте»: номер в кружке, под ним карточка; кнопки — сеткой равных колонок (аудит 09.10.2026) */
+.data .reset { margin: -2px 0 6px -8px; }
 .data .step { padding-bottom: var(--wa-space-m); margin-bottom: var(--wa-space-m); border-bottom: 1px solid var(--g-line); }
 .data .sh { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: var(--wa-font-size-s); margin-bottom: 6px; }
 .data .sh .num { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; flex: none;

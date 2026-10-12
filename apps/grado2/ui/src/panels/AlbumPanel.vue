@@ -1,5 +1,8 @@
-<!-- ГРАДО 2 · вкладка «Листы и альбом» нового интерфейса (шаг 2 плана, #94): альбом ППТ КРТ без отдельного окна браузера.
-     Сверху строка альбома и действия («Собрать», PDF, PPTX), ход сборки и выгрузки («PDF: лист 3 из 9 · 12 с», «Остановить»),
+<!-- ГРАДО 2 · вкладка «Листы и альбом» нового интерфейса. Сверху — листы проекта, те же, что в «Макете листа» (project.layouts):
+     «Новый лист» — пустой лист, как там (без заготовок по формату), щелчок по листу открывает его в «Макете листа»
+     (store.js sheetNav), «PDF» — все эти листы одним файлом (sheetmaps.js printAll). Карта листа — рамка вида на карте.
+     Ниже, в раскрывающемся разделе, — альбом ППТ КРТ (шаг 2 плана, #94) без отдельного окна браузера.
+     В нём строка альбома и действия («Собрать», PDF, PPTX), ход сборки и выгрузки («PDF: лист 3 из 9 · 12 с», «Остановить»),
      вопросы «заменить или добавить» и «не всё готово»; ниже штамп, список листов и свойства выбранного листа с просмотром.
      Сборку и печать делает прежний движок альбома, скрытый в странице (albumhost.js call, web/albumapi.js), поэтому PDF и
      PPTX выходят лист в лист прежние. Простые правки (название, формат, масштаб, легенда, ТЭП, порядок, удаление, штамп)
@@ -9,15 +12,29 @@
      масштаб схем и формат слайдов — здесь же (прежнего окна «Подробно» больше нет). -->
 <template>
   <div class="pane alb">
+    <!-- листы проекта — те же, что в «Макете листа»: одна логика везде (владелец 12.10.2026) -->
     <div class="ahead">
-      <p class="stat" :title="st?.stat">{{ head }}</p>
+      <p class="stat">{{ ownHead }}</p>
       <div class="acts">
-        <wa-dropdown @wa-select="e => add(e.detail.item.value)">
-          <wa-button slot="trigger" size="s" appearance="outlined" with-caret :disabled="busy || viewer"><FilePlus2 :size="14" /> Добавить лист</wa-button>
-          <wa-dropdown-item value="A3">Лист A3 (ГОСТ)<span slot="details">рамка и штамп</span></wa-dropdown-item>
-          <wa-dropdown-item value="A1">Лист A1 (ГОСТ)<span slot="details">большой лист</span></wa-dropdown-item>
-          <wa-dropdown-item value="P">Слайд 16:9<span slot="details">презентация</span></wa-dropdown-item>
-        </wa-dropdown>
+        <wa-button size="s" variant="brand" :disabled="viewer" data-act="new" title="Пустой лист, как в «Макете листа»: на нём ставите рамку карты и выбираете ей вид — рамку, нарисованную на карте в окне «Виды»" @click="addOwn"><FilePlus2 :size="14" /> Новый лист</wa-button>
+        <wa-button size="s" appearance="outlined" :disabled="!own.length || ownBusy" :loading="ownBusy" title="Все листы проекта по порядку одним PDF" @click="ownPdf"><FileDown :size="14" /> PDF</wa-button>
+      </div>
+    </div>
+    <p v-if="!own.length" class="empty">Листов пока нет. «Новый лист» — пустой лист, как в «Макете листа»: на нём рисуют рамку карты и выбирают ей вид. Вид — это слои и рамка на карте, её рисуют в окне «Виды» и тянут на нужную территорию.</p>
+    <ol v-else class="list" aria-label="Листы проекта">
+      <li v-for="(s, i) in own" :key="s.id" :title="'Открыть в «Макете листа»: ' + (s.title || 'без названия')" tabindex="0" @click="openOwn(s.id)" @keydown.enter="openOwn(s.id)">
+        <span class="n">{{ i + 1 }}</span>
+        <span class="t">{{ s.title || "без названия" }}</span>
+        <span class="f">{{ s.format || "A3" }}{{ s.orient === "P" ? " стоя" : "" }}<template v-if="mapsOn(s)"> · {{ mapsOn(s) }}</template></span>
+        <span></span>
+      </li>
+    </ol>
+
+    <!-- альбом ППТ КРТ: состав листов задан правилами ППТ КРТ (docs/wiki/album-rules.md), собирается и печатается прежним движком -->
+    <wa-details class="stamp albsec" :open="albOpen" @wa-show.self="albOpen = true" @wa-hide.self="albOpen = false">
+    <span slot="summary"><b>Альбом ППТ КРТ</b> <span class="sum" :title="st?.stat">{{ head }}</span></span>
+    <div class="ahead">
+      <div class="acts">
         <wa-dropdown @wa-select="e => build(e.detail.item.value)">
           <wa-button slot="trigger" size="s" appearance="outlined" with-caret :disabled="busy || viewer"><LayoutTemplate :size="14" /> Собрать</wa-button>
           <wa-dropdown-item value="pptkrt">Альбом ППТ КРТ<span slot="details">А3, красная шапка</span></wa-dropdown-item>
@@ -122,7 +139,7 @@
       </div>
     </wa-details>
 
-    <p v-if="!sheets.length" class="empty">Листов пока нет. «Добавить лист» — один лист по виду карты; «Собрать» → «Альбом ППТ КРТ» соберёт альбом по шаблону: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан.</p>
+    <p v-if="!sheets.length" class="empty">В альбоме листов нет. «Собрать» → «Альбом ППТ КРТ» соберёт листы по правилам ППТ КРТ: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан.</p>
     <ol v-else class="list" role="listbox" aria-label="Листы альбома" @keydown="keys">
       <li v-for="(s, i) in sheets" :key="s.id" role="option" :aria-selected="i === cur" :tabindex="i === cur ? 0 : -1"
           :class="{ on: i === cur, bad: !!why(s), ['drop-' + (dnd.at === i ? dnd.tone || 'wait' : '')]: dnd.at === i }"
@@ -275,6 +292,7 @@
       <wa-button slot="footer" size="s" appearance="plain" @click="askDrop = false">Отмена</wa-button>
       <wa-button slot="footer" size="s" variant="danger" @click="drop">Удалить</wa-button>
     </wa-dialog>
+    </wa-details>
   </div>
 </template>
 
@@ -284,7 +302,9 @@ import { ArrowDown, ArrowUp, Camera, CircleAlert, Eye, EyeOff, FileDown, FilePlu
 import { album, call, engineState, startEngine, sync } from "../albumhost.js";
 import { C } from "../collab.js";
 import { markDirty, notice } from "../project.js";
-import { project, winApi } from "../store.js";
+import { project, sheetNav, winApi } from "../store.js";
+import { newId, newSheet } from "../sheet/model.js";
+import { printAll } from "./sheetmaps.js";
 import FontPicker from "./FontPicker.vue";
 
 const WATER = "#bfe0f5";   // вода белых схем по умолчанию (albums.js C_WATER_VIS, print_io.WATER_VIS)
@@ -436,10 +456,25 @@ function keys(e) {
   e.currentTarget.querySelector(`li:nth-child(${cur.value + 1})`)?.focus();
 }
 
-async function add(size) {
-  const i = await act(a => a.add(size));
-  if (Number.isInteger(i)) setTimeout(() => { cur.value = i; }, 400);   // движок вернёт альбом с новым листом через полсекунды
+/* листы проекта — те же, что в «Макете листа» (SheetPanel.vue): новый — пустой А3, как там; открываются там же */
+const own = computed(() => project.layouts || []);
+const ownBusy = ref(false);
+const ownHead = computed(() => own.value.length ? `Листы: ${own.value.length}` : "Листов нет");
+const mapsOn = s => { const n = (s.blocks || []).filter(b => b.kind === "map").length; return n ? `${n} ${word(n, "карта", "карты", "карт")}` : ""; };
+function openOwn(id) { sheetNav.id = id; sheetNav.tick++; winApi.open("sheet"); }
+function addOwn() {
+  const s = { id: newId("sheet"), ...newSheet({ format: "A3", title: `Лист ${own.value.length + 1}`, blank: true }) };
+  project.layouts = [...JSON.parse(JSON.stringify(own.value)), s];
+  openOwn(s.id);
 }
+async function ownPdf() {
+  ownBusy.value = true;
+  try { await printAll(JSON.parse(JSON.stringify(own.value)), meta.value, project.name || "листы"); } catch (e) { notice.value = "PDF листов: " + (e.message || e); } finally { ownBusy.value = false; }
+}
+/* раздел альбома раскрыт, если в альбоме есть листы; вопрос, ход сборки или «не всё готово» раскрывают его сами */
+const albOpen = ref(!!project.raw?.album?.sheets?.length);
+watch(() => !!(issues.value || legacy.value || st.value?.ask || st.value?.imp || st.value?.bp), v => { if (v) albOpen.value = true; });
+watch(() => project.raw, r => { albOpen.value = !!r?.album?.sheets?.length; });
 async function build(kind) {
   if (kind === "refresh") return refresh(null);
   if (kind === "file") { if (viewer.value) return; impFile.value?.click(); return; }
@@ -589,6 +624,8 @@ watch(() => album.want, k => { if (k) { album.want = null; file(k); } }, { immed
 .alb .look .lbl small { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 .alb .look wa-select { margin-bottom: 6px; }
 .alb .look .hint { margin: 0; }
+.alb .albsec { margin-top: 4px; }
+.alb .albsec > .ahead { margin-top: 2px; }
 .alb .empty { color: var(--g-muted); font-size: var(--wa-font-size-s); line-height: 1.4; }
 .alb .list { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--g-line); border-radius: 8px; }
 .alb .list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 16px; align-items: baseline; line-height: 16px; gap: 6px; padding: 6px 8px;

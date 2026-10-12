@@ -3,7 +3,9 @@
    «Нарисовать рамку» (vframes.draw = id вида): тянешь прямоугольник, пропорции — из vframes.aspect (Shift — свободно).
    Щелчок по рамке выбирает вид; выбранную тянут внутри (сдвиг) и за угол (размер, пропорции держатся, Shift — свободно).
    Рамка пишется в project.views[].frame ({ center: [долгота, широта], w, h — метры МСК, aspect }) — её берут блоки карты
-   листов (SheetPanel.vue, viewframes.js blockFromView). Расчёты — viewframes.js; устроено как albumframes.js. */
+   листов (SheetPanel.vue, viewframes.js blockFromView). Расчёты — viewframes.js; устроено как albumframes.js.
+   Пока окно «Данные» на виду, тут же — синяя рамка «Область загрузки данных» (id COVER, data.js coverFrame): её тянут
+   и растягивают так же, как рамку вида, сдвинутая рамка становится своей областью проекта (data.js setCover). */
 import Feature from "ol/Feature.js";
 import Polygon from "ol/geom/Polygon.js";
 import MultiPoint from "ol/geom/MultiPoint.js";
@@ -19,15 +21,19 @@ import * as mskMod from "../../web/msk.js";
 import { project } from "./store.js";
 import { cadApi } from "./cad.js";
 import { cornersM, fromCorners, frameLabel, ratioOf } from "./viewframes.js";
+import { coverFrame, coverOn, coverRev, setCover, terrTool } from "./data.js";
 
 const MSK = globalThis.MSK || mskMod.default || mskMod;
-const VIOLET = "#7a3fd1";
+const VIOLET = "#7a3fd1", BLUE = "#1a5fb4";
+export const COVER = "__cover";
+/* область загрузки — как вид: рамка frame; запись рамки — своя область проекта */
+const coverItem = () => ({ id: COVER, name: "область загрузки данных", get frame() { return coverFrame(); }, set frame(f) { if (f?.center) setCover(f); } });
 const toM = c => MSK.fromWgs(toLonLat(c)), fromM = m => fromLonLat(MSK.toWgs(m));
 
 /* общее состояние: on — сколько окон просят рамки (Виды, Макет листа); draw — id вида, которому рисуют рамку;
    sel — выбранный вид; aspect — пропорции новой рамки; fit — «приблизить к рамке вида» (id); msg — подсказка над картой */
 export const vframes = reactive({ on: 0, draw: "", sel: "", aspect: "a", fit: "", msg: "" });
-export const viewOf = id => project.views.find(v => v.id === id);
+export const viewOf = id => id === COVER ? coverItem() : project.views.find(v => v.id === id);
 export const frameCorners = f => cornersM(MSK.fromWgs(f.center), f.w, f.h);
 /* рамка по текущему экрану карты (центр и охват окна «Карта» с полями 10 %) с пропорциями aspect */
 export function frameFromExtent(ext, aspect) {
@@ -41,23 +47,27 @@ export function frameFromExtent(ext, aspect) {
 export function attachViewFrames(map) {
   const src = new VectorSource();
   let drag = null, live = null;          // live — рамка, которую сейчас тянут или рисуют: { id, c (МСК), w, h }
-  const grip = new Style({ image: new RegularShape({ points: 4, radius: 6, angle: Math.PI / 4, fill: new Fill({ color: "#fff" }), stroke: new Stroke({ color: VIOLET, width: 2 }) }),
+  const gripOf = col => new Style({ image: new RegularShape({ points: 4, radius: 6, angle: Math.PI / 4, fill: new Fill({ color: "#fff" }), stroke: new Stroke({ color: col, width: 2 }) }),
     geometry: f => new MultiPoint(f.getGeometry().getCoordinates()[0].slice(0, 4)) });
+  const grip = gripOf(VIOLET), gripB = gripOf(BLUE);
   const layer = new VectorLayer({ source: src, zIndex: 9989, style: f => {
-    const id = f.get("id"), on = id === vframes.sel, tl = f.getGeometry().getCoordinates()[0][3];
-    return [new Style({ stroke: new Stroke({ color: VIOLET, width: on ? 2.5 : 1.5, lineDash: f.get("draft") ? [6, 4] : undefined }),
-        fill: new Fill({ color: on ? "rgba(122,63,209,.06)" : "rgba(122,63,209,.001)" }) }),
+    const id = f.get("id"), on = id === vframes.sel, tl = f.getGeometry().getCoordinates()[0][3], cov = id === COVER, col = cov ? BLUE : VIOLET;
+    // область загрузки: внутри не ловит мышь, пока не выбрана (карту внутри неё двигают как обычно), — выбирают щелчком по краю
+    return [new Style({ stroke: new Stroke({ color: col, width: on ? 2.5 : 1.5, lineDash: cov ? [6, 5] : f.get("draft") ? [6, 4] : undefined }),
+        fill: cov && !on ? undefined : new Fill({ color: on ? (cov ? "rgba(26,95,180,.05)" : "rgba(122,63,209,.06)") : "rgba(122,63,209,.001)" }) }),
       new Style({ geometry: new Point(tl), text: new Text({ text: f.get("label"), font: `${on ? 600 : 500} 12px Onest, system-ui, sans-serif`, textAlign: "left", textBaseline: "bottom", offsetY: -5,
-        fill: new Fill({ color: VIOLET }), stroke: new Stroke({ color: "#fff", width: 3 }) }) }),
-      ...(on && !f.get("draft") ? [grip] : [])];
+        fill: new Fill({ color: col }), stroke: new Stroke({ color: "#fff", width: 3 }) }) }),
+      ...(on && !f.get("draft") ? [cov ? gripB : grip] : [])];
   } });
   map.addLayer(layer);
 
-  const shown = () => vframes.on > 0 || !!vframes.draw;
+  const views = () => vframes.on > 0 || !!vframes.draw;
+  const shown = () => views() || coverOn.value;
+  const items = () => [...(views() ? project.views : []), ...(coverOn.value && !vframes.draw ? [coverItem()] : [])];
   const geomOf = v => live && live.id === v.id ? live : v.frame ? { c: MSK.fromWgs(v.frame.center), w: v.frame.w, h: v.frame.h } : null;
   function redraw() {
     src.clear(true); layer.setVisible(shown()); if (!shown()) return;
-    project.views.forEach(v => {
+    items().forEach(v => {
       const g = geomOf(v); if (!g) return;
       const r = cornersM(g.c, g.w, g.h).map(fromM), f = new Feature(new Polygon([[...r, r[0]]]));
       f.setProperties({ id: v.id, label: frameLabel(v.name, g), draft: !v.frame }); src.addFeature(f);
@@ -70,10 +80,11 @@ export function attachViewFrames(map) {
   };
   const other = px => map.forEachFeatureAtPixel(px, () => true, { layerFilter: l => l !== layer && !!l.get("key"), hitTolerance: 3 });
   const save = (v, g) => { v.frame = { center: MSK.toWgs(g.c).map(x => +x.toFixed(7)), w: Math.round(g.w * 10) / 10, h: Math.round(g.h * 10) / 10, aspect: v.frame?.aspect || vframes.aspect }; };
+  const ratioFor = (v, draw, shift) => shift || v.id === COVER ? null : ratioOf(draw ? vframes.aspect : v.frame?.aspect);   // область загрузки — без пропорций
 
   const it = new PointerInteraction({
     handleDownEvent(e) {
-      if (!shown() || e.originalEvent.button || cadApi.active?.()) return false;
+      if (!shown() || e.originalEvent.button || cadApi.active?.() || terrTool.value) return false;   // рисуют или правят границу — рамки не мешают
       const m = toM(e.coordinate);
       if (vframes.draw) { drag = { mode: "draw", id: vframes.draw, a: m }; return true; }
       const gi = hitGrip(e.pixel);
@@ -90,7 +101,7 @@ export function attachViewFrames(map) {
       const m = toM(e.coordinate), v = viewOf(drag.id); if (!v) return;
       if (drag.mode === "move") live = { id: v.id, c: [drag.c0[0] + m[0] - drag.m0[0], drag.c0[1] + m[1] - drag.m0[1]], w: drag.w, h: drag.h };
       else {
-        const r = e.originalEvent.shiftKey ? null : ratioOf(drag.mode === "draw" ? vframes.aspect : v.frame?.aspect);
+        const r = ratioFor(v, drag.mode === "draw", e.originalEvent.shiftKey);
         live = { id: v.id, ...fromCorners(drag.a, m, r) };
       }
       drag.moved = true; redraw();
@@ -125,7 +136,7 @@ export function attachViewFrames(map) {
   window.addEventListener("keydown", onKey);
 
   const stops = [
-    watch(() => [vframes.on, vframes.draw, vframes.sel, project.views.map(v => [v.id, v.name, v.frame])], redraw, { deep: true }),
+    watch(() => [vframes.on, vframes.draw, vframes.sel, project.views.map(v => [v.id, v.name, v.frame]), coverOn.value, coverRev.value, project.territory, project.raw], redraw, { deep: true }),
     watch(() => vframes.fit, id => {
       if (!id) return;
       vframes.fit = "";
