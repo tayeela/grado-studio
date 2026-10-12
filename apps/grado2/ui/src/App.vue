@@ -9,8 +9,11 @@
     </nav>
     <header class="top">
       <span class="brand">ГРАДО 2</span>
-      <span v-if="!shared" class="project" :title="projTitle">{{ project.name || "Без названия" }}{{ dirty ? " •" : "" }}
-        <wa-badge v-if="shared" variant="neutral" appearance="filled-outlined">общий сервер</wa-badge></span>
+      <!-- название открытой работы: щелчок — правка на месте (Enter — записать, Esc — отмена); сохранённый проект переименовывается в папке -->
+      <input v-if="!shared && titleEdit" ref="titleInput" class="project ptitle-in" :value="project.name" maxlength="120" aria-label="Название проекта"
+             placeholder="Название проекта" @keydown.enter.prevent="titleDone($event.target.value)" @keydown.esc.prevent="titleEdit = false" @blur="titleDone($event.target.value)">
+      <button v-else-if="!shared" type="button" class="project ptitle" :class="{ none: !project.name }" :title="projTitle" @click="editTitle">
+        {{ project.name || "Без названия" }}<span v-if="dirty" class="dot" aria-label="есть несохранённые изменения"> •</span><Pencil class="pen" :size="13" /></button>
 
       <HubBar v-if="shared" />
       <wa-dropdown @wa-select="onProject">
@@ -24,9 +27,10 @@
           <wa-dropdown-item value="download">Скачать файл проекта</wa-dropdown-item>
         </template>
         <template v-else>
-        <wa-dropdown-item value="open">Открыть…</wa-dropdown-item>
+        <wa-dropdown-item value="open">Проекты…<span slot="details">Ctrl+O</span></wa-dropdown-item>
         <wa-dropdown-item value="save" :disabled="shared">Сохранить<span slot="details">Ctrl+S</span></wa-dropdown-item>
         <wa-dropdown-item value="saveas" :disabled="shared">Сохранить как…</wa-dropdown-item>
+        <wa-dropdown-item value="rename">Переименовать…</wa-dropdown-item>
         <wa-dropdown-item value="new" :disabled="shared">Новый проект</wa-dropdown-item>
         <wa-divider></wa-divider>
         <wa-dropdown-item value="file">Открыть файл .grado2 с диска…</wa-dropdown-item>
@@ -108,13 +112,8 @@
     <!-- плавающие окна двигаются за пустое место строки вкладок (без отдельной пустой полосы-шапки) и не уходят за край экрана -->
     <DockviewVue class="grado-dock dock" :theme="dockTheme" floating-group-drag-handle="titlebar" floating-group-bounds="boundedWithinViewport" @ready="onReady" />
 
-    <wa-dialog label="Открыть проект" :open="openDlg" @wa-after-hide="openDlg = false" class="open-dlg">
-      <p class="hint" :title="projDir">Папка проектов: {{ projDir }}</p>
-      <p v-if="!projects.length" class="hint">В папке проектов нет файлов. Открытая работа сохраняется сама; «Сохранить» — под именем.</p>
-      <div v-for="p in projects" :key="p.name" class="prow" :class="{ cur: p.name === project.file }" @click="choose(p.name)">
-        <span>{{ p.name }}<span v-if="p.album_n" class="when"> · альбом: {{ p.album_n }} л.</span></span><span class="when">{{ when(p.modified) }}</span>
-      </div>
-    </wa-dialog>
+    <ProjectCatalog v-if="!shared" :open="openDlg" @close="openDlg = false" @open="choose" @file="fileInput.click()"
+                    @new="openDlg = false; guard('Начать новый проект?', newProject)" />
 
     <wa-dialog label="Сохранить проект" :open="saveDlg" @wa-after-hide="saveDlg = false" class="save-dlg">
       <wa-input ref="nameInput" label="Название проекта" size="s" :value="saveName" @input="e => { saveName = e.target.value; clash = null; }"
@@ -169,7 +168,8 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
-import { ChevronDown, Undo2, Redo2, CircleHelp, Printer, Sun, Moon } from "@lucide/vue";
+import { ChevronDown, Undo2, Redo2, CircleHelp, Pencil, Printer, Sun, Moon } from "@lucide/vue";
+import ProjectCatalog from "./panels/ProjectCatalog.vue";
 import CadModes from "./panels/CadModes.vue";
 import HubBar from "./panels/HubBar.vue";
 import HubLogin from "./panels/HubLogin.vue";
@@ -183,7 +183,7 @@ import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
 import { BASEMAPS, basemapId, current, cursor, mapOnly, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
 import {
-  busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, saveProject, shared,
+  busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, retitle, saveProject, shared,
 } from "./project.js";
 
 const dockTheme = { ...themeLight, className: "dockview-theme-grado", gap: 8 };   // окна — карточки на сером столе с зазором 8 px («Синька»)
@@ -405,7 +405,14 @@ function onWindow(e) {
 const openDlg = ref(false), saveDlg = ref(false), saveName = ref(""), clash = ref(null), ask = ref(null);
 const fileInput = ref(null), nameInput = ref(null);
 const projTitle = computed(() => (project.file ? `Проект «${project.file}» в папке проектов` : "Проект ещё не сохранён под именем")
-  + (dirty.value ? " · есть несохранённые изменения (автосохранение держит их до сохранения)" : ""));
+  + (dirty.value ? " · есть несохранённые изменения (автосохранение держит их до сохранения)" : "") + ". Щёлкните, чтобы изменить название");
+const titleEdit = ref(false), titleInput = ref(null);
+async function editTitle() { titleEdit.value = true; await nextTick(); titleInput.value?.focus(); titleInput.value?.select(); }
+async function titleDone(v) {
+  if (!titleEdit.value) return;
+  titleEdit.value = false;
+  if (!(await retitle(v))) await editTitle();          // занято или недопустимо: причина в строке состояния, поле остаётся открытым
+}
 
 /* Действие, после которого открытая работа сменится: при несохранённых правках сначала спросить. */
 function guard(text, go) { if (dirty.value && !shared.value) ask.value = { text, go }; else go(); }
@@ -434,14 +441,16 @@ async function onProject(e) {
   else if (v === "hubsave") hubFlush();
   else if (v === "hubshare") openWin("share");
   else if (v === "hubhistory") openWin("history");
-  else if (v === "open") { try { await listProjects(); } catch { /* список останется прежним */ } openDlg.value = true; }
+  else if (v === "open") openCatalog();
+  else if (v === "rename") editTitle();
   else if (v === "save") save();
   else if (v === "saveas") askName();
   else if (v === "new") guard("Начать новый проект?", newProject);
   else if (v === "file") fileInput.value.click();
   else if (v === "download") downloadProject();
 }
-function choose(name) { openDlg.value = false; guard(`Открыть «${name}»?`, () => openProject(name)); }
+async function openCatalog() { try { await listProjects(); } catch { /* список останется прежним */ } openDlg.value = true; }
+function choose(name) { openDlg.value = false; if (name !== project.file || dirty.value) guard(`Открыть «${name}»?`, () => openProject(name)); }
 albumHooks.save = () => shared.value ? hubFlush() : save();     // Ctrl+S в окне «Листы и альбом»
 albumHooks.open = choose;
 albumHooks.panel = () => winApi.open("album");       // меню «Выгрузка» → PDF или PPTX альбома
@@ -467,6 +476,7 @@ addEventListener("keydown", e => {
     e.preventDefault(); selectAll(current.value.key); notice.value = `Выбраны все объекты слоя «${current.value.title}»: ${sel.length}`; return;
   }
   if (e.code === "KeyS") { e.preventDefault(); if (shared.value) hubFlush(); else save(); }
+  else if (e.code === "KeyO" && !e.shiftKey && !e.altKey) { e.preventDefault(); if (shared.value) openWin("projects"); else openCatalog(); }
   else if (e.code === "KeyP" && !e.shiftKey && !e.altKey) { e.preventDefault(); winApi.open("album"); }   // как в рабочей странице: листы вместо печати страницы
   else if (typing(e)) return;                       // в поле ввода Ctrl+Z правит текст поля
   else if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); if (!undo()) notice.value = "Отменять нечего"; }
@@ -491,6 +501,16 @@ openStartup();
 .top .cnt { margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: var(--wa-font-size-2xs); line-height: 16px; background: var(--wa-color-neutral-fill-normal); }
 .brand { font-weight: 700; letter-spacing: .02em; margin-right: 12px; }
 .project { color: var(--g-muted); margin-right: 16px; display: inline-flex; gap: 6px; align-items: center; }
+/* название проекта в шапке: выглядит текстом, при наведении — поле с карандашом; щелчок открывает правку на месте */
+.ptitle { font: inherit; font-size: var(--wa-font-size-m); color: var(--wa-color-text-normal); background: none; border: 1px solid transparent; border-radius: 6px;
+  padding: 2px 6px; margin-left: -6px; gap: 4px; max-width: 360px; cursor: text; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ptitle.none { color: var(--g-muted); }
+.ptitle .dot { color: var(--g-muted); }
+.ptitle .pen { flex: none; color: var(--g-muted); opacity: 0; transition: opacity .12s; }
+.ptitle:hover, .ptitle:focus-visible { border-color: var(--g-line); background: var(--wa-color-surface-default); outline: none; }
+.ptitle:hover .pen, .ptitle:focus-visible .pen { opacity: 1; }
+.ptitle-in { font: inherit; font-size: var(--wa-font-size-m); width: 300px; padding: 2px 6px; margin-left: -6px; border: 1px solid var(--wa-color-focus); border-radius: 6px;
+  background: var(--wa-color-surface-default); color: var(--wa-color-text-normal); outline: 2px solid color-mix(in srgb, var(--wa-color-focus) 25%, transparent); }
 /* строка меню как в QGIS и macOS: пункты без стрелок, ровный шаг, одна высота и одна линия текста (владелец 09.10.2026, снимок) */
 .top > wa-dropdown > wa-button::part(base), .top > wa-button::part(base) { padding-inline: 8px; height: 28px; font-size: var(--wa-font-size-m); }   /* тот же кегль, что у названия: одна линия текста */
 .top > wa-dropdown, .top > wa-button { display: inline-flex; align-items: center; }
@@ -510,11 +530,7 @@ wa-dropdown-item .ci { width: 16px; height: 16px; }
 .tbtns wa-button.on::part(base) { background: var(--wa-color-brand-fill-quiet); color: var(--wa-color-brand-on-quiet); }
 .tlabel { font-size: var(--wa-font-size-2xs); color: var(--g-muted); padding-bottom: 2px; }
 .dock { min-height: 0; }
-.open-dlg .prow { display: flex; justify-content: space-between; gap: var(--wa-space-m); padding: 5px 8px; border-radius: var(--wa-border-radius-s); cursor: pointer; }
-.open-dlg .prow:hover { background: var(--wa-color-neutral-fill-quiet); }
-.open-dlg .prow.cur { background: var(--wa-color-brand-fill-quiet); }
 .save-dlg .warn { color: var(--wa-color-danger-on-quiet); font-size: var(--wa-font-size-s); }
-.open-dlg .when { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 .status wa-dropdown { display: inline-flex; }
 .status .basebtn { font: inherit; font-size: var(--wa-font-size-xs); line-height: 20px; color: inherit; background: none; border: 0; padding: 0 2px; cursor: pointer; }
 .status .basebtn:hover { color: var(--wa-color-text-normal); text-decoration: underline; }
