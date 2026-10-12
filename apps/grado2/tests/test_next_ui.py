@@ -148,7 +148,7 @@ class NextUi(unittest.TestCase):
         old = (NEXT.parent / "app.js").read_text(encoding="utf-8")
         new = (NEXT.parents[1] / "ui" / "src" / "panels" / "MapSearch.vue").read_text(encoding="utf-8")
         self.assertIn("/api/search?q=", new)
-        msgs = lambda t: re.findall(r'\? "([^"]+)"\n', re.search(r"const srchErr = .*?;\s*};", t, re.S).group(0))
+        msgs = lambda t: re.findall(r'"([^"]+)"', re.search(r"const srchErr = .*?;\s*};", t, re.S).group(0))
         self.assertTrue(msgs(old))
         self.assertEqual(msgs(old), msgs(new))
         for s in ("Заменить вашу границу участками?", "Заменить вашу границу контуром КРТ?", "Сделать границей территории"):

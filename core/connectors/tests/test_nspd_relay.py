@@ -46,7 +46,7 @@ class Relay(unittest.TestCase):
             with _env(GRADO_NSPD_BASE=bad):
                 with self.assertRaises(ConnectorError) as cm:
                     nspd._base_url()
-                cm.exception.args[0].encode("ascii")      # правило 4: только ASCII
+                self.assertRegex(cm.exception.args[0], "[а-я]")   # правило 4: текст ошибки — по-русски
 
     def test_token_goes_only_to_relay(self):
         with _env(GRADO_NSPD_RELAY_TOKEN=TOKEN):          # без релея токен не уходит на nspd.gov.ru

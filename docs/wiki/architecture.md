@@ -12,7 +12,13 @@
 - **Коннекторы** `core/connectors/grado_connectors` — ГИС ОГД (`gisogd_api.py`: слой целиком в кэш, срез по рамке),
   ЕГКО (та же схема, карта base2), НСПД, OSM (Overpass), Яндекс (векторные плитки `yandex_vmap.py`), ФГИС ТП. Кэш на
   диске `~/.grado2/cache/<портал>`. Повторы и паузы живут здесь и в выгрузках сервера (`server.py`, `sat_io.py`, `ogd_all.py`). Источники по ключам — sources.md.
-- **Страница** `apps/grado2/web` — OpenLayers + turf, без сборки. `app.js` (карта, территория, поиск, данные),
+- **Основной интерфейс** `/next/` — исходники `apps/grado2/ui/src` (Vue 3, dockview — окна и панели, Web Awesome — кнопки и поля,
+  OpenLayers — карта, Konva — «Макет листа»), сборка Vite в `apps/grado2/web/next/` (собранное лежит в репозитории, gate сверяет
+  его с исходниками: `tools/ui_check.sh`). Правят `ui/src`, затем `npm run build` в `apps/grado2/ui` и коммит обоих.
+  Окно «Листы и альбом» встраивает прежнюю страницу `/old?embed=album` (`ui/src/albumhost.js`): сборка альбома ППТ КРТ
+  ещё живёт там. Проект пишут оба: `ui/src/project.js` и `web/project.js` (одни адреса `/api/project`, запись с `base` —
+  чужие правки другой вкладки не затираются, ответ 409).
+- **Прежняя страница** `apps/grado2/web` (`/old`) — OpenLayers + turf, без сборки. `app.js` (карта, территория, поиск, данные),
   `layers.js` (слои, стили, «Свойства»), `cad.js` (черчение), `sheets.js` (листы, альбом, выгрузки), `albums.js`
   (альбом ППТ КРТ: шаблоны листов `PPTKRT_C` и `PPTKRT_D`, порядок выдачи `PPTKRT_ORDER`, выбор источников — `conceptSheet`), малые модули с чистыми функциями (`labelfmt.js`, `roadsrc.js`,
   `roadclean.js`, `railstations.js`, `gpzones.js`, `albummeta.js`). Модули — modules.md.

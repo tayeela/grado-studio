@@ -95,7 +95,7 @@ export async function territoryByNumbers(text) {
       feats = (r.features || []).filter(polysOf);
       if (!feats.length) { notice.value = "Участки не найдены — граница не изменена"; return false; }
       addParcels(feats);
-    } catch (e) { notice.value = "Портал НСПД не ответил: " + e.message + ". Граница не изменена"; return false; }
+    } catch (e) { notice.value = (/[а-яё]/i.test(e.message) ? e.message.replace(/[.\s]+$/, "") : "Портал НСПД не ответил") + ". Граница не изменена"; return false; }
     finally { busy.value = false; }
   }
   const u = unionAll(feats); if (!u) { notice.value = "Участки не объединились — граница не изменена"; return false; }

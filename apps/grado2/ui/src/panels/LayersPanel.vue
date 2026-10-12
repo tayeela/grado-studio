@@ -6,9 +6,9 @@
   <div class="pane layers">
     <div class="tools">
       <wa-input size="s" placeholder="Найти слой" with-clear :value="q" @input="e => (q = e.target.value)" class="grow"></wa-input>
-      <wa-button size="s" appearance="plain" title="Новый слой" @click="openNew"><Plus :size="16" /></wa-button>
-      <wa-button size="s" appearance="plain" title="Новая группа из текущего слоя" :disabled="!currentId" @click="groupCurrent"><FolderPlus :size="16" /></wa-button>
-      <wa-button size="s" appearance="plain" :disabled="!project.layers.length" title="Упорядочить слои как в опорном плане (ничего не удаляется)"
+      <wa-button aria-label="Новый слой" size="s" appearance="plain" title="Новый слой" @click="openNew"><Plus :size="16" /></wa-button>
+      <wa-button aria-label="Новая группа из текущего слоя" size="s" appearance="plain" title="Новая группа из текущего слоя" :disabled="!currentId" @click="groupCurrent"><FolderPlus :size="16" /></wa-button>
+      <wa-button aria-label="Упорядочить слои как в опорном плане (ничего не удаляется)" size="s" appearance="plain" :disabled="!project.layers.length" title="Упорядочить слои как в опорном плане (ничего не удаляется)"
                  @click="tidyLayers"><ListOrdered :size="16" /></wa-button>
     </div>
     <p v-if="!project.layers.length" class="hint">{{ loadError || "В проекте пока нет слоёв: «+» — новый слой" }}</p>

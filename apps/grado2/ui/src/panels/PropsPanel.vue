@@ -11,7 +11,7 @@
         <b :title="l.title || l.key">{{ l.title || l.key }}</b>
         <span class="sub">{{ GEOM[l.geom] || l.geom }} · {{ plural(count, ["объект", "объекта", "объектов"]) }}</span>
       </div>
-      <wa-button size="s" appearance="plain" class="eyeb" :title="l.visible ? 'Скрыть слой на карте' : 'Показать слой на карте'"
+      <wa-button :aria-label="l.visible ? 'Скрыть слой на карте' : 'Показать слой на карте'" size="s" appearance="plain" class="eyeb" :title="l.visible ? 'Скрыть слой на карте' : 'Показать слой на карте'"
                  :aria-pressed="String(!!l.visible)" @click="l.visible = !l.visible">
         <Eye v-if="l.visible" :size="16" /><EyeOff v-else :size="16" />
       </wa-button>
@@ -98,7 +98,7 @@
           <wa-color-picker size="s" aria-label="Цвет правила" :value="r.fill" @change="e => (r.fill = e.target.value)"></wa-color-picker>
           <wa-checkbox v-if="l.geom === 'poly'" size="s" :checked="!!r.hatch" @change="e => (r.hatch = e.target.checked)">штриховка</wa-checkbox>
           <span class="grow"></span><span class="n" title="Объектов, подходящих под правило">{{ plural(ruleCount(r, fc), ["объект", "объекта", "объектов"]) }}</span>
-          <wa-button size="s" appearance="plain" title="Удалить правило" @click="st.rules.list.splice(i, 1)"><X :size="14" /></wa-button>
+          <wa-button aria-label="Удалить правило" size="s" appearance="plain" title="Удалить правило" @click="st.rules.list.splice(i, 1)"><X :size="14" /></wa-button>
         </div>
       </div>
       <div class="row rule">

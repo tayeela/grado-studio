@@ -138,7 +138,7 @@
       <CadModes />
       <span class="cmdnow">{{ toolTitle }}</span>
       <!-- сообщение слева, в свободной части строки: появляясь и исчезая, оно не сдвигает слой, координаты и масштаб справа -->
-      <button class="note" type="button" :title="noteText ? noteText + ' — щелчок: показать целиком' : ''" @click="noteOpen = !noteOpen">{{ noteText }}</button>
+      <button class="note" type="button" :aria-label="noteText || 'Сообщений нет'" :title="noteText ? noteText + ' — щелчок: показать целиком' : ''" @click="noteOpen = !noteOpen">{{ noteText }}</button>
       <span class="grow"></span>
       <span>Слой: {{ current?.title }}</span>
       <wa-dropdown placement="top-end" @wa-select="e => setBasemap(e.detail.item.value)">
@@ -431,7 +431,7 @@ async function askName() {
 async function doSaveAs() {
   const name = saveName.value.trim(); if (!name) return;
   if (!clash.value) { const c = await clashOf(name); if (c) { clash.value = c; return; } }
-  if (await saveProject(name)) { saveDlg.value = false; const p = pending; pending = null; p?.(); }
+  if (await saveProject(name, { replace: !!clash.value })) { saveDlg.value = false; const p = pending; pending = null; p?.(); }
 }
 async function save() { if (project.file && project.name === project.file) await saveProject(); else await askName(); }
 

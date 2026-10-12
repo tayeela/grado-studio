@@ -21,6 +21,9 @@ export const appVersion = ref("");
 const FORMAT = "grado2", VERSION = 2;
 let quiet = true;                     // открытие проекта — не правка
 let tick = 0, autoTick = 0, lastEdit = 0, pendingSince = 0;
+/* время файла проекта, каким его видело это окно (заголовок X-Grado-Modified, ответ записи): с ним запись не затрёт
+   правки другой вкладки — сервер ответит 409 (server.py save_project) */
+let fileBase = null;
 
 async function getJSON(url) {
   const r = await fetch(url, { headers: { Accept: "application/json" } });
@@ -130,9 +133,11 @@ export async function starProject(p) {
 export async function openProject(name) {
   busy.value = true;
   try {
-    const p = await getJSON("/api/project?name=" + encodeURIComponent(name));
+    const r = await fetch("/api/project?name=" + encodeURIComponent(name), { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+    const p = await r.json();
     await load(p, name, "file");
-    project.file = name; dirty.value = false;
+    project.file = name; dirty.value = false; fileBase = Number(r.headers.get("X-Grado-Modified")) || null;
     loadError.value = "";
     say(`Открыт проект «${name}»`);
     autosave();
@@ -153,6 +158,7 @@ export async function openStartup() {
     if (j.autosave) {
       const p = await getJSON("/api/project?autosave=1");
       await load(p, p.name || "", "autosave");
+      fileBase = projects.value.find(q => q.name === project.file)?.modified ?? null;
       return;
     }
     if (projects.value.length) await openProject(projects.value[0].name);
@@ -209,20 +215,23 @@ export async function clashOf(name) {
   return projects.value.find(q => norm(q.name) === norm(name)) || null;
 }
 
-/* «Сохранить»: под своим названием; новое название — после проверки clashOf в окне. Возвращает true, если записано. */
-export async function saveProject(name) {
+/* «Сохранить»: под своим названием; новое название — после проверки clashOf в окне (replace — владелец согласился
+   заменить проект с тем же названием). Возвращает true, если записано. */
+export async function saveProject(name, { replace = false } = {}) {
   if (shared.value) { say("Общий сервер: правки уходят на сервер сами"); return false; }
   name = (name ?? project.name ?? "").trim();
   if (!name) return false;
   if (BAD_NAME.test(name)) { say("В названии не должно быть знаков / \\ : * ? \" < > | и точки в начале"); return false; }
-  const prev = [project.name, project.file];
+  const prev = [project.name, project.file], base = name === project.file ? fileBase : null;
   project.name = name; project.file = name;
   const t = tick, body = projectJSON({ dirty: false });
   busy.value = true;
   try {
-    const r = await fetch("/api/project?name=" + encodeURIComponent(name), { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    const q = "/api/project?name=" + encodeURIComponent(name) + (base ? "&base=" + base : "") + (replace ? "&replace=1" : "");
+    const r = await fetch(q, { method: "POST", headers: { "Content-Type": "application/json" }, body });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error === "bad project name" ? "недопустимое название" : (j.error || r.status));
+    if (!r.ok) throw new Error(j.error || r.status);
+    fileBase = j.modified ?? null;
     if (tick === t) dirty.value = false;
     project.source = "file";
     say(`Проект «${name}» сохранён`);

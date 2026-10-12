@@ -37,6 +37,13 @@ def _failure(r):
             + "\n--- last 4000 chars of stdout ---\n" + r.stdout[-4000:] + "\n--- stderr ---\n" + r.stderr[-2000:])
 
 
+def _server_log(name):
+    """Журнал тестового сервера — в папку журналов gate (GATE_LOG, иначе /tmp/grado-gate): при падении видно, что сломалось."""
+    d = Path(os.environ.get("GATE_LOG") or Path(tempfile.gettempdir()) / "grado-gate")
+    d.mkdir(parents=True, exist_ok=True)
+    return open(d / f"e2e-server-{name}.log", "w", encoding="utf-8")
+
+
 def _summary(r):
     """SUMMARY line and failed step names, printed even when the run passes."""
     return "\n".join(ln for ln in r.stdout.splitlines() if ln.startswith(("SUMMARY:", "  FAILED #")))
@@ -48,9 +55,12 @@ class BrowserScenarios(unittest.TestCase):
     def test_owner_scenarios(self):
         port = _free_port()
         with tempfile.TemporaryDirectory() as projects:
-            env = {**os.environ, "GRADO2_NO_BROWSER": "1", "GRADO2_PROJECTS": projects}
+            # свои шрифты — во временную папку, не в ~/.grado2/fonts разработчика; кэш порталов ~/.grado2/cache общий:
+            # без него сценарии пошли бы на порталы (правило «порталы не нагружать»)
+            env = {**os.environ, "GRADO2_NO_BROWSER": "1", "GRADO2_PROJECTS": projects, "GRADO2_FONTS": str(Path(projects) / ".fonts")}
+            log = _server_log("owner")
             srv = subprocess.Popen([sys.executable, str(HERE.parent / "server.py"), str(port)], env=env,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                   stdout=log, stderr=subprocess.STDOUT)
             try:
                 for _ in range(100):
                     try:
@@ -66,6 +76,7 @@ class BrowserScenarios(unittest.TestCase):
             finally:
                 srv.terminate()
                 srv.wait(10)
+                log.close()
 
     def test_next_acceptance(self):
         """Сценарии приёмки C, D, E, G, H, N в новом интерфейсе /next/ (tests/e2e/next_acceptance.mjs): свой тестовый сервер
@@ -80,14 +91,16 @@ class BrowserScenarios(unittest.TestCase):
         """Два браузера, один общий проект (tests/e2e/collab_scenarios.mjs): вход, доступ, живая синхронизация, комментарии, история, роли."""
         port = _free_port()
         with tempfile.TemporaryDirectory() as tmp:
-            env = {**os.environ, "GRADO2_NO_BROWSER": "1", "GRADO2_PROJECTS": str(Path(tmp) / "projects"), "GRADO2_HUB_DIR": str(Path(tmp) / "hub")}
+            env = {**os.environ, "GRADO2_NO_BROWSER": "1", "GRADO2_PROJECTS": str(Path(tmp) / "projects"), "GRADO2_HUB_DIR": str(Path(tmp) / "hub"),
+                   "GRADO2_FONTS": str(Path(tmp) / "fonts")}
             hub = str(HERE.parent / "hub.py")
             admin_pw = "e2e-admin-pass-1"
             subprocess.run([sys.executable, hub, "adduser", "anna", "--admin", "--name", "Анна"], input=admin_pw + "\n", env=env,
                            text=True, check=True, capture_output=True)
             invite = subprocess.run([sys.executable, hub, "invite"], env=env, text=True, check=True, capture_output=True).stdout.strip()
+            log = _server_log("collab")
             srv = subprocess.Popen([sys.executable, str(HERE.parent / "server.py"), str(port), "--hub"], env=env,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                   stdout=log, stderr=subprocess.STDOUT)
             try:
                 for _ in range(100):
                     try:
@@ -104,6 +117,7 @@ class BrowserScenarios(unittest.TestCase):
             finally:
                 srv.terminate()
                 srv.wait(10)
+                log.close()
 
 
 if __name__ == "__main__":
