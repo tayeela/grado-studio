@@ -232,6 +232,21 @@ class NextUi(unittest.TestCase):
         self.assertIn("album.tab = e.isVisible", panel)
         self.assertIn("album.fit++", panel)
 
+    def test_album_sheets_open_in_sheet_layout(self):
+        # шаг 2 переноса альбома (v0.99.97): листы альбома ППТ КРТ — в том же списке «Макета листа», группой «Альбом ППТ КРТ»;
+        # открываются картинкой той же печати, что PDF альбома (albumapi preview), карта листа — общая рамка «alb:…»
+        src = NEXT.parents[1] / "ui" / "src"
+        panel = (src / "panels" / "SheetPanel.vue").read_text(encoding="utf-8")
+        self.assertIn('label="Альбом ППТ КРТ"', panel)
+        self.assertIn('<AlbumSheetView v-if="acur >= 0"', panel)
+        self.assertIn("id.startsWith(ALB)", panel)                         # «В макете листа» из вкладки: sheetNav.id = «alb:<id>»
+        view = (src / "sheet" / "AlbumSheetView.vue").read_text(encoding="utf-8")
+        self.assertIn("a.preview(p.i)", view)
+        self.assertIn('a.file("pdf", p.i)', view)
+        self.assertIn("vframes.sel = ALB + f.id", view)
+        alb = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        self.assertIn('openOwn(ALB + sel.id)', alb)
+
     def test_album_sheet_roles(self):
         # «Слои листа» во вкладке (шаг 2 фаза 2): роли листа считает окно «Слои и листы» движка (SheetLayers.rows — те же
         # roleRows, queueRows, покрытие рамки), глаз и «вернуть к образцу» — его toggleRole и resetRoleUI (с отменой Cmd+Z)

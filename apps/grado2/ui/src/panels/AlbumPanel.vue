@@ -182,6 +182,7 @@
       <p v-else-if="row(sel).tpl" class="hint">Лист по шаблону: слои и оформление — из шаблона; рамку на карте можно сдвинуть, за угол — сменить масштаб.</p>
       <div class="row">
         <wa-button size="s" appearance="outlined" :disabled="busy" @click="preview"><Eye :size="14" /> Просмотр</wa-button>
+        <wa-button size="s" appearance="outlined" data-act="insheet" title="Открыть лист в окне «Макет листа» — там же, где листы проекта" @click="openOwn(ALB + sel.id)"><PanelsTopLeft :size="14" /> В макете листа</wa-button>
         <wa-button size="s" appearance="outlined" :disabled="busy" title="PDF только этого листа" @click="file('pdf', cur)"><FileDown :size="14" /> PDF листа</wa-button>
         <wa-button v-if="sel.kind !== 'tep'" size="s" appearance="outlined" data-act="lay" title="Двигать, выравнивать и править надписи листа — окно «Макет надписей»" @click="openLay"><Type :size="14" /> Надписи</wa-button>
         <wa-button v-if="sel.center && sel.kind !== 'tep'" size="s" appearance="outlined" :disabled="viewer" title="Лист сдвинут: вернуть его в центр территории" @click="act(a => a.resetCenter(cur))"><LocateFixed :size="14" /> В центр</wa-button>
@@ -298,7 +299,8 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { ArrowDown, ArrowUp, Camera, CircleAlert, Eye, EyeOff, FileDown, FilePlus2, LayoutTemplate, LocateFixed, MoveRight, Plus, Presentation, Satellite, Trash2, Type, WandSparkles, X } from "@lucide/vue";
+import { ArrowDown, ArrowUp, Camera, CircleAlert, Eye, EyeOff, FileDown, FilePlus2, LayoutTemplate, LocateFixed, MoveRight, PanelsTopLeft, Plus, Presentation, Satellite, Trash2, Type, WandSparkles, X } from "@lucide/vue";
+import { ALB } from "../viewframesmap.js";
 import { album, call, engineState, startEngine, sync } from "../albumhost.js";
 import { C } from "../collab.js";
 import { markDirty, notice } from "../project.js";
