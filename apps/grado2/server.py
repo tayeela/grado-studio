@@ -10,6 +10,7 @@
   GET  /api/fonts → шрифты для подписей (готовые, компьютера, свои), GET /api/fonts/file?f=… → TTF для просмотра,
   POST /api/fonts {name, b64} → свой файл шрифта (fonts.py)
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
+  GET  /api/project/preview?name=…, /api/projects/trash; POST /api/project/{rename,copy,delete,restore,star} → каталог (catalog.py)
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
 Геометрия на выходе всегда WGS84 (GeoJSON), без пересчёта в СК холста.
@@ -65,6 +66,7 @@ from grado_connectors.terrain import TerrainContours               # noqa: E402
 from grado_connectors.yandex_vmap import YandexVmap                # noqa: E402
 from grado_render import acad_lin                                  # noqa: E402
 import hub as hubmod                                               # noqa: E402  совместный режим (GRADO2_HUB=1)
+import catalog as catmod                                           # noqa: E402  каталог проектов: превью, избранное, корзина (SQLite)
 
 WEB = ROOT / "web" if FROZEN else Path(__file__).resolve().parent / "web"
 CACHE = Path.home() / ".grado2" / "cache"
@@ -1715,14 +1717,98 @@ def album_info(path, st=None):
     return res
 
 
+def catalog():
+    """База каталога папки проектов (catalog.py): превью, избранное, когда открывали. Папку подменяют тесты — база следует за ней."""
+    return catmod.Catalog(PROJECTS / catmod.DB_NAME)
+
+
 def list_projects():
     files = sorted(PROJECTS.glob("*.grado2"), key=lambda p: p.stat().st_mtime, reverse=True) if PROJECTS.exists() else []
+    try:
+        marks = catalog().marks() if files else {}
+    except Exception:                                  # каталог — удобство: без базы список всё равно отдаётся
+        marks = {}
     def info(p):
         st = p.stat()
         n, at = album_info(p, st)
-        return {"name": p.stem, "modified": st.st_mtime, "size": st.st_size, "album_n": n, "album_at": at}
+        m = marks.get(p.stem) or {}
+        return {"name": p.stem, "modified": st.st_mtime, "size": st.st_size, "album_n": n, "album_at": at,
+                "star": bool(m.get("star")), "opened": m.get("opened")}
     auto = [info(p) for p in files if p.stem == AUTOSAVE]
-    return {"dir": str(PROJECTS), "projects": [info(p) for p in files if p.stem != AUTOSAVE], "autosave": auto[0] if auto else None}
+    return {"dir": str(PROJECTS), "projects": [info(p) for p in files if p.stem != AUTOSAVE], "autosave": auto[0] if auto else None,
+            "trash": len(catmod.trash_list(PROJECTS))}
+
+
+def _existing(name):
+    """Название проекта в папке → путь к его файлу; нет такого — ValueError с русской причиной (ответ 400)."""
+    path = project_path(name)
+    if name == AUTOSAVE or not path.is_file():
+        raise ValueError("такого проекта в папке нет")
+    return path
+
+
+def _clash(name, path):
+    """Другой файл с тем же названием без учёта регистра (Mac их не различает) → его название, иначе None."""
+    for q in PROJECTS.glob("*.grado2"):
+        if q.stem != AUTOSAVE and catmod.norm(q.stem) == catmod.norm(name) and q != path:
+            return q.stem
+    return None
+
+
+def rename_project(old, new):
+    """Переименовать файл проекта вместе с его прежними версиями и строкой каталога."""
+    new = (new or "").strip()
+    src, dst = _existing(old), project_path(new)
+    if new == AUTOSAVE:
+        raise ValueError("это название занято автосохранением")
+    with _SAVE_LOCK:
+        other = _clash(new, src)
+        if other:
+            raise FileExistsError(other)
+        if src.name != dst.name:
+            os.replace(src, dst)                      # чужой файл с тем же названием отсёк _clash выше
+            vs, vd = PROJECTS / ".versions" / src.stem, PROJECTS / ".versions" / dst.stem
+            if vs.is_dir() and (not vd.exists() or catmod.norm(src.stem) == catmod.norm(dst.stem)):
+                with contextlib.suppress(OSError):    # версии не переехали — переименование файла важнее
+                    os.replace(vs, vd)
+    catalog().rename(old, new)
+    return dst
+
+
+def copy_project(name, to=None):
+    """Копия проекта под новым названием (по умолчанию «<название> — копия», «… копия 2»)."""
+    import shutil
+    src = _existing(name)
+    with _SAVE_LOCK:
+        to = (to or "").strip() or catmod.free_name(PROJECTS, f"{name} — копия")
+        dst = project_path(to)
+        if _clash(to, None):
+            raise FileExistsError(to)
+        if projects_size() + src.stat().st_size > PROJECTS_CAP:
+            raise QuotaExceeded
+        shutil.copyfile(src, dst)
+    return dst
+
+
+def delete_project(name):
+    """Проект — в корзину папки (.trash); прежние версии остаются на месте и вернутся вместе с ним."""
+    src = _existing(name)
+    with _SAVE_LOCK:
+        dst = catmod.trash_put(PROJECTS, src)
+    catalog().forget(name)
+    return dst
+
+
+def restore_project(trash_id):
+    """Проект из корзины — обратно в папку; название занято — «<название> (восстановлен)»."""
+    item = next((x for x in catmod.trash_list(PROJECTS) if x["id"] == trash_id), None)
+    if not item:
+        raise ValueError("в корзине такого проекта нет")
+    with _SAVE_LOCK:
+        name = item["name"] if not _clash(item["name"], None) else catmod.free_name(PROJECTS, item["name"] + " (восстановлен)")
+        dst = project_path(name)
+        os.rename(PROJECTS / catmod.TRASH / item["id"], dst)
+    return dst
 
 
 # ---------- HTTP: заголовки безопасности, вход по ключу, совместный режим ----------
@@ -2110,7 +2196,28 @@ def get_project(c):
         body = project_path(c.project_name()).read_bytes()
     except (ValueError, OSError):
         return _json(404, {"error": "no such project"})
+    if c.project_name() != AUTOSAVE:
+        with contextlib.suppress(Exception):           # «недавние» в каталоге — удобство, открытию не мешает
+            catalog().opened(c.project_name())
     return Response(body, media_type="application/json; charset=utf-8")
+
+
+def get_project_preview(c):
+    """GET /api/project/preview?name=… — PNG превью для карточки каталога; рисовать нечего — 204."""
+    if HUB:
+        return _json(403, {"error": LOCAL_PROJECTS_OFF})
+    try:
+        path = _existing(c.q("name"))
+    except ValueError:
+        return _json(404, {"error": "no such project"})
+    png = catalog().preview(path.stem, path)
+    return Response(png, media_type="image/png") if png else Response(b"", 204)
+
+
+def get_trash(c):
+    if HUB:
+        return _json(403, {"error": LOCAL_PROJECTS_OFF})
+    return _json(200, {"trash": catmod.trash_list(PROJECTS)})
 
 
 def get_projects(c):
@@ -2166,7 +2273,9 @@ GET_ROUTES = {
     "/api/fgistp/docs": get_fgistp,
     "/api/fgistp/layers": get_fgistp,
     "/api/projects": get_projects,
+    "/api/projects/trash": get_trash,
     "/api/project": get_project,
+    "/api/project/preview": get_project_preview,
     "/api/fonts": get_fonts,
     "/api/fonts/file": get_font_file,
 }
@@ -2219,6 +2328,33 @@ def post_project(c):
     except QuotaExceeded:
         return _json(507, {"error": f"папка проектов больше {PROJECTS_CAP // 2**30} ГБ: удалите старые проекты и версии"})
     return _json(200, {"saved": path.stem, "modified": path.stat().st_mtime})   # имя, не путь на диске
+
+
+def post_catalog(c):
+    """POST /api/project/{rename,copy,delete,restore,star} — действия каталога над файлами папки проектов."""
+    if HUB:
+        return _json(403, {"error": LOCAL_PROJECTS_OFF})
+    req, act = c.obj(), c.route.rsplit("/", 1)[1]
+    name = str(req.get("name") or "")
+    try:
+        if act == "rename":
+            path = rename_project(name, str(req.get("to") or ""))
+        elif act == "copy":
+            path = copy_project(name, str(req.get("to") or ""))
+        elif act == "delete":
+            delete_project(name)
+            return _json(200, {"ok": True, "trash": len(catmod.trash_list(PROJECTS))})
+        elif act == "restore":
+            path = restore_project(str(req.get("id") or ""))
+        else:
+            _existing(name)
+            catalog().set_star(name, bool(req.get("on")))
+            return _json(200, {"ok": True})
+    except FileExistsError as e:
+        return _json(409, {"error": f"в папке уже есть проект «{e.args[0]}»", "clash": e.args[0]})
+    except QuotaExceeded:
+        return _json(507, {"error": f"папка проектов больше {PROJECTS_CAP // 2**30} ГБ: удалите старые проекты и версии"})
+    return _json(200, {"name": path.stem, "modified": path.stat().st_mtime})
 
 
 def post_fetch(c):
@@ -2423,6 +2559,7 @@ POST_ROUTES = {
     "/api/import/files": post_import_files,
     "/api/import/dxf": post_import_dxf,
     "/api/project": post_project,
+    **{f"/api/project/{a}": post_catalog for a in ("rename", "copy", "delete", "restore", "star")},
     "/api/fetch": post_fetch,
     "/api/print/pdf": _album("pdf", "render_pdf", "application/pdf"),
     "/api/print/pptx": _album("pptx", "render_pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
@@ -2483,6 +2620,10 @@ def hub_get(c):
         r = _file(data, "application/octet-stream")
         r.headers["Content-Disposition"] = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}"
         return r
+    if rest == "preview":
+        path, rev = HUB.project_source(u, pid)
+        png = catmod.Catalog(HUB.root / "catalog.sqlite").preview("hub:" + pid, path, str(rev))
+        return Response(png, media_type="image/png") if png else Response(b"", 204)
     if rest == "events":
         return hub_events(c, u, pid)
     if rest == "comments":

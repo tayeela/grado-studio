@@ -9,6 +9,7 @@
 | [analogs-review.md](analogs-review.md) | обзор открытых аналогов (проекты на GitHub, лицензии) на 16.07.2026 |
 | [research-2026-09-23-generative-constraints.md](research-2026-09-23-generative-constraints.md) | записка о генеративном массинге под инсоляцию и ограничения (не проверена) |
 | [engine-map.md](engine-map.md) | **карта ядер**: какой готовой библиотекой заменяется каждая часть программы, решения владельца 08.10.2026 |
+| [catalog-db.md](catalog-db.md) | каталог проектов с превью, база SQLite, корзина и совместная работа: решение 12.10.2026 и следующий шаг |
 | [research-2026-10-08-engines.md](research-2026-10-08-engines.md) | обзор ядер, движков и библиотек для ускорения программы (#69): что выбрано, что отклонено и почему |
 
 Нормы и расчётный профиль Москвы — [../standards/regulations-moscow.md](../standards/regulations-moscow.md).

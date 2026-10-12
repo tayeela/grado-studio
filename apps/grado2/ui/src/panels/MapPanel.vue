@@ -5,7 +5,7 @@
      Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта).
      Черчение как в AutoCAD (команды, привязки, ручки, командная строка над картой) — cad.js, подключается к этой карте;
      поиск по адресу, кадастровому номеру и № КРТ над картой — MapSearch.vue; метки комментариев и указатели участников
-     совместной работы — hubmap.js; рамки листов альбома — albumframes.js; рамки видов (#119) и область загрузки данных — viewframesmap.js. -->
+     совместной работы — hubmap.js; рамки видов (#119), область загрузки данных и рамки листов альбома — viewframesmap.js. -->
 <template><div class="mapbox">
   <!-- карта — одна остановка Tab: стрелки двигают, «+» и «−» меняют масштаб (клавиши OpenLayers); объекты слоя доступны
        списком в «Таблице атрибутов» (#30) -->
@@ -43,11 +43,10 @@ import { attachGraphLayers } from "../graphmap.js";
 import { basemap, gjFormat, layerSync, readOne } from "../maplayers.js";
 import { attachCad, cadApi } from "../cad.js";
 import { attachHub, hubClick } from "../hubmap.js";
-import { attachFrames } from "../albumframes.js";
 import { attachViewFrames } from "../viewframesmap.js";
 
 const el = ref(null);
-let map, ro, offCad = null, offHub = null, offFrames = null, offViews = null;
+let map, ro, offCad = null, offHub = null, offViews = null;
 const mref = shallowRef(null);           // карта для поиска над ней (MapSearch.vue)
 const fmt = gjFormat;
 
@@ -162,7 +161,6 @@ onMounted(() => {
   offCad = attachCad(map, { vec, sync: () => LS.sync(), terrSrc });     // команды черчения: щелчки, ручки, командная строка
   offHub = attachHub(map);                         // совместная работа: метки комментариев, указатели других участников
   offViews = attachViewFrames(map);                // рамки видов, пока открыты «Виды» или «Макет листа», и область загрузки, пока на виду «Данные»
-  offFrames = attachFrames(map);                   // рамки листов альбома, пока вкладка «Листы и альбом» на виду
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
   map.on("singleclick", onClick);
@@ -205,7 +203,7 @@ onMounted(() => {
   });
 });
 
-onBeforeUnmount(() => { offCad?.(); offHub?.(); offFrames?.(); offViews?.(); ro?.disconnect(); map?.setTarget(undefined); });
+onBeforeUnmount(() => { offCad?.(); offHub?.(); offViews?.(); ro?.disconnect(); map?.setTarget(undefined); });
 </script>
 
 <style>

@@ -71,6 +71,13 @@ export function dropRect(p, f, frame, base = 160) {
 }
 /* высота блока под пропорции рамки при той же ширине (кнопка «Блок по рамке») */
 export const blockHeightFor = (b, frame) => frame?.w > 0 ? Math.round(b.w * frame.h / frame.w * 100) / 100 : b.h;
+/* рамка листа альбома по двум углам (МСК, м): пропорции и ориентация — карты листа mm (мм), масштаб — из охвата,
+   середина — от неподвижного угла a к курсору b (как прежние рамки листов альбома) */
+export function sheetFromCorners(a, b, mm) {
+  const [fw, fh] = mm, dx = b[0] - a[0], dy = b[1] - a[1];
+  const scale = Math.round(Math.max(Math.abs(dx) / fw, Math.abs(dy) / fh, 1e-3) * 1000), w = fw * scale / 1000, h = fh * scale / 1000;
+  return { c: [a[0] + Math.sign(dx || 1) * w / 2, a[1] + Math.sign(dy || 1) * h / 2], w, h, scale };
+}
 /* подпись рамки на карте и в списке: «Ограничения · 820 × 580 м», от 10 км — «12,3 × 8,7 км» */
 export function frameLabel(name, f) {
   const km = Math.max(f.w, f.h) >= 10000, n = v => km ? String(Math.round(v / 100) / 10).replace(".", ",") : String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");

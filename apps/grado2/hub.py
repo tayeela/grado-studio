@@ -8,6 +8,7 @@
 Хранение — файлы без БД, записи атомарные (tmp + os.replace) под одним RLock на экземпляр Hub:
     users.json, invites.json, sessions.json              (в sessions.json только sha256 токена)
     projects/<pid>/meta.json, project.grado2, comments.json, activity.json, history/<rev>-<ГГГГММДД-ЧЧММСС>-<login>.grado2.gz
+    catalog.sqlite — превью общих проектов для каталога (catalog.py, server.py hub_get «preview»)
 Живые данные (presence, подписчики SSE) — только в памяти, под отдельным замком _live:
 порядок замков всегда lock -> _live -> Subscription._cond, назад никогда.
 
@@ -1557,6 +1558,13 @@ class Hub:
             self._shutdown_subs(pid, lambda s: True)
             self._presence.pop(pid, None)
             self._subs.pop(pid, None)
+
+    def project_source(self, user, pid):
+        """Файл общего проекта и его ревизия — для превью в каталоге (catalog.py); доступ — как на чтение.
+        Запись файла атомарная (tmp + os.replace), поэтому читать его можно уже без замка."""
+        with self.lock:
+            meta = self._require(user, pid, "read")[1]
+            return self._pdir(pid) / "project.grado2", meta["rev"]
 
     def project_file(self, user, pid):
         with self.lock:

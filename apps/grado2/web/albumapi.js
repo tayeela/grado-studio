@@ -20,7 +20,7 @@
     };
   }
   const sheetAt = i => i == null ? null : ALBUM.sheets[i] || null;
-  /* рамки листов для карты нового интерфейса (ui/src/albumframes.js), как frames.js: середина (долгота, широта), размер
+  /* рамки листов для карты нового интерфейса (ui/src/viewframesmap.js), как frames.js: середина (долгота, широта), размер
      на местности (м), размер карты листа (мм) для правки угла, свой лист или лист раздела (пунктир), подпись рамки, полное название */
   const fmtT = s => (SIZE_T[s.size] || s.size).replace(" без штампа", "") + (isPaper(s.size) && s.orient === "P" ? " книжн." : "");
   function frames() {

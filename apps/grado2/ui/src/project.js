@@ -8,7 +8,8 @@ import { dataRev, graphRev, resetHistory } from "./edit.js";
 import { normGraph } from "./graphfile.js";
 import { setSel } from "./features.js";
 
-export const projects = ref([]);      // [{name, modified, size, album_n}], новые сверху
+export const projects = ref([]);      // [{name, modified, size, album_n, star, opened}], новые сверху
+export const trash = ref({ n: 0, items: [] });   // корзина папки проектов: сколько и что в ней (catalog.py)
 export const projDir = ref("");
 export const loadError = ref("");
 export const dirty = ref(false);      // есть правки, не записанные под именем проекта (автосохранение их держит)
@@ -60,7 +61,70 @@ export async function listProjects() {
   const j = await getJSON("/api/projects");
   projDir.value = j.dir || "";
   projects.value = [...(j.projects || [])].sort((a, b) => (b.modified || 0) - (a.modified || 0));
+  trash.value.n = j.trash || 0;
   return j;
+}
+
+/* ---------- каталог: переименовать, копия, в корзину, вернуть, избранное (server.py post_catalog) ---------- */
+async function catalogAct(act, body) {
+  const r = await fetch("/api/project/" + act, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+
+/* Переименовать проект в папке; открытый сейчас проект меняет название сразу (шапка, автосохранение). */
+export async function renameProject(name, to) {
+  to = (to || "").trim();
+  if (!to || to === name) return true;
+  if (BAD_NAME.test(to)) { say("В названии не должно быть знаков / \\ : * ? \" < > | и точки в начале"); return false; }
+  try {
+    const j = await catalogAct("rename", { name, to });
+    if (project.file === name) { project.name = project.file = j.name; autosave(); }
+    say(`Проект «${name}» теперь называется «${j.name}»`);
+    await listProjects();
+    return true;
+  } catch (e) { say("Не переименован: " + e.message); return false; }
+}
+
+/* Название открытой работы из шапки: сохранённый проект переименовывается, несохранённый — сохраняется под этим названием. */
+export async function retitle(to) {
+  to = (to || "").trim();
+  if (!to || to === project.name) return true;
+  if (project.file) return renameProject(project.file, to);
+  const c = await clashOf(to);
+  if (c) { say(`В папке уже есть проект «${c.name}»: выберите другое название`); return false; }
+  return saveProject(to);
+}
+
+export async function copyProject(name) {
+  try { const j = await catalogAct("copy", { name }); say(`Сделана копия «${j.name}»`); await listProjects(); return j.name; }
+  catch (e) { say("Копия не сделана: " + e.message); return null; }
+}
+
+export async function trashProject(name) {
+  try {
+    await catalogAct("delete", { name });
+    if (project.file === name) { project.file = null; dirty.value = true; autosave(); }   // открытая работа остаётся: «Сохранить» вернёт её в папку
+    say(`Проект «${name}» в корзине. Вернуть — «Корзина» в окне «Проекты»`);
+    await listProjects();
+    return true;
+  } catch (e) { say("Не удалён: " + e.message); return false; }
+}
+
+export async function listTrash() {
+  const j = await getJSON("/api/projects/trash");
+  trash.value = { n: (j.trash || []).length, items: j.trash || [] };
+}
+
+export async function restoreProject(id) {
+  try { const j = await catalogAct("restore", { id }); say(`Проект «${j.name}» вернулся в папку`); await Promise.all([listProjects(), listTrash()]); return j.name; }
+  catch (e) { say("Не возвращён: " + e.message); return null; }
+}
+
+export async function starProject(p) {
+  const on = !p.star; p.star = on;
+  try { await catalogAct("star", { name: p.name, on }); } catch (e) { p.star = !on; say("Не отмечен: " + e.message); }
 }
 
 export async function openProject(name) {

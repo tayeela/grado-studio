@@ -15,6 +15,7 @@
   GET  /api/fonts → шрифты для подписей (готовые, компьютера, свои), GET /api/fonts/file?f=… → TTF для просмотра,
   POST /api/fonts {name, b64} → свой файл шрифта (fonts.py)
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
+  GET  /api/project/preview?name=…, /api/projects/trash; POST /api/project/{rename,copy,delete,restore,star} → каталог (catalog.py)
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
 Геометрия на выходе всегда WGS84 (GeoJSON), без пересчёта в СК холста.
@@ -23,7 +24,7 @@ HTTP — Starlette под uvicorn, тела запросов проверяет 
 Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 ```
 
-Все упомянутые в коде пути (59):
+Все упомянутые в коде пути (61):
 
 - `/api/export/`
 - `/api/export/dxf`
@@ -76,7 +77,9 @@ HTTP — Starlette под uvicorn, тела запросов проверяет 
 - `/api/print/svg`
 - `/api/progress`
 - `/api/project`
+- `/api/project/preview`
 - `/api/projects`
+- `/api/projects/trash`
 - `/api/rail_route`
 - `/api/search`
 - `/api/search/address`

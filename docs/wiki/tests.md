@@ -12,6 +12,7 @@
 | `test_albummeta_js.py` | AlbumMetaJs | 1 |
 | `test_blocks.py` | UrbanBlocks | 1 |
 | `test_cadcore.py` | CadCore | 1 |
+| `test_catalog.py` | Preview, LocalRoutes, HubPreview | 14 |
 | `test_collab_js.py` | CollabJs | 1 |
 | `test_dxf.py` | DxfRoundTrip, LinetypeProps, AcadNames | 8 |
 | `test_e2e.py` | BrowserScenarios | 3 |
@@ -28,7 +29,7 @@
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
-| `test_next_ui.py` | NextUi | 23 |
+| `test_next_ui.py` | NextUi | 24 |
 | `test_ogd_all.py` | OgdAll, SheetValidation | 14 |
 | `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 56 |
 | `test_railstations_js.py` | RailStationsJs | 1 |

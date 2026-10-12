@@ -4,7 +4,7 @@
      (поле views, тот же формат) и служат листам альбома: удалённый вид переводит свои листы на текущую карту.
      Рамка вида (#119): вид — это ещё и «где». Кнопка-рамка в строке вида рисует на карте прямоугольник с пропорциями
      (А-формат, 4 : 3, 16 : 9, свои) или размером в метрах; блок «Карта» на листе выбирает вид и показывает его рамку
-     (viewframes.js, viewframesmap.js). Пока окно открыто, рамки видов видны на карте. Строку вида тянут на лист в «Макете
+     (viewframes.js, viewframesmap.js). Пока окно открыто, рамки видов видны на карте, с ними — рамки листов альбома ППТ КРТ (список «Листы альбома»). Строку вида тянут на лист в «Макете
      листа» — там встаёт карта этого вида (SheetEditor.vue dropView). -->
 <template>
   <div class="pane views">
@@ -33,6 +33,16 @@
     </table>
     <p v-if="confirmId" class="hint">Нажмите красную корзину ещё раз, чтобы удалить вид.<template v-if="usedBy(confirmId).length">
       Листов с этим видом: {{ usedBy(confirmId).length }} — они перейдут на текущую карту.</template></p>
+
+    <template v-if="album.frames?.length">
+      <div class="sect">Листы альбома ППТ КРТ</div>
+      <table class="vl">
+        <tr v-for="f in album.frames" :key="f.id" :class="{ cur: vframes.sel === ALB + f.id }">
+          <td class="nm" :title="`${f.title || f.label}. Рамка листа на карте — серым пунктиром, как рамка вида: тяните внутри — сдвиг, за угол — масштаб`" @click="showSheet(f)">
+            <div class="t"><Frame :size="14" /><span>{{ f.label }}</span></div></td>
+        </tr>
+      </table>
+    </template>
 
     <p v-if="vframes.draw" class="hint drawing">Тяните рамку на карте для вида «{{ viewOf(vframes.draw)?.name }}». Shift — без пропорций, Esc — отмена.</p>
 
@@ -73,7 +83,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { BookmarkPlus, Eye, Frame, RefreshCw, Scan, Trash2 } from "@lucide/vue";
 import { ASPECTS, frameLabel, ratioOf, withRatio, VIEW_MIME } from "../viewframes.js";
-import { frameFromExtent, vframes, viewOf } from "../viewframesmap.js";
+import { ALB, frameFromExtent, vframes, viewOf } from "../viewframesmap.js";
+import { album } from "../albumhost.js";
 import { basemapId, project, setBasemap, viewCur, viewNow } from "../store.js";
 import LayerSwatch from "./LayerSwatch.vue";
 import { dataRev, grp, mapApi } from "../edit.js";
@@ -135,7 +146,10 @@ const cur = computed(() => project.views.find(v => v.id === viewCur.value));
 /* ---------- рамка вида (#119) ---------- */
 onMounted(() => { vframes.on++; });
 onBeforeUnmount(() => { vframes.on--; if (vframes.draw) vframes.draw = ""; });
-const fv = computed(() => viewOf(vframes.sel) || viewOf(vframes.draw) || cur.value);
+/* лист альбома в списке — выбрать его рамку и приблизить карту */
+const showSheet = f => { album.cur = f.i; vframes.sel = ALB + f.id; vframes.fit = ALB + f.id; };
+const ownView = id => project.views.find(v => v.id === id);   // у области данных и листов альбома своей панели рамки нет
+const fv = computed(() => ownView(vframes.sel) || ownView(vframes.draw) || cur.value);
 const sizeT = f => frameLabel("", f).slice(3);
 const aspectOf = v => v?.frame?.aspect || vframes.aspect;
 const aspectSel = computed(() => { const a = aspectOf(fv.value); return ASPECTS.some(x => x.id === a) ? a : "own"; });
