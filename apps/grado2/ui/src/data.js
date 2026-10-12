@@ -25,7 +25,7 @@ export const terrTool = ref("");       // "draw" — рисуем границу
 export const loading = ref("");        // строка хода выгрузки («Участки: 42 %…»), пусто — не идёт
 /* Ход выгрузки по слоям — для окна «Данные» (владелец 09.10.2026: «невозможно отследить процесс выгрузки»):
    у каждого слоя состояние wait (в очереди) → run (идёт; detail — что сейчас, pct — доля) → done | empty | error; t0, t1 — начало и конец. */
-export const job = reactive({ items: [], t0: 0, t1: 0 });
+export const job = reactive({ items: [], t0: 0, t1: 0, bb: null });   // bb — рамка выгрузки: «Повторить» берёт её же
 
 const today = () => new Date().toISOString().slice(0, 10);
 const fmt = (v, d = 0) => Number(v).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -329,6 +329,12 @@ function dlStatus(pr, names) {
   return parts.join("; ");
 }
 
+/* «Повторить»: слои, у которых портал не ответил, — ещё раз той же рамкой. */
+export function retryFailed() {
+  const keys = job.items.filter(i => i.state === "error").map(i => i.key);
+  if (keys.length && job.bb) loadKeys(keys, job.bb);
+}
+
 /* Выгрузка по прямоугольнику: OSM, ЕГКО и Яндекс — отдельными запросами (отвечают дольше), остальное — одним. */
 export async function loadKeys(keys, bb) {
   if (!bb || !keys.length || loading.value) return;
@@ -341,7 +347,7 @@ export async function loadKeys(keys, bb) {
   const names = () => [...pending].flat().map(k => SOURCES[k]?.title || project.data[k]?.title || k);
   loading.value = `Выгрузка: ${names().slice(0, 3).join(", ")}${names().length > 3 ? ` и ещё ${names().length - 3}` : ""}`;
   job.items = keys.map(k => ({ key: k, title: SOURCES[k]?.title || project.data[k]?.title || k, state: "run", detail: "запрос к порталу", pct: null, n: null }));
-  job.t0 = Date.now(); job.t1 = 0;
+  job.t0 = Date.now(); job.t1 = 0; job.bb = [w, s, e, n];
   const poll = setInterval(async () => {
     try {
       const raw = await api("/api/progress"), pr = Object.values(raw);
@@ -357,6 +363,7 @@ export async function loadKeys(keys, bb) {
       if (my !== project.raw) { dropped = true; return; }
       Object.assign(ERRORS, r.errors || {});
       for (const [k, v] of Object.entries(r.layers || {})) {
+        if (ERRORS[k] && !v.features.features.length) continue;          // портал не ответил — это не «пусто» (ниже: «ошибка»)
         if (!project.data[k] && !v.features.features.length) {           // пустая первая выгрузка слой не заводит
           Object.assign(jobItem(k) || {}, { state: "empty", detail: "нет объектов в области", pct: null });
           empty.push(v.title); const p0 = ec[k];
@@ -389,7 +396,7 @@ export async function loadKeys(keys, bb) {
   if (dropped) { notice.value = "Выгрузка для прежнего проекта отброшена: пока она шла, открыт другой проект"; return; }
   markDirty(); portalStyles();
   if (fresh.length) setSel(fresh);
-  const ne = Object.keys(ERRORS).length, why = Object.entries(ERRORS).slice(0, 3).map(([k, m]) => `${SOURCES[k]?.title || k}: ${m}`).join("; ");
+  const ne = Object.keys(ERRORS).length, why = Object.entries(ERRORS).slice(0, 3).map(([k, m]) => `${SOURCES[k]?.title || jobItem(k)?.title || "слой"}: ${m}`).join("; ");
   notice.value = `Загружено слоёв: ${nLayers}${ne ? `, с ошибкой: ${ne} (${why})` : ""}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}`
     + `${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}${same.length ? ` Без изменений в источнике: ${same.length}.` : ""}`;
 }

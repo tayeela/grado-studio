@@ -131,7 +131,7 @@ async function keyboard(page, tag) {
   for (let i = 0; i < 4; i++) { await page.keyboard.press("Tab"); const a = await act(); order.push(/\bptitle\b/.test(a.cls) ? "Название проекта" : a.text); }
   // после переходов — шапка: название проекта (щелчок — правка, v0.99.95) или сразу меню «Проект»
   if (order.slice(0, 3).join("|") !== "К карте|К слоям|К таблице объектов" || !["Проект", "Название проекта"].includes(order[3])) bad("порядок Tab", order.join(" → "));
-  const noName = await page.evaluate(() => [...document.querySelectorAll("header.top wa-button")].filter(b => b.offsetParent && !b.textContent.trim()).length);
+  const noName = await page.evaluate(() => [...document.querySelectorAll("header.top wa-button")].filter(b => b.offsetParent && !b.textContent.trim() && !b.getAttribute("aria-label")).length);   // имя — текст или aria-label
   if (noName) bad("кнопки шапки без имени для диктора", String(noName));
   await page.focus("nav.skip a >> nth=1"); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
   const a = await act(); if (!/\brow\b/.test(a.cls)) bad("«К слоям» не ведёт к слою", a.tag + " " + a.text);

@@ -7,6 +7,7 @@
     <template v-else>
       <div class="row">
         <wa-button v-if="on" size="s" appearance="outlined" title="Остановить пересчёт посадки: правка параметров перестанет перестраивать эскиз" @click="setRun(false)"><Pause :size="14" /> Остановить</wa-button>
+        <wa-button v-else-if="!project.territory" size="s" variant="brand" title="Эскиз строится только внутри границы территории" @click="winApi.open('data')">Задать границу</wa-button>
         <wa-button v-else size="s" variant="brand" title="Разместить корпуса на пятне застройки по заданной типологии" @click="setRun(true)"><Play :size="14" /> Построить эскиз</wa-button>
         <wa-button size="s" appearance="outlined" :disabled="!n" title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать" @click="bakeSketch()"><Stamp :size="14" /> Сохранить слоем</wa-button>
       </div>
@@ -21,7 +22,9 @@
         <wa-button v-else size="s" appearance="outlined" :disabled="!svN" title="Запомнить текущий эскиз с показателями под своим названием: он появится в окне «Варианты», группа «Сохранённые»" @click="svAsk('sk')"><BookmarkPlus :size="14" /> Сохранить как вариант…</wa-button>
       </div>
       <p v-if="savedN" class="hint">Сохранённых вариантов: {{ savedN }} (окно «Варианты»)</p>
-      <p v-for="(x, i) in resNotes" :key="'r' + i" class="warn">{{ x }}</p>
+      <!-- замечания о резерве участков — одной строкой, список по щелчку (аудит UX 12.10.2026, находка 9) -->
+      <details v-if="resNotes.length" class="warnbox"><summary class="warn">{{ resNotes.length === 1 ? resNotes[0] : `Замечаний к участкам соцобъектов: ${resNotes.length} — показать` }}</summary>
+        <template v-if="resNotes.length > 1"><p v-for="(x, i) in resNotes" :key="'r' + i" class="warn">{{ x }}</p></template></details>
       <div class="row">
         <wa-button size="s" appearance="outlined" :disabled="!n || !!CONS.running" :loading="CONS.running === 'Проверка норм…'"
                    title="Инсоляция новых домов и соседей, корпуса на запретах, разрывы между корпусами — слой «Проверка норм» с причиной у каждой точки"
@@ -30,20 +33,20 @@
       <p v-if="CHECK.last" class="hint">{{ CHECK.last.text }}; новые дома — норму получают {{ CHECK.last.own }} % фасадов; соседи, потерявшие норму: {{ CHECK.last.lost }}</p>
       <div v-for="c in controls" :key="c.id + c.name" class="ctl">
         <template v-if="c.type === 'seg'">
-          <div class="t">{{ c.label }}</div>
+          <div class="t">{{ c.label }}<span v-if="c.hint" class="q" tabindex="0" role="note" :title="c.hint" :aria-label="c.hint">?</span></div>
           <div class="seg">
             <wa-button v-for="o in c.opts" :key="o" size="s" :appearance="val(c) === o ? 'accent' : 'outlined'" :variant="val(c) === o ? 'brand' : 'neutral'"
                        :aria-pressed="String(val(c) === o)" :title="o" @click="setControl(c, o)">{{ o }}</wa-button>
           </div>
         </template>
-        <wa-checkbox v-else-if="c.type === 'toggle'" size="s" :checked="!!val(c)" @change="e => setControl(c, e.target.checked)">{{ c.label }}</wa-checkbox>
+        <div v-else-if="c.type === 'toggle'" class="t"><wa-checkbox size="s" :checked="!!val(c)" @change="e => setControl(c, e.target.checked)">{{ c.label }}</wa-checkbox>
+          <span v-if="c.hint" class="q" tabindex="0" role="note" :title="c.hint" :aria-label="c.hint">?</span></div>
         <template v-else>
-          <div class="t"><span>{{ c.label.replace(/ (?=\S+$)/, "\u00a0") }}</span><b>{{ fmt(val(c), c.step < 1 ? 2 : 0) }}</b></div>
+          <div class="t"><span>{{ c.label.replace(/ (?=\S+$)/, "\u00a0") }}<span v-if="c.hint" class="q" tabindex="0" role="note" :title="c.hint" :aria-label="c.hint">?</span></span><b>{{ fmt(val(c), c.step < 1 ? 2 : 0) }}</b></div>
           <input type="range" :min="c.min" :max="c.max" :step="c.step" :value="Number(val(c))" :aria-label="c.label"
                  :title="`${c.label}: от ${fmt(c.min, c.step < 1 ? 2 : 0)} до ${fmt(c.max, c.step < 1 ? 2 : 0)}; эскиз перестраивается сразу`"
                  @input="e => setControl(c, +e.target.value)">
         </template>
-        <small v-if="c.hint">{{ c.hint }}</small>
       </div>
       <p class="hint">Параметры блоков схемы, вынесенные в окно: правка здесь меняет схему, и наоборот.</p>
     </template>
@@ -53,7 +56,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted } from "vue";
 import { BookmarkPlus, Pause, Play, ShieldCheck, Stamp } from "@lucide/vue";
-import { project } from "../store.js";
+import { project, winApi } from "../store.js";
 import { CHECK, CONS, runCheck } from "../constraints.js";
 import { LOWRISE } from "../graphfile.js";
 import { RESULT, nodeById, preview, tick } from "../graph.js";
@@ -96,7 +99,10 @@ onBeforeUnmount(() => { off?.dispose?.(); preview.sketch = false; });
 .sketchp .ctl .t { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
 .sketchp .ctl .t b { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sketchp .ctl input[type=range] { width: 100%; margin: 0; cursor: pointer; accent-color: var(--wa-color-brand-fill-loud); }
-.sketchp .ctl small { display: block; color: var(--g-muted); font-size: var(--wa-font-size-xs); line-height: 1.3; margin-top: 2px; }
+.sketchp .q { display: inline-block; width: 15px; height: 15px; margin-left: 5px; border: 1px solid var(--g-line); border-radius: 50%; color: var(--g-muted);
+  font-size: 11px; line-height: 13px; text-align: center; font-weight: 400; cursor: help; vertical-align: 1px; }
+.sketchp .warnbox summary { cursor: pointer; }
+.sketchp .warnbox[open] summary { margin-bottom: 2px; }
 .sketchp .seg { display: flex; flex-wrap: wrap; gap: 3px; }
 .sketchp .seg wa-button { margin: 0 !important; }
 .sketchp wa-checkbox { display: block; }

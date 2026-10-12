@@ -58,10 +58,10 @@ html.wa-dark {
   --wa-color-text-quiet: #a4acb9;
   --wa-color-text-link: #7390ff;
   --g-scroll: rgba(233, 236, 241, .22);
-  --wa-color-brand-fill-loud: #5b7cff;
+  --wa-color-brand-fill-loud: #4566ec;   /* белый текст на заливке — 4,8:1 (было #5b7cff — 3,6:1, UX-аудит 12.10 п. 14) */
   --wa-color-brand-fill-normal: #2a3a72;
   --wa-color-brand-fill-quiet: #1b2546;
-  --wa-color-brand-border-loud: #5b7cff;
+  --wa-color-brand-border-loud: #4566ec;
   --wa-color-brand-border-normal: #3a4d93;
   --wa-color-brand-border-quiet: #26335f;
   --wa-color-brand-on-loud: #ffffff;
@@ -302,3 +302,8 @@ html.wa-dark {
 
 /* текст только для экранного диктора: имя кнопки-значка (#30) */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* «?» с подсказкой вместо абзаца пояснений (пустые окна Видов, Вариантов, Листов; UX-аудит 12.10 п. 16) */
+.gq { display: inline-block; width: 15px; height: 15px; margin-left: 5px; border: 1px solid var(--g-line); border-radius: 50%; color: var(--g-muted);
+  font-size: 11px; line-height: 13px; text-align: center; font-weight: 400; font-style: normal; cursor: help; vertical-align: 1px; }
+.gq:focus-visible { outline: 2px solid var(--wa-color-focus); }

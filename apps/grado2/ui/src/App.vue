@@ -2,7 +2,7 @@
      на общем сервере — вход, шапка и окна совместной работы (HubLogin, HubBar, HubWindows, окно «Комментарии»).
      Раскладку окон помнит браузер (localStorage «grado-next-layout»); панели — src/panels/*.vue. -->
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ sheetmode }">
     <!-- переходы для клавиатуры и экранного диктора: видны только в фокусе, первый Tab на странице (#30) -->
     <nav class="skip" aria-label="Быстрый переход">
       <a v-for="s in SKIPS" :key="s[0]" href="#" @click.prevent="winApi.focus(s[0])">{{ s[1] }}</a>
@@ -64,11 +64,11 @@
                  @click="winApi.open('album')"><Printer slot="start" :size="16" />Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
 
       <span class="grow"></span>
-      <wa-button size="s" appearance="plain" :disabled="!history.undo" title="Отменить (Ctrl+Z)" @click="undo"><Undo2 :size="16" /><span class="sr-only">Отменить</span></wa-button>
-      <wa-button size="s" appearance="plain" :disabled="!history.redo" title="Вернуть (Ctrl+Shift+Z)" @click="redo"><Redo2 :size="16" /><span class="sr-only">Вернуть</span></wa-button>
-      <wa-button size="s" appearance="plain" title="Справка и клавиши (F1)" @click="showHelp"><CircleHelp :size="16" /><span class="sr-only">Справка</span></wa-button>
-      <wa-button size="s" appearance="plain" @click="toggleTheme" :title="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'">
-        <Sun v-if="theme === 'dark'" :size="16" /><Moon v-else :size="16" /><span class="sr-only">{{ theme === 'dark' ? "Светлая тема" : "Тёмная тема" }}</span>
+      <wa-button size="s" appearance="plain" :disabled="!history.undo" aria-label="Отменить" :title.attr="'Отменить (Ctrl+Z)'" @click="undo"><Undo2 :size="16" /></wa-button>
+      <wa-button size="s" appearance="plain" :disabled="!history.redo" aria-label="Вернуть" :title.attr="'Вернуть (Ctrl+Shift+Z)'" @click="redo"><Redo2 :size="16" /></wa-button>
+      <wa-button size="s" appearance="plain" aria-label="Справка" :title.attr="'Справка и клавиши (F1)'" @click="showHelp"><CircleHelp :size="16" /></wa-button>
+      <wa-button size="s" appearance="plain" @click="toggleTheme" :aria-label="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'" :title.attr="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'">
+        <Sun v-if="theme === 'dark'" :size="16" /><Moon v-else :size="16" />
       </wa-button>
     </header>
 
@@ -135,19 +135,19 @@
     <HubLogin />
 
     <footer class="status">
-      <CadModes />
-      <span class="cmdnow">{{ toolTitle }}</span>
+      <CadModes class="mapbit" />
+      <span class="cmdnow mapbit">{{ toolTitle }}</span>
       <!-- сообщение слева, в свободной части строки: появляясь и исчезая, оно не сдвигает слой, координаты и масштаб справа -->
       <button class="note" type="button" :aria-label="noteText || 'Сообщений нет'" :title="noteText ? noteText + ' — щелчок: показать целиком' : ''" @click="noteOpen = !noteOpen">{{ noteText }}</button>
       <span class="grow"></span>
-      <span>Слой: {{ current?.title }}</span>
-      <wa-dropdown placement="top-end" @wa-select="e => setBasemap(e.detail.item.value)">
+      <span class="lay mapbit" :title="current?.title">Слой: {{ current?.title }}</span>
+      <wa-dropdown class="mapbit" placement="top-end" @wa-select="e => setBasemap(e.detail.item.value)">
         <button slot="trigger" class="basebtn" title="Подложка карты">Подложка: {{ BASEMAPS[basemapId] }}</button>
         <wa-dropdown-item v-for="(t, id) in BASEMAPS" :key="id" type="checkbox" :value="id" :checked="basemapId === id">{{ t }}</wa-dropdown-item>
       </wa-dropdown>
-      <span class="xy" title="Курсор над картой, МСК (как в QGIS)">{{ cursor ? `X ${fmtM(cursor[0])}  Y ${fmtM(cursor[1])}` : "X —  Y —" }}</span>
+      <span class="xy mapbit" title="Курсор над картой, МСК (как в QGIS)">{{ cursor ? `X ${fmtM(cursor[0])}  Y ${fmtM(cursor[1])}` : "X —  Y —" }}</span>
       <!-- масштаб, как в QGIS: «1 :» и число — вводится («2000» и Enter), стрелка — список стандартных (владелец 09.10.2026: поле было пустым и широким) -->
-      <span class="scl" title="Масштаб карты: введите знаменатель, например 2000, и нажмите Enter, или выберите из списка">
+      <span class="scl mapbit" title="Масштаб карты: введите знаменатель, например 2000, и нажмите Enter, или выберите из списка">
         <span class="lbl">Масштаб</span>
         <span class="sbox" :class="{ off: !scale || !cad.ready }">
           <span class="pre">1&#8239;:</span>
@@ -211,6 +211,7 @@ const PANELS = [
   { id: "album", title: "Листы и альбом" },
   { id: "albumlay", title: "Макет надписей" },
 ];
+const sheetmode = ref(false);
 const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, false])));
 
 /* Лента — команды черчения как в рабочей странице (cad.js RIBBON): кнопка запускает команду, повторный щелчок прерывает. */
@@ -264,7 +265,7 @@ let api = null;
 /* Ширины по умолчанию от ширины экрана: на 1280 карта остаётся главной, на широком экране боковые окна просторнее,
    чтобы имена слоёв и вкладки «Свойства, Объект, Ограничения, Эскиз» не обрезались. Нижняя группа — две пятых высоты: «Схеме расчёта» и таблице есть где развернуться. */
 const clamp = (v, a, b) => Math.round(Math.min(b, Math.max(a, v)));
-const sizes = () => ({ left: clamp(innerWidth * .22, 270, 330), right: clamp(innerWidth * .26, 336, 390), bottom: clamp((innerHeight - 140) * .4, 240, 360) });
+const sizes = () => ({ left: clamp(innerWidth * .22, 270, 330), right: clamp(innerWidth * .26, 336, 390), bottom: clamp((innerHeight - 140) * .3, 180, 340) });   // низ — около трети высоты под картой: на 1280×720 карта не мельчает (UX-аудит 12.10 п. 17)
 
 function defaultLayout() {
   api.clear();
@@ -320,17 +321,33 @@ function homeOf(id) {
   return null;
 }
 
+const SHEET_MIN = 560, MAP_MIN = 360;   // макет листа и карта рядом — не уже этого
+const DOCK_NEAR = { norms: ["props", "object", "sketch"], vol: ["props", "object", "sketch"], comments: ["props", "object"], cmp: ["tep", "table", "vars"] };
+function dockOf(id) {
+  return (DOCK_NEAR[id] || []).find(x => api.getPanel(x)?.group?.api.location?.type === "grid") || null;
+}
 function addOne(id) {
   const p = PANELS.find(x => x.id === id);
   const home = homeOf(id);
   if (home) { api.addPanel({ id, component: id, title: p.title, ...home }); return; }
-  // макет листа — большое окно: вкладкой рядом с картой, как макет в QGIS открывается отдельным окном во всю ширину
-  // и сразу во всё окно (остальные окна прячутся, вернуть — двойной щелчок по вкладке или кнопка группы)
+  // макет листа (аудит UX 12.10.2026, находки 1–3): окно «Листы и альбом» со списком листов и «Виды» остаются видны,
+  // как страницы в Figma и менеджер макетов QGIS. Хватает места — встаёт рядом с картой, иначе вкладкой над картой
+  // (карта — соседняя вкладка); во всё окно — двойной щелчок по вкладке. Второй макет — вкладкой к первому.
+  // Окно не уже SHEET_MIN: лист не сжимается в полоску
   if (id === "sheet" || id === "albumlay") {
-    const panel = api.addPanel({ id, component: id, title: p.title, position: api.getPanel("map") ? { referencePanel: "map", direction: "within" } : undefined });
-    panel.api.maximize();
+    const mate = ["sheet", "albumlay"].map(x => api.getPanel(x)).find(Boolean);
+    const map = api.getPanel("map"), mw = map?.group?.api.width || 0;
+    const ref = mate ? { referencePanel: mate.id, direction: "within" }
+      : map && mw >= SHEET_MIN + MAP_MIN ? { referencePanel: "map", direction: "right" }
+      : map ? { referencePanel: "map", direction: "within" } : null;
+    api.addPanel({ id, component: id, title: p.title, minimumWidth: SHEET_MIN, ...(ref ? { position: ref } : {}),
+      ...(ref?.direction === "right" ? { initialWidth: Math.max(SHEET_MIN, Math.round(mw * 0.6)) } : {}) });
     return;
   }
+  // окна из меню «Окна» — вкладкой к боковой или нижней группе, не плавающей стопкой поверх карты (аудит UX, находка 7);
+  // плавающим окно делает пользователь, вытащив вкладку
+  const dock = dockOf(id);
+  if (dock) { api.addPanel({ id, component: id, title: p.title, position: { referencePanel: dock, direction: "within" } }); return; }
   const [w, h] = { norms: [560, 600], sketch: [440, 600], comments: [380, 560], vars: [900, 420], cmp: [1000, 520], vol: [620, 460] }[id] || [440, 280];   // длинные и широкие окна — крупнее
   const k = api.groups.filter(g => g.api.location?.type === "floating").length % 6;   // плавающие окна — лесенкой, не одно на другом:
   api.addPanel({ id, component: id, title: p.title, floating: fit(300 + k * 32, 80 + k * 46, w, h) });         // шаг 46 px — вкладки нижнего окна видны
@@ -345,7 +362,7 @@ function fit(x, y, w, h) {
 
 function showHelp() {
   const p = api?.getPanel("help");
-  if (p) p.api.setActive(); else api?.addPanel({ id: "help", component: "help", title: "Справка", floating: fit(360, 90, 520, 460) });
+  if (p) p.api.setActive(); else api?.addPanel({ id: "help", component: "help", title: "Справка", floating: fit(360, 90, 520, 460) });   // справка — плавающей подсказкой поверх карты
   syncOpen();
 }
 
@@ -390,6 +407,8 @@ function onReady(event) {
   const keep = () => { if (api.hasMaximizedGroup()) return; try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(api.toJSON())); } catch { /* частный режим браузера */ } };
   api.onDidMaximizedGroupChange(() => { mapOnly.value = !!api.getPanel("map")?.group?.api.isMaximized(); keep(); });
   api.onDidLayoutChange(() => { syncOpen(); keep(); });
+  // активен лист — лента и строка карты прячутся: у листа своя лента и своя строка состояния (аудит UX, находка 2)
+  api.onDidActivePanelChange(e => { sheetmode.value = ["sheet", "albumlay"].includes(e?.panel?.id); });
 }
 
 function onWindow(e) {
@@ -523,6 +542,8 @@ openStartup();
 .tgroup:last-child { border-right: 0; }
 .tbtns { display: flex; align-items: center; }
 .ribbon .ci { width: 18px; height: 18px; display: block; }
+.shell.sheetmode .ribbon, .shell.sheetmode .mapbit { display: none !important; }   /* активен лист: своя лента и строка у листа */
+.shell.sheetmode { grid-template-rows: auto 1fr auto; }   /* без ленты — на одну строку сетки меньше */
 wa-dropdown-item .ci { width: 16px; height: 16px; }
 .status > .xy { white-space: pre; min-width: 22ch; font-variant-numeric: tabular-nums; }
 .status > .cmdnow { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -540,6 +561,12 @@ wa-dropdown-item .ci { width: 16px; height: 16px; }
 }
 .status > * { flex: none; white-space: nowrap; }
 .status > .grow { flex: 1; }
+/* узкий экран (1024 px): строка не шире окна — слой сжимается многоточием, подписи «Масштаб» и «Подложка:» и сам слой уходят (UX-аудит 12.10 п. 12) */
+.status > .lay { flex: 0 1 auto; min-width: 0; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1180px) {
+  .status { gap: var(--wa-space-s); }
+  .status > .lay, .status .scl .lbl { display: none; }
+}
 /* длинное сообщение («Эскиз сохранён слоем…») не ломает строку: обрезается многоточием, целиком — в подсказке и по щелчку */
 .status { position: relative; }
 .status > .note { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; font: inherit; line-height: 20px; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }

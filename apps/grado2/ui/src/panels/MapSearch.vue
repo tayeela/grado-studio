@@ -7,7 +7,7 @@
   <div ref="box" class="msearch" role="search">
     <div class="msf">
       <input ref="inp" v-model="q" type="text" placeholder="Адрес, кадастровый номер или № КРТ" autocomplete="off" spellcheck="false"
-        aria-label="Поиск по адресу, кадастровому номеру или номеру КРТ" aria-controls="sres" :aria-busy="pend || null"
+        aria-label="Поиск по адресу, кадастровому номеру или номеру КРТ" :aria-controls="msg || R ? 'sres' : null" :aria-busy="pend || null"
         @keydown="onKey" @input="onInput">
       <button :disabled="pend" title="Найти (Enter)" aria-label="Найти" @click="run"><Search :size="15" /></button>
     </div>
