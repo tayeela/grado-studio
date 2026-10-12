@@ -1,8 +1,8 @@
 /* Проверяет рамку вида (viewframes.js, #119): пропорции, рамка по двум углам, масштаб блока «Вписать» и «Заполнить»,
-   высота блока по рамке, подпись, рамка под заданный масштаб. Запуск: cd apps/grado2/ui && npm test. */
+   высота блока по рамке, подпись, рамка под заданный масштаб, рамка листа альбома по углам. Запуск: cd apps/grado2/ui && npm test. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ratioOf, withRatio, fromCorners, cornersM, blockScale, blockFromView, blockHeightFor, frameLabel, frameForScale, dropRect } from "./viewframes.js";
+import { ratioOf, withRatio, fromCorners, cornersM, blockScale, blockFromView, blockHeightFor, frameLabel, frameForScale, dropRect, sheetFromCorners } from "./viewframes.js";
 
 const near = (a, b, e = 1e-6) => assert.ok(Math.abs(a - b) < e, `${a} ≈ ${b}`);
 
@@ -62,4 +62,11 @@ test("вид брошен на лист: блок по пропорциям ра
   const tall = dropRect({ x: 200, y: 150 }, f, { w: 100, h: 400 });
   assert.equal(tall.h, 287); near(tall.w, 71.75, .01);
   assert.deepEqual(dropRect({ x: 200, y: 150 }, f, null), { x: 120, y: 95, w: 160, h: 110 });
+});
+
+test("рамка листа альбома по углам: пропорции карты листа, масштаб из охвата, середина от неподвижного угла", () => {
+  const r = sheetFromCorners([0, 0], [550, 100], [275, 224]);       // шире, чем по пропорциям: масштаб по ширине
+  assert.equal(r.scale, 2000); near(r.w, 550); near(r.h, 448); near(r.c[0], 275); near(r.c[1], 224);
+  const l = sheetFromCorners([0, 0], [-100, -896], [275, 224]);     // тянули влево вниз и узко: масштаб по высоте, лист лёжа
+  assert.equal(l.scale, 4000); near(l.w, 1100); near(l.c[0], -550); near(l.c[1], -448);
 });

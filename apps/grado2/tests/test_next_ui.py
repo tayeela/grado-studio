@@ -215,14 +215,19 @@ class NextUi(unittest.TestCase):
         bridge = (web / "albumapi.js").read_text(encoding="utf-8")
         for k in ("frames: frames()", "sheetOnMap(s, true)", "sheetCenter(s)", "sheetScale(s)", "frameMM(s)"):
             self.assertIn(k, bridge)
-        frames = (src / "albumframes.js").read_text(encoding="utf-8")
-        self.assertIn("editSheet(", frames)
+        # с v0.99.96 рамки листов — те же рамки, что у видов (viewframesmap.js, id «alb:…»): одна логика на карте
+        frames = (src / "viewframesmap.js").read_text(encoding="utf-8")
+        self.assertIn('export const ALB = "alb:"', frames)
+        self.assertIn("editSheet(f.i, patch)", frames)
+        self.assertIn("sheetFromCorners(drag.a, m, v.mm)", frames)              # угол листа держит пропорции карты листа
         self.assertIn('get("gradoTop")', frames)                           # под перехватом команд черчения, как frames.js
         # #29: на рамке — короткое имя «Лист 5 · А3 · 1:2000», полное название — подсказкой над рамкой
         self.assertIn("label: `${n} · ${fmtT(s)} · 1:${fmt(Math.round(sc))}`, title:", bridge)
-        self.assertIn("fr.title || fr.label", frames)
+        self.assertIn("tip: f.title", frames)
+        self.assertIn("watch(() => album.fit", frames)
+        self.assertFalse((src / "albumframes.js").exists())
         self.assertIn("export function editSheet(", (src / "albumhost.js").read_text(encoding="utf-8"))
-        self.assertIn("attachFrames(map)", (src / "panels" / "MapPanel.vue").read_text(encoding="utf-8"))
+        self.assertIn("export function wantFrames(", (src / "albumhost.js").read_text(encoding="utf-8"))
         panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
         self.assertIn("album.tab = e.isVisible", panel)
         self.assertIn("album.fit++", panel)
