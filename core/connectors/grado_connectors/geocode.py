@@ -35,9 +35,9 @@ def clean_query(q):
     """Управляющие символы -> пробел, пробелы схлопнуты. Пустая строка и длиннее QUERY_MAX -> ValueError (ASCII)."""
     q = " ".join(_CTRL.sub(" ", str(q or "")).split())
     if not q:
-        raise ValueError("empty query")
+        raise ValueError("Пустой запрос: введите адрес")
     if len(q) > QUERY_MAX:
-        raise ValueError(f"query longer than {QUERY_MAX} characters")
+        raise ValueError(f"Адрес длиннее {QUERY_MAX} знаков")
     return q
 
 

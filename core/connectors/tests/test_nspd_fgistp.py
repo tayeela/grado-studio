@@ -9,6 +9,7 @@ import os
 import ssl
 import unittest
 import urllib.parse
+from pathlib import Path
 from unittest import mock
 
 import _paths  # noqa: F401
@@ -173,7 +174,6 @@ def _cert_error():
 
 class TestNspdCert(unittest.TestCase):
     def setUp(self):
-        nspd._insecure_warned = False
         env = {k: v for k, v in os.environ.items() if k != "GRADO_NSPD_INSECURE"}
         p = mock.patch.dict(os.environ, env, clear=True)
         p.start()
@@ -187,24 +187,14 @@ class TestNspdCert(unittest.TestCase):
         self.assertEqual(len(net.requests), 1, "повтора без проверки быть не должно")
         self.assertIn(".grado2/ca", str(cm.exception))
 
-    def test_insecure_env_uses_unverified_fallback(self):
-        ctxs = []
-
-        from grado_connectors import netutil
-
-        def fake(url, context=None, **kw):
-            ctxs.append(context)
-            if len(ctxs) == 1:
-                raise netutil.NetError(_cert_error())
-            return netutil.Response(200, {}, b'{"features": []}', url)
-        with mock.patch.dict(os.environ, {"GRADO_NSPD_INSECURE": "1"}), \
-                mock.patch.object(nspd.netutil, "request", side_effect=fake), \
-                mock.patch("sys.stderr") as err:
-            data = NspdDirect()._http_post("https://nspd.gov.ru/x", {})
-        self.assertEqual(data, {"features": []})
-        self.assertNotEqual(ctxs[0].verify_mode, ssl.CERT_NONE)
-        self.assertEqual(ctxs[1].verify_mode, ssl.CERT_NONE)
-        self.assertTrue(err.write.called, "предупреждение в stderr")
+    def test_insecure_env_is_ignored(self):
+        # Железное правило 4: старая переменная GRADO_NSPD_INSECURE=1 проверку не отключает.
+        from _fakenet import FakeNet
+        with mock.patch.dict(os.environ, {"GRADO_NSPD_INSECURE": "1"}), FakeNet(_cert_error()) as net:
+            with self.assertRaises(ConnectorError):
+                NspdDirect()._http_post("https://nspd.gov.ru/x", {})
+        self.assertEqual(len(net.requests), 1)
+        self.assertNotIn("CERT_NONE", Path(nspd.__file__).read_text(encoding="utf-8"))
 
     def test_extra_ca_skips_bad_files(self):
         import tempfile

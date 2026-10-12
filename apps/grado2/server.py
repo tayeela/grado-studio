@@ -67,6 +67,7 @@ from grado_connectors.yandex_vmap import YandexVmap                # noqa: E402
 from grado_render import acad_lin                                  # noqa: E402
 import hub as hubmod                                               # noqa: E402  совместный режим (GRADO2_HUB=1)
 import catalog as catmod                                           # noqa: E402  каталог проектов: превью, избранное, корзина (SQLite)
+import portalgate                                                  # noqa: E402  очередь к порталам: одно место за раз (#51)
 
 WEB = ROOT / "web" if FROZEN else Path(__file__).resolve().parent / "web"
 CACHE = Path.home() / ".grado2" / "cache"
@@ -465,17 +466,20 @@ CAD_LOCK = threading.Lock()       # к порталу — по одному за
 CAD_LOCK_TIMEOUT = 20             # сколько ждать очереди; не дождались — 503
 CAD_PAUSE = 0.5                   # пауза между номерами одного поиска (как в коннекторе)
 SEARCH_DEADLINE = 30              # общий срок одного запроса поиска, с: оставшиеся номера — в notes как не проверенные
+SEARCH_BUSY = "Поиск занят другим запросом — повторите через минуту"
+NSPD_DOWN = "Портал НСПД не ответил — повторите позже"
+NO_METHOD = "Нет такой команды сервера"
 
 
 def search_cad(q, deadline=None, lock_timeout=None):
     """Строка с номерами → (code, ответ). 400 — нет верных номеров, 502 — НСПД не ответил, 503 — очередь занята
-    (тексты только ASCII). Кэш и недавние сбои отвечают без замка; номера сверх срока — в notes."""
+    (тексты по-русски). Кэш и недавние сбои отвечают без замка; номера сверх срока — в notes."""
     deadline = SEARCH_DEADLINE if deadline is None else deadline
     lock_timeout = CAD_LOCK_TIMEOUT if lock_timeout is None else lock_timeout
     t0 = time.monotonic()
     nums, bad = nspd_mod.normalize_cadastral(q)
     if not nums:
-        return 400, {"error": "no valid cadastral numbers (format 50:27:0000000:126)"}
+        return 400, {"error": "Не похоже на кадастровый номер. Пример: 50:27:0000000:126"}
     over = nums[nspd_mod.SEARCH_MAX:]
     nums = nums[:nspd_mod.SEARCH_MAX]
     feats, missing, failed, unchecked, nogeom = [], [], [], [], []
@@ -489,7 +493,13 @@ def search_cad(q, deadline=None, lock_timeout=None):
     todo = [n for n in nums if n not in CAD_CACHE and n not in CAD_FAIL]
     if todo:
         if not CAD_LOCK.acquire(timeout=max(0.0, min(lock_timeout, deadline - (time.monotonic() - t0)))):
-            return 503, {"error": "search busy, try again"}
+            return 503, {"error": SEARCH_BUSY}
+        token = object()
+        try:                                     # НСПД занят выгрузкой слоёв — поиск ждёт её не дольше очереди (#51)
+            portalgate.GATE.acquire({"nspd"}, token, timeout=max(0.0, min(lock_timeout, deadline - (time.monotonic() - t0))))
+        except portalgate.Busy:
+            CAD_LOCK.release()
+            return 503, {"error": "Портал НСПД сейчас занят выгрузкой слоёв — повторите поиск через минуту"}
         try:
             first = True
             for n in todo:
@@ -509,6 +519,7 @@ def search_cad(q, deadline=None, lock_timeout=None):
                 CAD_CACHE[n] = (time.time(), next((f for f in found if f["grado_key"] == n), None))
                 nogeom += ng
         finally:
+            portalgate.GATE.release({"nspd"}, token)
             CAD_LOCK.release()
     for n in nums:
         hit = CAD_CACHE.get(n)
@@ -522,7 +533,7 @@ def search_cad(q, deadline=None, lock_timeout=None):
         else:
             feats.append(hit[1])
     if (failed or unchecked) and not feats and not missing:
-        return 502, {"error": "NSPD did not answer, try again later"}
+        return 502, {"error": NSPD_DOWN}
     layer = _layer("nspd.parcels", {"features": feats, "source_doc": "НСПД (nspd.gov.ru), поиск по кадастровому номеру"})
     notes = ([f"Не удалось запросить у НСПД: {', '.join(failed)}"] if failed else []) \
         + ([f"Не проверены, истекло время поиска — повторите: {', '.join(unchecked)}"] if unchecked else []) \
@@ -534,15 +545,15 @@ def search_cad(q, deadline=None, lock_timeout=None):
 
 
 def search_addr(q):
-    """Строка адреса → (code, ответ). 400 — пусто или длиннее 200, 502 — Nominatim не ответил (тексты только ASCII)."""
+    """Строка адреса → (code, ответ). 400 — пусто или длиннее 200, 502 — Nominatim не ответил (тексты по-русски)."""
     try:
         res = geocode_mod.geocode(q)
     except ValueError as e:
         return 400, {"error": str(e)}
     except geocode_mod.Busy:
-        return 503, {"error": "search busy, try again"}
+        return 503, {"error": SEARCH_BUSY}
     except ConnectorError:
-        return 502, {"error": "Nominatim did not answer, try again later"}
+        return 502, {"error": "Сервис адресов OpenStreetMap не ответил — повторите позже"}
     notes = [] if res else ["Ничего не найдено в Москве и области"]
     return 200, {"results": res, "notes": notes}
 
@@ -566,8 +577,17 @@ def krt_layer():
         if KRT_CACHE[1] is not None and time.time() - KRT_CACHE[0] < KRT_CACHE_SEC:
             return KRT_CACHE[1]
         feats = {}
-        for code in SOURCES["gisogd.krt"][1]:
-            for f in GisogdApi(cache_dir=CACHE / "gisogd").fetch((-180, -90, 180, 90), code)["features"]:
+        token = object()
+        try:                                     # портал занят выгрузкой слоёв — не второй запрос к нему (#51)
+            portalgate.GATE.acquire({"gisogd"}, token, timeout=CAD_LOCK_TIMEOUT)
+        except portalgate.Busy:
+            raise ConnectorError("ГИС ОГД занят выгрузкой слоёв") from None
+        try:
+            layer = [GisogdApi(cache_dir=CACHE / "gisogd").fetch((-180, -90, 180, 90), code)["features"] for code in SOURCES["gisogd.krt"][1]]
+        finally:
+            portalgate.GATE.release({"gisogd"}, token)
+        for fs in layer:
+            for f in fs:
                 try:
                     n = int(float((f.get("properties") or {}).get("num_krt")))
                 except (TypeError, ValueError):
@@ -590,11 +610,11 @@ def krt_card(p):
 
 
 def search_krt(n):
-    """Номер КРТ → (code, ответ). 200 — features (0 или 1 объект), cards, missing; 502 — слой портала не получен (ASCII)."""
+    """Номер КРТ → (code, ответ). 200 — features (0 или 1 объект), cards, missing; 502 — слой портала не получен."""
     try:
         f = krt_layer().get(n)
     except ConnectorError:
-        return 502, {"error": "KRT layer not available, try again later"}
+        return 502, {"error": "Слой КРТ портала ГИС ОГД не получен — повторите позже"}
     if f is None:
         return 200, {"features": [], "cards": [], "missing": [f"КРТ {n}"], "notes": []}
     return 200, {"features": [{"type": "Feature", "geometry": f["geometry"], "properties": dict(f.get("properties") or {}), "grado_key": f.get("grado_key")}],
@@ -614,7 +634,7 @@ def search_any(q):
         try:
             code, obj = search_cad(q[:2000])
         except ConnectorError:
-            code, obj = 502, {"error": "NSPD did not answer, try again later"}
+            code, obj = 502, {"error": NSPD_DOWN}
         kind = "cadastral"
     else:
         code, obj = search_addr(q)
@@ -955,11 +975,13 @@ def osm_fetch(bbox, sets, cache_dir=None):
     return OsmOverpass(cache_dir=cache_dir).fetch(bbox, sets)
 
 
-def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M):
+def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
     """Реальные слои по прямоугольнику WGS84. Возвращает (layers, errors).
     territory — [w, s, e, n] территории: для OSM и ЕГКО рамка листа крупного масштаба (сотни км²) заменяется
     областью данных «территория + margin_m», если рамка больше предела одного запроса (T70).
-    Кроме ключей SOURCES — любой слой каталога ГИС ОГД ключом «ogd.<код слоя>» (окно «Исходные данные»)."""
+    Кроме ключей SOURCES — любой слой каталога ГИС ОГД ключом «ogd.<код слоя>» (окно «Исходные данные»).
+    _gate — владелец очереди к порталам (portalgate.py) у вложенной выгрузки частей: она идёт как часть этой же выгрузки."""
+    gate_token = _gate or object()
     for k in keys:
         if k.startswith("ogd.") and k not in SOURCES:
             try:
@@ -979,7 +1001,7 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M):
         tb = territory_bbox(territory, margin_m)
         if capped and bbox_km2(tb) < area:
             keys = [k for k in keys if k not in capped]
-            lay2, err2 = fetch(tb, capped)
+            lay2, err2 = fetch(tb, capped, _gate=gate_token)
             layers.update(lay2)
             errors.update(err2)
     for k in keys:
@@ -1004,7 +1026,7 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M):
                     time.sleep(TILE_PAUSE_S)        # портал не долбим: пауза между частями
                 for k in ks:
                     PROGRESS[k] = {"title": SOURCES[k][2], "got": i, "total": len(cells), "stage": "cells"}
-                got, bad = fetch(cell, ks)
+                got, bad = fetch(cell, ks, _gate=gate_token)
                 for k in ks:
                     if k in bad:
                         errors.setdefault(k, f"часть {i + 1} из {len(cells)}: {bad[k]}")
@@ -1149,7 +1171,8 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M):
             errors.setdefault(k, "для этого вида источника нет выгрузки")
     if not jobs:
         return layers, errors
-    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+    # к порталу — одно место программы за раз (#51): вторая выгрузка к тем же порталам ждёт эту (portalgate.py)
+    with portalgate.GATE.use(portalgate.portals_of(SOURCES[k][0] for k in planned), gate_token), ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         for job_keys, fut in [(ks, pool.submit(fn)) for ks, fn in jobs]:
             try:
                 fut.result()
@@ -1282,25 +1305,25 @@ def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0
     free = {}
     for fid, fv in (('free_doo', free_doo), ('free_school', free_school), ('free_clinic', free_clinic)):
         if isinstance(fv, bool) or not isinstance(fv, (int, float)) or not 0 <= fv <= 100000 or fv != int(fv):      # NaN fails the range; places are whole
-            raise ValueError(f"{fid} must be a whole number from 0 to 100000")
+            raise ValueError(f"{fid}: свободных мест — целое число от 0 до 100000")
         free[fid] = int(fv)
     for pid, pv in (('park_share_underground', park_share_underground), ('park_share_multi', park_share_multi)):
         if isinstance(pv, bool) or not isinstance(pv, (int, float)) or not 0 <= pv <= 100 or pv != int(pv):      # NaN fails the range; shares are whole percents
-            raise ValueError(f"{pid} must be a whole number from 0 to 100")
+            raise ValueError(f"{pid}: доля мест — целое число процентов от 0 до 100")
     if park_share_underground + park_share_multi > 100:
-        raise ValueError("park_share_underground and park_share_multi together must not exceed 100")
+        raise ValueError("Подземные и многоэтажные гаражи вместе — не больше 100 %")
     e = Engine.from_file(PRESET)
     changed = None
     if constants is not None:
         if not isinstance(constants, dict):
-            raise ValueError("constants must be an object")
+            raise ValueError("Нормы (constants) должны быть объектом {id: число}")
         meta = e.preset.get("constants_meta", {})
         for cid, v in constants.items():
             if cid not in e.constants:
-                raise ValueError(f"unknown constant {cid!r}".encode("ascii", "backslashreplace").decode())
+                raise ValueError(f"Нет такой нормы: {str(cid)[:60]}")
             lo, hi = meta[cid]["min"], meta[cid]["max"]
             if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:     # NaN fails the range; range first: isfinite(10**400) overflows
-                raise ValueError(f"constant {cid} must be a number from {lo} to {hi}")
+                raise ValueError(f"Норма {cid}: число от {lo} до {hi}")
         changed = [cid for cid in e.constants if cid in constants and constants[cid] != e.constants[cid]]
         e.set_constants(**{cid: constants[cid] for cid in changed})
     e.set_inputs(terr_area=terr_ha, restrict_area=restrict_ha, spp_in=spp_new_m2 / 1000, ratio_zh=max(0.0, min(100.0, share * 100)),
@@ -1471,24 +1494,24 @@ def place_polygons(geom):
     Не-объект, чужой тип, bool, NaN, координаты вне диапазона, больше 100 000 вершин — ValueError (ответ 400)."""
     import export_io
     if not isinstance(geom, dict) or geom.get("type") not in ("Polygon", "MultiPolygon"):
-        raise ValueError("polygon must be a GeoJSON Polygon or MultiPolygon")
+        raise ValueError("Граница должна быть многоугольником GeoJSON (Polygon или MultiPolygon)")
     c = geom.get("coordinates")
     polys = [c] if geom["type"] == "Polygon" else c
     n = 0
     if not isinstance(polys, list) or not polys:
-        raise ValueError("polygon coordinates are empty")
+        raise ValueError("У границы нет координат")
     for poly in polys:
         if not isinstance(poly, list) or not poly:
-            raise ValueError("polygon rings are empty")
+            raise ValueError("У границы пустые контуры")
         for ring in poly:
             if not isinstance(ring, list) or len(ring) < 4:
-                raise ValueError("polygon ring needs at least 4 points")
+                raise ValueError("В контуре границы меньше 4 точек")
             n += len(ring)
             if n > MAX_PLACE_VERTICES:
-                raise ValueError("polygon has too many vertices")
+                raise ValueError("У границы слишком много вершин")
             for pt in ring:
                 if not isinstance(pt, list) or len(pt) < 2:
-                    raise ValueError("polygon point must be [lon, lat]")
+                    raise ValueError("Точка границы должна быть [долгота, широта]")
                 export_io._num(pt[0], "lon", 180)
                 export_io._num(pt[1], "lat", 90)
     return [[[(float(pt[0]), float(pt[1])) for pt in ring] for ring in poly] for poly in polys]
@@ -1596,7 +1619,7 @@ def project_path(name):
     if name == AUTOSAVE:
         return PROJECTS / f"{AUTOSAVE}.grado2"
     if not name or name.startswith(".") or len(name) > 120 or any(c in name for c in '/\\:*?"<>|\0'):
-        raise ValueError("bad project name")
+        raise ValueError("Недопустимое название проекта: без знаков / \\ : * ? \" < > | и без точки в начале, до 120 знаков")
     return PROJECTS / f"{name}.grado2"
 
 
@@ -1692,10 +1715,29 @@ def _write_project(path, name, body):
     atomic_write(path, body)
 
 
-def save_project(name, body):
+class Stale(Exception):
+    """Файл проекта изменён после того, как окно его открыло (другая вкладка или окно): 409, запись не идёт."""
+
+    def __init__(self, modified):
+        super().__init__(modified)
+        self.modified = modified
+
+
+def save_project(name, body, base=None, replace=False):
+    """Запись проекта под названием. base — время файла (modified), которое видело окно: файл с тех пор изменён — Stale (409),
+    чужие правки молча не затираются. Другой проект с тем же названием без учёта регистра — FileExistsError (409),
+    replace=True — он заменяется (файл сначала переименовывается в новое название, как rename_project: Mac регистр не различает)."""
     obj = json.loads(body)                            # в файл идёт только целый JSON
     path = project_path(name)
-    with _SAVE_LOCK:                                  # два сохранения подряд — по очереди, последний побеждает целиком
+    with _SAVE_LOCK:                                  # два сохранения подряд — по очереди
+        if name != AUTOSAVE:
+            other = _clash(name, path)
+            if other and not replace:
+                raise FileExistsError(other)
+            if other:
+                os.replace(PROJECTS / f"{other}.grado2", path)
+            if base is not None and path.exists() and abs(path.stat().st_mtime - base) > 1e-6:
+                raise Stale(path.stat().st_mtime)
         if isinstance(obj, dict) and "layouts" not in obj and path.exists():
             body = with_layouts(body, split_layouts(path.read_bytes())[1])   # листы макета, о которых страница не знает, остаются
         _write_project(path, name, body)
@@ -2137,7 +2179,7 @@ def get_search_cadastral(c):
     try:
         code, obj = search_cad(c.q("q")[:2000])
     except ConnectorError:
-        code, obj = 502, {"error": "NSPD did not answer, try again later"}
+        code, obj = 502, {"error": NSPD_DOWN}
     return _json(code, obj)
 
 
@@ -2167,7 +2209,7 @@ def get_ogd_file(c):
         return _json(403, {"error": "выгрузку запустил другой пользователь"})
     job = OGD_JOB[0] if OGD_JOB else None
     if not job or not job.file or not job.file.exists():
-        return _json(404, {"error": "no file"})
+        return _json(404, {"error": "Файла выгрузки нет — запустите выгрузку заново"})
     r = _file(job.file.read_bytes(), "application/zip")
     # имя с названием листа — по-русски; заголовок HTTP — только латиница
     r.headers["Content-Disposition"] = f"attachment; filename=\"gisogd.zip\"; filename*=UTF-8''{quote(job.file.name)}"
@@ -2193,13 +2235,15 @@ def get_project(c):
     if HUB:
         return _json(403, {"error": LOCAL_PROJECTS_OFF})
     try:
-        body = project_path(c.project_name()).read_bytes()
+        path = project_path(c.project_name())
+        body, mtime = path.read_bytes(), path.stat().st_mtime
     except (ValueError, OSError):
-        return _json(404, {"error": "no such project"})
+        return _json(404, {"error": "Проект не найден"})
     if c.project_name() != AUTOSAVE:
         with contextlib.suppress(Exception):           # «недавние» в каталоге — удобство, открытию не мешает
             catalog().opened(c.project_name())
-    return Response(body, media_type="application/json; charset=utf-8")
+    # время файла — окну для записи с base=… (save_project: правки другой вкладки молча не затираются)
+    return Response(body, media_type="application/json; charset=utf-8", headers={"X-Grado-Modified": repr(mtime)})
 
 
 def get_project_preview(c):
@@ -2209,7 +2253,7 @@ def get_project_preview(c):
     try:
         path = _existing(c.q("name"))
     except ValueError:
-        return _json(404, {"error": "no such project"})
+        return _json(404, {"error": "Проект не найден"})
     png = catalog().preview(path.stem, path)
     return Response(png, media_type="image/png") if png else Response(b"", 204)
 
@@ -2240,7 +2284,7 @@ def get_font_file(c):
     import fonts
     data = fonts.face_file(c.q("f"))
     if data is None:
-        return _json(404, {"error": "no such font"})
+        return _json(404, {"error": "Шрифт не найден"})
     return _file(data, "font/ttf", None, (("Cache-Control", "private, max-age=86400"),))
 
 
@@ -2248,11 +2292,13 @@ def post_font(c):
     """POST /api/fonts {"name": "Файл.ttf", "b64": …} — свой файл шрифта (TTF, OTF, TTC) → {"ids": [семейства]}."""
     import base64
     import fonts
+    if HUB and (c.who() or {}).get("guest", True):     # совместный сайт: гость не пишет в общую папку шрифтов (аудит 12.10, находка 5)
+        return _json(403, {"error": "Гость не может добавлять шрифты: войдите своим логином"})
     req = c.obj()
     try:
         data = base64.b64decode(str(req.get("b64") or ""), validate=True)
     except ValueError:
-        raise ValueError("b64: not base64") from None
+        raise ValueError("Файл повреждён при передаче (b64)") from None
     ids = fonts.add_file(str(req.get("name") or "font.ttf"), data)
     return _json(200, {"ids": ids, **fonts.listing()})
 
@@ -2323,8 +2369,15 @@ def post_import_dxf(c):
 def post_project(c):
     if HUB:
         return _json(403, {"error": LOCAL_PROJECTS_OFF})
+    base = c.q("base")
     try:
-        path = save_project(c.project_name(), c.body)
+        path = save_project(c.project_name(), c.body, float(base) if base else None, c.q("replace") == "1")
+    except Stale as e:
+        return _json(409, {"error": "Проект изменён в другом окне или вкладке после открытия. Откройте его заново "
+                                    "или сохраните под другим названием", "stale": True, "modified": e.modified})
+    except FileExistsError as e:
+        return _json(409, {"error": f"В папке уже есть проект «{e.args[0]}» — название совпадает без учёта заглавных букв",
+                           "clash": e.args[0]})
     except QuotaExceeded:
         return _json(507, {"error": f"папка проектов больше {PROJECTS_CAP // 2**30} ГБ: удалите старые проекты и версии"})
     return _json(200, {"saved": path.stem, "modified": path.stat().st_mtime})   # имя, не путь на диске
@@ -2387,7 +2440,9 @@ def post_export_sat(c):
         base = str(req.get("base") or "")[:400]      # полный путь папки распаковки на компьютере владельца
         body = sat_io.export_sat(frame, CACHE / "tiles" / "yandex-sat", base, prog)
     except (KeyError, TypeError, ValueError) as e:
-        return _json(400, {"error": str(e).encode("ascii", "replace").decode()})
+        c.log_fail(e)
+        t = str(e)
+        return _json(400, {"error": t if re.search("[а-яё]", t, re.I) else "Рамка снимка задана неверно: нужны центр, размер и масштаб листа или рамка [запад, юг, восток, север]"})
     finally:
         PROGRESS.pop("sat", None)
     return _file(body, "application/zip", "sputnik_yandex_msk.zip")
@@ -2428,7 +2483,8 @@ def post_ogd_start(c):
                                    str(req.get("name") or "gisogd"), sheet=req.get("sheet"),
                                    styles=ogd_all.portal_styles(CACHE / "gisogd"),
                                    codes=req.get("codes"), where=req.get("where"),
-                                   redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH})]
+                                   redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH},
+                                   gate=lambda: portalgate.GATE.use({"gisogd"}))]
         OGD_OWNER["login"] = (c.who() or {}).get("login")
     return _json(200, OGD_JOB[0].state)
 
@@ -2443,7 +2499,7 @@ def post_layout(c):
         render = layout_io.render_page_svg if c.route == "/api/print/layout_svg" else layout_io.map_svg
         return _file(render(req, REDLN, LGR_DASH, esri_tile).encode("utf-8"), "image/svg+xml; charset=utf-8")
     except (KeyError, TypeError, ValueError) as e:
-        return _json(400, {"error": str(e).encode("ascii", "replace").decode()})
+        return _json(400, {"error": _bad(c, e)})
 
 
 def post_ogd_label_angles(c):
@@ -2606,7 +2662,7 @@ def hub_get(c):
         return _json(200, {"teams": HUB.list_teams(u)})
     m = HUB_PROJECT_RE.fullmatch(path)
     if not m:
-        return _json(404, {"error": "no such method"})
+        return _json(404, {"error": NO_METHOD})
     pid, rest = unquote(m.group(1)), m.group(2) or ""
     if rest == "":
         return _json(200, HUB.get_project(u, pid))
@@ -2634,7 +2690,7 @@ def hub_get(c):
         return _json(200, {"activity": HUB.activity(u, pid)})
     if rest == "link":
         return _json(200, HUB.get_link(u, pid))
-    return _json(404, {"error": "no such method"})
+    return _json(404, {"error": NO_METHOD})
 
 
 def hub_events(c, user, pid):
@@ -2713,7 +2769,7 @@ def hub_post(c):
         return _json(200, {"members": HUB.set_team_member(u, tid, req.get("login"), req["role"])})
     m = HUB_PROJECT_RE.fullmatch(path)
     if not m:
-        return _json(404, {"error": "no such method"})
+        return _json(404, {"error": NO_METHOD})
     pid, rest = unquote(m.group(1)), m.group(2) or ""
     if rest == "":
         return _json(200, {"name": HUB.rename_project(u, pid, req.get("name"))})
@@ -2760,7 +2816,7 @@ def hub_post(c):
         if not (rev.isascii() and rev.isdecimal()):
             raise hubmod.HubError(400, "некорректный номер версии")
         return _json(200, HUB.restore(u, pid, int(rev)))
-    return _json(404, {"error": "no such method"})
+    return _json(404, {"error": NO_METHOD})
 
 
 def hub_call(c):
@@ -2795,7 +2851,7 @@ def _answer(c, fn):
     try:
         return fn(c)
     except (KeyError, ValueError, TypeError) as e:
-        return _json(400, {"error": _bad(e)})
+        return _json(400, {"error": _bad(c, e)})
     except Exception as e:      # битый DXF и т.п.
         c.log_fail(e)
         if c.route.startswith("/api/import/"):
@@ -2835,7 +2891,7 @@ async def api_post(request):
     try:
         n = int(request.headers.get("Content-Length") or 0)
     except ValueError:
-        return _json(400, {"error": "bad request: Content-Length"})
+        return _json(400, {"error": "Неверный запрос: длина тела не указана"})
     limit = body_limit(c.route)
     if not 0 <= n <= limit:
         return _json(413, {"error": f"запрос больше {limit // 2**20} МБ"})
@@ -2856,7 +2912,7 @@ async def api_post(request):
             return await run_in_threadpool(_answer, c, post_login if c.route == "/api/login" else post_logout)
         fn = POST_ROUTES.get(c.route)
         if fn is None:
-            return _json(404, {"error": "no such method"})
+            return _json(404, {"error": NO_METHOD})
         return await run_in_threadpool(_answer, c, fn)
     finally:
         if big:
@@ -2940,10 +2996,14 @@ class Server:
 
 
 
-def _bad(e):
-    """Причина отказа для владельца: русское сообщение — как есть, техническое — с пометкой bad request (тело JSON, не заголовок)."""
+def _bad(c, e):
+    """Причина отказа для владельца: русское сообщение — как есть; техническое (английское, с именем поля) — с русской
+    пометкой «Неверный запрос» и в журнал сервера (тело JSON по-русски, правило 4)."""
     t = str(e)
-    return t if re.search("[а-яё]", t, re.I) else f"bad request: {t}"
+    if re.search("[а-яё]", t, re.I):
+        return t
+    c.log_fail(e)
+    return f"Неверный запрос: {t[:300]}"
 
 
 def code_stamp():

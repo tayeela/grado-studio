@@ -22,10 +22,10 @@
           <div class="t"><Eye :size="14" /><span>{{ v.name }}</span></div>
           <div class="n">{{ plural(nOn(v), ["слой", "слоя", "слоёв"]) }}{{ v.extent ? " · с масштабом" : "" }}<span v-if="v.frame" class="fr"> · рамка {{ sizeT(v.frame) }}</span></div></td>
         <td class="act">
-          <wa-button size="s" :appearance="vframes.draw === v.id || vframes.sel === v.id ? 'filled' : 'plain'" :variant="vframes.sel === v.id ? 'brand' : 'neutral'"
+          <wa-button :aria-label="v.frame ? 'Рамка вида на карте: показать и править' : 'Нарисовать рамку вида на карте — где этот вид встанет на лист'" size="s" :appearance="vframes.draw === v.id || vframes.sel === v.id ? 'filled' : 'plain'" :variant="vframes.sel === v.id ? 'brand' : 'neutral'"
                      :title="v.frame ? 'Рамка вида на карте: показать и править' : 'Нарисовать рамку вида на карте — где этот вид встанет на лист'" @click="frameBtn(v)"><Frame :size="14" /></wa-button>
-          <wa-button size="s" appearance="plain" title="Заменить вид текущим состоянием карты" @click="update(v)"><RefreshCw :size="14" /></wa-button>
-          <wa-button size="s" :appearance="confirmId === v.id ? 'filled' : 'plain'" :variant="confirmId === v.id ? 'danger' : 'neutral'"
+          <wa-button aria-label="Заменить вид текущим состоянием карты" size="s" appearance="plain" title="Заменить вид текущим состоянием карты" @click="update(v)"><RefreshCw :size="14" /></wa-button>
+          <wa-button :aria-label="confirmId === v.id ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить вид'" size="s" :appearance="confirmId === v.id ? 'filled' : 'plain'" :variant="confirmId === v.id ? 'danger' : 'neutral'"
                      :title="confirmId === v.id ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить вид'" @click="remove(v)">
             <Trash2 :size="14" /></wa-button>
         </td>

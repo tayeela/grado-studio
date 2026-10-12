@@ -4,7 +4,7 @@
 <template>
   <div class="pane volp">
     <div class="vbar">
-      <wa-button size="s" appearance="outlined" title="Повернуть на 90°" @click="rot = (rot + 1) % 4"><RotateCw :size="14" /></wa-button>
+      <wa-button aria-label="Повернуть на 90°" size="s" appearance="outlined" title="Повернуть на 90°" @click="rot = (rot + 1) % 4"><RotateCw :size="14" /></wa-button>
       <select v-model.number="day" title="Дата теней" aria-label="Дата теней"><option :value="112">22 апреля</option><option :value="172">22 июня</option><option :value="234">22 августа</option><option :value="356">22 декабря</option></select>
       <input v-model.number="time" type="range" min="6" max="18" step=".25" title="Время, солнечное" aria-label="Время">
       <small>{{ sunInfo }}</small>

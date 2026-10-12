@@ -26,7 +26,6 @@ import json
 import os
 import re
 import ssl
-import sys
 import time
 import urllib.parse
 from pathlib import Path
@@ -117,7 +116,7 @@ def _base_url():
         return NSPD_BASE
     parsed = urllib.parse.urlsplit(raw)
     if parsed.scheme != "https" or not parsed.hostname or parsed.path or parsed.query:
-        raise ConnectorError("GRADO_NSPD_BASE must look like https://host (https only, no path)")
+        raise ConnectorError("GRADO_NSPD_BASE задан неверно: нужен адрес вида https://host (только https, без пути)")
     return raw
 
 
@@ -152,10 +151,7 @@ _CERT_HELP = (
     "НУЦ Минцифры не установлен. Скачайте russian_trusted_root_ca.cer и "
     "russian_trusted_sub_ca.cer с gu-st.ru/content/Other/doc/ и положите "
     "их в папку ~/.grado2/ca/ (либо укажите файл в переменной "
-    "GRADO_NSPD_CA). Подойдут .cer, .crt и .pem. Проверка сертификата "
-    "отключается только явно: GRADO_NSPD_INSECURE=1.")
-
-_insecure_warned = False
+    "GRADO_NSPD_CA). Подойдут .cer, .crt и .pem.")
 
 
 def _extra_ca_files():
@@ -191,23 +187,6 @@ def _extra_ca_pem():
 def _ssl_context():
     # nspd.gov.ru подписан НУЦ Минцифры, которого нет в certifi: к корням certifi добавляются его корни из файлов.
     return netutil.ssl_context(_extra_ca_pem())
-
-
-def _ssl_context_unverified():
-    # Только по явному GRADO_NSPD_INSECURE=1: соединение без проверки сертификата.
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
-
-
-def _warn_insecure():
-    global _insecure_warned
-    if not _insecure_warned:
-        _insecure_warned = True
-        print("ВНИМАНИЕ: GRADO_NSPD_INSECURE=1 — соединение с НСПД БЕЗ проверки "
-              "сертификата. Установите корни НУЦ Минцифры в ~/.grado2/ca/.",
-              file=sys.stderr)
 
 
 def _short(text):
@@ -293,16 +272,13 @@ SEARCH_MAX = 20
 
 def _request(url, **kw):
     """Запрос к НСПД по общему правилу netutil (повторы на 429, 5xx и обрыв сети). Сертификат не прошёл проверку —
-    понятная подсказка про корни Минцифры; без проверки — только по явному GRADO_NSPD_INSECURE=1."""
+    понятная подсказка про корни Минцифры. Проверка сертификата не отключается никогда (железное правило 4)."""
     try:
         return netutil.request(url, context=_ssl_context(), **kw)
     except netutil.NetError as e:
         if not e.cert:
             raise
-        if os.environ.get("GRADO_NSPD_INSECURE") != "1":
-            raise ConnectorError(_CERT_HELP) from None
-    _warn_insecure()
-    return netutil.request(url, context=_ssl_context_unverified(), **kw)
+        raise ConnectorError(_CERT_HELP) from None
 
 
 def _http_get(url):

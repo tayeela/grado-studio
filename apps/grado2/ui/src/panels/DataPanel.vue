@@ -51,7 +51,7 @@
         <div class="jh">
           <wa-spinner v-if="!job.t1"></wa-spinner><CircleCheck v-else-if="!jobN.error" :size="16" class="ic done" /><CircleAlert v-else :size="16" class="ic error" />
           <b>{{ jobHead }}</b><span class="t">{{ elapsed }}</span>
-          <wa-button v-if="job.t1" size="s" appearance="plain" title="Убрать отчёт о выгрузке" @click="job.items = []"><X :size="14" /></wa-button>
+          <wa-button aria-label="Убрать отчёт о выгрузке" v-if="job.t1" size="s" appearance="plain" title="Убрать отчёт о выгрузке" @click="job.items = []"><X :size="14" /></wa-button>
         </div>
         <wa-progress-bar :value="jobPct" :label="jobHead"></wa-progress-bar>
         <p v-if="!job.t1" class="hint">Можно работать дальше: слои появятся на карте и в окне «Слои», как только придут.</p>
