@@ -6,51 +6,51 @@
 
 | ключ | вид | название | строка |
 |---|---|---|---|
-| `egko.addresses` | egko | Адреса (ЕГКО) | server.py:156 |
-| `egko.buildings` | egko | Здания (ЕГКО) | server.py:143 |
-| `egko.fences` | egko | Заборы (ЕГКО) | server.py:155 |
-| `egko.green` | egko | Газоны и растительность (ЕГКО) | server.py:147 |
-| `egko.paths` | egko | Пешеходные дороги (ЕГКО) | server.py:146 |
-| `egko.place_labels` | egko | Пояснительные подписи (ЕГКО) | server.py:154 |
-| `egko.roads` | egko | Дороги (ЕГКО) | server.py:145 |
-| `egko.water` | egko | Водная поверхность (ЕГКО) | server.py:149 |
-| `egko.water_labels` | egko | Подписи рек и водоёмов (ЕГКО) | server.py:151 |
-| `gisogd.admin` | gisogd_admin | Административные округа и районы | server.py:138 |
-| `gisogd.agr` | gisogd | Свидетельства об утверждении АГР (ОГД) | server.py:137 |
-| `gisogd.airfield` | gisogd | Приаэродромные территории (ОГД) | server.py:119 |
-| `gisogd.demolition` | gisogd | Уведомления о сносе (ОГД) | server.py:125 |
-| `gisogd.gpzu` | gisogd | Градостроительные планы земельных участков (ОГД) | server.py:133 |
-| `gisogd.krt` | gisogd | Комплексное развитие территорий (ОГД) | server.py:134 |
-| `gisogd.okn` | gisogd | Объекты культурного наследия и их зоны (ОГД) | server.py:104 |
-| `gisogd.pmt` | gisogd | Проекты межевания территории (ОГД) | server.py:136 |
-| `gisogd.ppt` | gisogd | Проекты планировки (ОГД) | server.py:128 |
-| `gisogd.pzz_sub` | gisogd | ПЗЗ: подзоны — плотность, высота, застроенность (ОГД) | server.py:102 |
-| `gisogd.pzz_zones` | gisogd | ПЗЗ: территориальные зоны и ВРИ (ОГД) | server.py:103 |
-| `gisogd.red_lines` | gisogd | Красные линии и ЛГР (ОГД) | server.py:96 |
-| `gisogd.zouit` | gisogd | ЗОУИТ и зоны ограничений (ОГД) | server.py:108 |
-| `relief.contours` | terrain | Рельеф: горизонтали (SRTM) | server.py:126 |
-| `sit.buildings` | yandex_sit | Ситплан: здания (Яндекс) | server.py:177 |
-| `sit.green` | yandex_sit | Ситплан: озеленение (Яндекс) | server.py:173 |
-| `sit.places` | yandex_sit | Ситплан: названия территорий (Яндекс) | server.py:194 |
-| `sit.rail` | yandex_sit | Ситплан: железная дорога, главные пути (Яндекс) | server.py:178 |
-| `sit.road_labels` | yandex_sit | Ситплан: подписи улиц (Яндекс) | server.py:193 |
-| `sit.roads` | yandex_sit | Ситплан: оси дорог (Яндекс) | server.py:176 |
-| `sit.roads_hd` | yandex_sit | Ситплан: проезжая часть (Яндекс) | server.py:175 |
-| `sit.stations` | yandex_sit | Ситплан: станции метро, МЦК и МЦД (Яндекс) | server.py:187 |
-| `sit.water` | yandex_sit | Ситплан: вода (Яндекс) | server.py:174 |
-| `yandex.buildings` | yandex | Здания (Яндекс) | server.py:161 |
-| `yandex.green` | yandex | Озеленение (Яндекс) | server.py:165 |
-| `yandex.hd_roads` | yandex | Проезжая часть (Яндекс) | server.py:160 |
-| `yandex.landuse` | yandex | Функциональные зоны (Яндекс) | server.py:164 |
-| `yandex.parking` | yandex | Парковки (Яндекс) | server.py:167 |
-| `yandex.rail` | yandex | Железная дорога, главные пути (Яндекс) | server.py:180 |
-| `yandex.rail_stations` | yandex | Станции железной дороги (Яндекс) | server.py:192 |
-| `yandex.road_edges` | yandex | Кромки проезжей части (Яндекс) | server.py:163 |
-| `yandex.road_labels` | yandex | Подписи улиц (Яндекс) | server.py:191 |
-| `yandex.roads` | yandex | Оси дорог и дорожек (Яндекс) | server.py:162 |
-| `yandex.stations` | yandex | Станции метро, МЦК и МЦД (Яндекс) | server.py:184 |
-| `yandex.transport` | yandex | Транспорт (Яндекс) | server.py:168 |
-| `yandex.water` | yandex | Вода (Яндекс) | server.py:166 |
+| `egko.addresses` | egko | Адреса (ЕГКО) | server.py:158 |
+| `egko.buildings` | egko | Здания (ЕГКО) | server.py:145 |
+| `egko.fences` | egko | Заборы (ЕГКО) | server.py:157 |
+| `egko.green` | egko | Газоны и растительность (ЕГКО) | server.py:149 |
+| `egko.paths` | egko | Пешеходные дороги (ЕГКО) | server.py:148 |
+| `egko.place_labels` | egko | Пояснительные подписи (ЕГКО) | server.py:156 |
+| `egko.roads` | egko | Дороги (ЕГКО) | server.py:147 |
+| `egko.water` | egko | Водная поверхность (ЕГКО) | server.py:151 |
+| `egko.water_labels` | egko | Подписи рек и водоёмов (ЕГКО) | server.py:153 |
+| `gisogd.admin` | gisogd_admin | Административные округа и районы | server.py:140 |
+| `gisogd.agr` | gisogd | Свидетельства об утверждении АГР (ОГД) | server.py:139 |
+| `gisogd.airfield` | gisogd | Приаэродромные территории (ОГД) | server.py:121 |
+| `gisogd.demolition` | gisogd | Уведомления о сносе (ОГД) | server.py:127 |
+| `gisogd.gpzu` | gisogd | Градостроительные планы земельных участков (ОГД) | server.py:135 |
+| `gisogd.krt` | gisogd | Комплексное развитие территорий (ОГД) | server.py:136 |
+| `gisogd.okn` | gisogd | Объекты культурного наследия и их зоны (ОГД) | server.py:106 |
+| `gisogd.pmt` | gisogd | Проекты межевания территории (ОГД) | server.py:138 |
+| `gisogd.ppt` | gisogd | Проекты планировки (ОГД) | server.py:130 |
+| `gisogd.pzz_sub` | gisogd | ПЗЗ: подзоны — плотность, высота, застроенность (ОГД) | server.py:104 |
+| `gisogd.pzz_zones` | gisogd | ПЗЗ: территориальные зоны и ВРИ (ОГД) | server.py:105 |
+| `gisogd.red_lines` | gisogd | Красные линии и ЛГР (ОГД) | server.py:98 |
+| `gisogd.zouit` | gisogd | ЗОУИТ и зоны ограничений (ОГД) | server.py:110 |
+| `relief.contours` | terrain | Рельеф: горизонтали (SRTM) | server.py:128 |
+| `sit.buildings` | yandex_sit | Ситплан: здания (Яндекс) | server.py:179 |
+| `sit.green` | yandex_sit | Ситплан: озеленение (Яндекс) | server.py:175 |
+| `sit.places` | yandex_sit | Ситплан: названия территорий (Яндекс) | server.py:196 |
+| `sit.rail` | yandex_sit | Ситплан: железная дорога, главные пути (Яндекс) | server.py:180 |
+| `sit.road_labels` | yandex_sit | Ситплан: подписи улиц (Яндекс) | server.py:195 |
+| `sit.roads` | yandex_sit | Ситплан: оси дорог (Яндекс) | server.py:178 |
+| `sit.roads_hd` | yandex_sit | Ситплан: проезжая часть (Яндекс) | server.py:177 |
+| `sit.stations` | yandex_sit | Ситплан: станции метро, МЦК и МЦД (Яндекс) | server.py:189 |
+| `sit.water` | yandex_sit | Ситплан: вода (Яндекс) | server.py:176 |
+| `yandex.buildings` | yandex | Здания (Яндекс) | server.py:163 |
+| `yandex.green` | yandex | Озеленение (Яндекс) | server.py:167 |
+| `yandex.hd_roads` | yandex | Проезжая часть (Яндекс) | server.py:162 |
+| `yandex.landuse` | yandex | Функциональные зоны (Яндекс) | server.py:166 |
+| `yandex.parking` | yandex | Парковки (Яндекс) | server.py:169 |
+| `yandex.rail` | yandex | Железная дорога, главные пути (Яндекс) | server.py:182 |
+| `yandex.rail_stations` | yandex | Станции железной дороги (Яндекс) | server.py:194 |
+| `yandex.road_edges` | yandex | Кромки проезжей части (Яндекс) | server.py:165 |
+| `yandex.road_labels` | yandex | Подписи улиц (Яндекс) | server.py:193 |
+| `yandex.roads` | yandex | Оси дорог и дорожек (Яндекс) | server.py:164 |
+| `yandex.stations` | yandex | Станции метро, МЦК и МЦД (Яндекс) | server.py:186 |
+| `yandex.transport` | yandex | Транспорт (Яндекс) | server.py:170 |
+| `yandex.water` | yandex | Вода (Яндекс) | server.py:168 |
 
 Предел области выгрузки, км² (LIMIT_KM2): `{"gisogd_admin": 1e9, "nspd": 250.0, "osm": 150.0, "gisogd": 150.0, "egko": 150.0, "terrain": 150.0, "yandex": 40.0, "yandex_sit": 150.0}`
 

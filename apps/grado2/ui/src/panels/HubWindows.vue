@@ -1,8 +1,8 @@
 <!-- ГРАДО 2 · окна совместной работы (общий сервер, hub.js), как окна рабочей страницы web/hub.js:
-     «Совместные проекты» (поиск, порядок, только с альбомом, избранное, открыть, переименовать, копия, скачать, удалить;
-     создать пустой, сделать общей текущую работу, загрузить файл), «Доступ» (участники и роли, команда, ссылка),
-     «Команды», «История» (версии и кто что делал), «Пользователи и приглашения» (администратор).
-     Удаление и прочее необратимое — двумя нажатиями: первое взводит кнопку на 4 с. -->
+     «Совместные проекты» — те же карточки с превью, что окно «Проекты» папки (ProjectCard.vue): поиск, порядок, только с альбомом,
+     избранное, открыть, переименовать, копия, скачать, удалить (с вопросом); создать пустой, сделать общей текущую работу, загрузить файл.
+     «Доступ» (участники и роли, команда, ссылка), «Команды», «История» (версии и кто что делал), «Пользователи и приглашения» (администратор).
+     Прочее необратимое — двумя нажатиями: первое взводит кнопку на 4 с. -->
 <template>
   <!-- ======== совместные проекты ======== -->
   <wa-dialog class="hubwin wide" label="Совместные проекты" :open="hub.win === 'projects'" @wa-after-hide="close('projects')">
@@ -21,39 +21,36 @@
     </div>
     <p v-if="!hub.projects.length" class="empty">Совместных проектов пока нет. Введите название и нажмите «Создать пустой» или «Сделать общим текущую работу».</p>
     <p v-else-if="!groups.length" class="empty">Ничего не найдено</p>
-    <table v-else class="hubt">
-      <thead><tr><th>Проект</th><th>Ваша роль</th><th>Менял последним</th><th>Сейчас в проекте</th><th></th></tr></thead>
-      <tbody v-for="g in groups" :key="g.title">
-        <tr><td colspan="5" class="sec">{{ g.title }}</td></tr>
-        <template v-for="p in g.rows" :key="g.title + p.id">
-          <tr :class="{ cur: p.id === hub.pid }">
-            <td class="nm" :title="p.name">
-              <input v-if="ren === p.id" v-focus class="ren" :value="p.name" maxlength="60" aria-label="Новое название проекта"
-                     @keydown.enter="e => { renameProject(p.id, e.target.value.trim() || p.name); ren = null; }" @keydown.esc.stop="ren = null" @blur="ren = null">
-              <template v-else>{{ p.name }}<span v-if="p.id === hub.pid" class="pill">открыт</span><span v-if="+p.album_n" class="sub">альбом: {{ p.album_n }} л.</span></template>
-            </td>
-            <td>{{ ROLE[p.role] || p.role }}</td>
-            <td>{{ p.updated_by ? uname(p.updated_by) : "—" }}<span class="sub">{{ p.updated ? when(p.updated) : "" }}</span></td>
-            <td class="num">{{ +p.online ? `${p.online} ${plural(+p.online, ["человек", "человека", "человек"])}` : "никого" }}</td>
-            <td class="acts">
-              <wa-button size="s" appearance="plain" :title="p.star ? 'Убрать из избранного' : 'В избранное'" @click="starProject(p)"><Star :size="14" :fill="p.star ? 'currentColor' : 'none'" /></wa-button>
-              <wa-button size="s" appearance="outlined" :disabled="p.id === hub.pid" @click="openProject(p.id, p.name)">{{ p.id === hub.pid ? "Открыт" : "Открыть" }}</wa-button>
-              <wa-button v-if="isOwner(p.role)" size="s" appearance="plain" title="Переименовать проект" @click="ren = p.id"><Pencil :size="14" /></wa-button>
-              <wa-button size="s" appearance="plain" title="Сделать копию проекта: новый проект с теми же слоями, без комментариев и истории" @click="startCopy(p)"><Copy :size="14" /></wa-button>
-              <wa-button size="s" appearance="plain" title="Скачать проект файлом .grado2" @click="downloadShared(p)"><Download :size="14" /></wa-button>
-              <wa-button v-if="isOwner(p.role)" size="s" :appearance="armed('del:' + p.id) ? 'filled' : 'plain'" :variant="armed('del:' + p.id) ? 'danger' : 'neutral'"
-                         :title="armed('del:' + p.id) ? 'Нажмите ещё раз — проект и его история будут удалены у всех' : 'Удалить проект у всех участников'"
-                         @click="twoStep('del:' + p.id) && deleteProject(p)"><Trash2 :size="14" />{{ armed("del:" + p.id) ? " Точно?" : "" }}</wa-button>
-            </td>
-          </tr>
-          <tr v-if="cp.id === p.id && !g.fav" class="copy"><td colspan="5"><div class="bar">
-            <input v-model="cp.name" v-focus class="grow" maxlength="60" aria-label="Название копии" @keydown.enter="doCopy" @keydown.esc.stop="cp.id = null">
-            <label class="dim">Где создать <select v-model="cp.team" aria-label="Где создать копию"><option value="">Личные</option><option v-for="t in hub.teams || []" :key="t.id" :value="t.id">{{ t.name }}</option></select></label>
-            <wa-button size="s" variant="brand" @click="doCopy">Создать копию</wa-button><wa-button size="s" appearance="plain" @click="cp.id = null">Отмена</wa-button>
-          </div></td></tr>
-        </template>
-      </tbody>
-    </table>
+    <template v-else>
+      <section v-for="g in groups" :key="g.title" class="pgroup">
+        <h4 class="sec">{{ g.title }}</h4>
+        <div class="pgrid">
+          <ProjectCard v-for="p in g.rows" :key="g.title + p.id" :name="p.name" :img="previewOf(p)" :star="!!p.star" :current="p.id === hub.pid"
+                       :editing="ren === g.title + p.id" :renamable="isOwner(p.role)" empty-text="Пока без объектов"
+                       @open="p.id !== hub.pid && openProject(p.id, p.name)" @star="starProject(p)" @edit="ren = g.title + p.id" @cancel="ren = null"
+                       @rename="v => { ren = null; renameProject(p.id, v.slice(0, 60)); }" @act="a => act(a, p, g)">
+            <template #sub>{{ ROLE[p.role] || p.role }} · {{ p.updated_by ? uname(p.updated_by) + ", " : "" }}{{ p.updated ? when(p.updated) : "" }}<template v-if="+p.album_n"> · альбом {{ p.album_n }} л.</template><template v-if="+p.online"> · <b class="on">в проекте {{ p.online }}</b></template></template>
+            <template #menu>
+              <wa-dropdown-item value="open" :disabled="p.id === hub.pid">{{ p.id === hub.pid ? "Открыт" : "Открыть" }}</wa-dropdown-item>
+              <wa-dropdown-item v-if="isOwner(p.role)" value="ren">Переименовать</wa-dropdown-item>
+              <wa-dropdown-item value="copy">Сделать копию…</wa-dropdown-item>
+              <wa-dropdown-item value="down">Скачать файл .grado2</wa-dropdown-item>
+              <template v-if="isOwner(p.role)"><wa-divider></wa-divider><wa-dropdown-item value="del" variant="danger">Удалить у всех…</wa-dropdown-item></template>
+            </template>
+          </ProjectCard>
+        </div>
+        <div v-if="g.rows.some(p => p.id === cp.id) && !g.fav" class="bar copy">
+          <input v-model="cp.name" v-focus class="grow" maxlength="60" aria-label="Название копии" @keydown.enter="doCopy" @keydown.esc.stop="cp.id = null">
+          <label class="dim">Где создать <select v-model="cp.team" aria-label="Где создать копию"><option value="">Личные</option><option v-for="t in hub.teams || []" :key="t.id" :value="t.id">{{ t.name }}</option></select></label>
+          <wa-button size="s" variant="brand" @click="doCopy">Создать копию</wa-button><wa-button size="s" appearance="plain" @click="cp.id = null">Отмена</wa-button>
+        </div>
+      </section>
+    </template>
+    <wa-dialog label="Удалить проект у всех?" :open="!!delAsk" @wa-after-hide="delAsk = null">
+      <p>Проект «{{ delAsk?.name }}», его комментарии и история версий будут удалены у всех участников. Вернуть его будет нельзя.</p>
+      <wa-button slot="footer" size="s" appearance="plain" @click="delAsk = null">Отмена</wa-button>
+      <wa-button slot="footer" size="s" variant="danger" @click="deleteProject(delAsk); delAsk = null">Удалить</wa-button>
+    </wa-dialog>
   </wa-dialog>
 
   <!-- ======== доступ ======== -->
@@ -188,7 +185,8 @@
 
 <script setup>
 import { computed, reactive, ref } from "vue";
-import { Copy, Download, Pencil, Star, Trash2, UserPlus, X } from "@lucide/vue";
+import { Copy, UserPlus, X } from "@lucide/vue";
+import ProjectCard from "./ProjectCard.vue";
 import {
   ACT, LINKR, ROLE, TACC, TROLE, canEdit, copyProject, createProject, deleteProject, downloadShared, hub, isOwner, linkUrl, myRole, myTeam, newInvite, openProject,
   plural, projGroups, renameProject, restore, setLink, setMember, setPref, setTeam, shareLocal, size, starProject, teamAct, toMs, toggleUser, tp, uname, when,
@@ -226,6 +224,16 @@ async function onFile(e) {
     if (await createProject({ name, project: p, ...(newTeam.value ? { team: newTeam.value } : {}) }, `Файл «${f.name}» загружен как общий проект`)) newName.value = "";
   } catch (err) { notice.value = "Файл не загружен: " + err.message; }
 }
+const delAsk = ref(null);
+/* превью общего проекта (server.py hub_get «preview»): адрес меняется с ревизией — картинка перерисовывается после правок */
+const previewOf = p => `/api/hub/project/${encodeURIComponent(p.id)}/preview?rev=${p.rev}`;
+function act(a, p, g) {
+  if (a === "open") openProject(p.id, p.name);
+  else if (a === "ren") ren.value = g.title + p.id;
+  else if (a === "copy") startCopy(p);
+  else if (a === "down") downloadShared(p);
+  else if (a === "del") delAsk.value = p;
+}
 function startCopy(p) { Object.assign(cp, { id: p.id, name: `${p.name} — копия`.slice(0, 60), team: myTeam(p.team) ? p.team : "" }); }
 async function doCopy() { const name = cp.name.trim().slice(0, 60); if (!name) return; if (await copyProject(cp.id, name, cp.team)) cp.id = null; }
 
@@ -250,7 +258,12 @@ const invs = computed(() => [...(hub.adm?.inv || [])].sort((x, y) => toMs(y.crea
 
 <style>
 .hubwin::part(dialog) { width: min(640px, 94vw); }
-.hubwin.wide::part(dialog) { width: min(900px, 96vw); }
+.hubwin.wide::part(dialog) { width: min(1120px, 96vw); }
+.hubwin .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.hubwin .pgroup + .pgroup { margin-top: 10px; }
+.hubwin h4.sec { color: var(--g-muted); font-size: var(--wa-font-size-xs); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin: 10px 0 8px; }
+.hubwin .bar.copy { margin-top: 10px; }
+.hubwin .pcard b.on { color: var(--wa-color-success-on-quiet, #2f9e44); font-weight: 600; }
 .hubwin { font-size: var(--wa-font-size-s); }
 .hubwin .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; }
 .hubwin .bar .grow { flex: 1 1 200px; }
