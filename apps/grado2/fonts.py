@@ -25,6 +25,7 @@ from pathlib import Path
 HOME = Path(os.environ.get("GRADO2_FONTS") or Path.home() / ".grado2" / "fonts")
 USER, TTF, INDEX = HOME / "user", HOME / "ttf", HOME / "index.json"
 MAX_UPLOAD = 20 * 2**20
+MAX_USER_TOTAL = 200 * 2**20     # все свои шрифты вместе: папка не растёт без предела (аудит 12.10.2026, находка 5)
 EXTS = (".ttf", ".otf", ".ttc", ".otc")
 CYR = 0x0416                                         # «Ж»: есть — шрифт с кириллицей
 # готовые: имя в списке → семейства печати (обычное, жирное)
@@ -231,17 +232,19 @@ def add_file(name, data):
     """Свой файл шрифта (TTF, OTF, TTC): проверка, что это шрифт с кириллицей, — и в ~/.grado2/fonts/user. → id семейств."""
     ext = Path(str(name)).suffix.lower()
     if ext not in EXTS:
-        raise ValueError("not a font file: use TTF, OTF or TTC")
+        raise ValueError("Это не файл шрифта: подойдут TTF, OTF или TTC")
     if len(data) > MAX_UPLOAD:
-        raise ValueError("font file is larger than 20 MB")
+        raise ValueError("Файл шрифта больше 20 МБ")
     USER.mkdir(parents=True, exist_ok=True)
+    if sum(f.stat().st_size for f in USER.iterdir() if f.is_file()) + len(data) > MAX_USER_TOTAL:
+        raise ValueError(f"Своих шрифтов уже больше {MAX_USER_TOTAL // 2**20} МБ: удалите ненужные из папки ~/.grado2/fonts/user")
     stem = re.sub(r"[^\w.-]+", "_", Path(str(name)).stem)[:60] or "font"
     path = USER / f"{stem}-{hashlib.sha1(data).hexdigest()[:8]}{ext}"
     path.write_bytes(data)
     faces = _faces(path)
     if not faces:
         path.unlink(missing_ok=True)
-        raise ValueError("font has no Cyrillic letters or cannot be read")
+        raise ValueError("В шрифте нет русских букв или файл не читается")
     families(refresh=True)
     return sorted({"f:" + font_id(f["family"]) for f in faces})
 

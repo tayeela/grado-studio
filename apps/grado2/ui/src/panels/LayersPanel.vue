@@ -6,9 +6,9 @@
   <div class="pane layers">
     <div class="tools">
       <wa-input size="s" placeholder="Найти слой" with-clear :value="q" @input="e => (q = e.target.value)" class="grow"></wa-input>
-      <wa-button size="s" appearance="plain" title="Новый слой" @click="openNew"><Plus :size="16" /></wa-button>
-      <wa-button size="s" appearance="plain" title="Новая группа из текущего слоя" :disabled="!currentId" @click="groupCurrent"><FolderPlus :size="16" /></wa-button>
-      <wa-button size="s" appearance="plain" :disabled="!project.layers.length" title="Упорядочить слои как в опорном плане (ничего не удаляется)"
+      <wa-button aria-label="Новый слой" size="s" appearance="plain" title="Новый слой" @click="openNew"><Plus :size="16" /></wa-button>
+      <wa-button aria-label="Новая группа из текущего слоя" size="s" appearance="plain" title="Новая группа из текущего слоя" :disabled="!currentId" @click="groupCurrent"><FolderPlus :size="16" /></wa-button>
+      <wa-button aria-label="Упорядочить слои как в опорном плане (ничего не удаляется)" size="s" appearance="plain" :disabled="!project.layers.length" title="Упорядочить слои как в опорном плане (ничего не удаляется)"
                  @click="tidyLayers"><ListOrdered :size="16" /></wa-button>
     </div>
     <p v-if="!project.layers.length" class="hint">{{ loadError || "В проекте пока нет слоёв: «+» — новый слой" }}</p>
@@ -255,7 +255,7 @@ function groupCurrent() { if (currentId.value) editing.value = "g:" + newGroup([
 .layers .grp { margin-top: var(--wa-space-xs); font-weight: 600; }
 .layers .grp .cnt { margin-left: auto; color: var(--g-muted); font-weight: 400; font-size: var(--wa-font-size-xs); }
 .layers .grp.off .gname { color: var(--g-muted); }
-.layers .eye, .layers .tw, .layers .more { all: unset; display: inline-flex; color: var(--g-muted); cursor: pointer; padding: 3px; margin: -2px; border-radius: 4px; }   /* значок 16 px, цель для мыши 22 px */
+.layers .eye, .layers .tw, .layers .more { all: unset; display: inline-flex; color: var(--g-muted); cursor: pointer; box-sizing: border-box; min-width: 24px; min-height: 24px; align-items: center; justify-content: center; margin: -4px -1px; border-radius: 4px; }   /* значок 15 px, цель для мыши 24 px (WCAG 2.2), строка не растёт */
 /* «⋯» прозрачна, а не скрыта: так до неё доходит Tab, и при фокусе она видна */
 .layers .more { opacity: 0; margin-left: auto; }
 .layers .grp .more { margin-left: 0; }

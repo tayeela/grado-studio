@@ -168,5 +168,23 @@ class Fonts(unittest.TestCase):
         self.assertEqual(S.get_font_file(c).status_code, 404)
 
 
+    def test_hub_guest_cannot_upload_and_folder_has_a_cap(self):
+        """Аудит 12.10.2026, находка 5: гость совместного сайта шрифты не добавляет; у своих шрифтов общий предел."""
+        import json
+        S = server
+        c = mock.Mock()
+        c.who = lambda: {"login": "guest", "guest": True}
+        with mock.patch.object(S, "HUB", object()):
+            r = S.post_font(c)
+        self.assertEqual(r.status_code, 403)
+        self.assertRegex(json.loads(r.body)["error"], "[а-яё]")
+        c.obj.assert_not_called()
+        data = (BUNDLED / "PTSans-Regular.ttf").read_bytes()
+        with mock.patch.object(fonts, "MAX_USER_TOTAL", len(data) + 10):
+            fonts.add_file("a.ttf", data)
+            with self.assertRaisesRegex(ValueError, "больше"):
+                fonts.add_file("b.ttf", data + b"\0")
+
+
 if __name__ == "__main__":
     unittest.main()

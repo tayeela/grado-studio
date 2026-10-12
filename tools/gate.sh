@@ -31,7 +31,12 @@ if [ -d apps/grado2/ui/node_modules ]; then  # новый интерфейс: с
   step ui       tools/ui_check.sh
 else echo "skip ui — no apps/grado2/ui/node_modules (cd apps/grado2/ui && npm ci)"; fi
 if [ "${E2E:-}" = 1 ] || [ -n "${E2E_ONLY:-}" ]; then
-  step e2e      env PYTHONPATH="$PP" GRADO2_E2E=1 "$PY" -m unittest apps/grado2/tests/test_e2e.py
+  # драйвер сценариев (tests/e2e/driver.mjs) берёт module.registerHooks — он есть только в Node 22+
+  if [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 22 ]; then
+    echo "FAIL e2e — нужен Node 22 или новее, сейчас $(node -v 2>/dev/null || echo 'node не найден')"; fail+=(e2e-node)
+  else
+    step e2e      env PYTHONPATH="$PP" GATE_LOG="$LOG" GRADO2_E2E=1 "$PY" -m unittest apps/grado2/tests/test_e2e.py
+  fi
   [ -d apps/grado2/ui/node_modules ] && step ui-layout node tools/ui_layout_check.mjs --out "$LOG/ui-layout"   # окна нового интерфейса по docs/ux/ui-grid.md
 fi
 if [ ${#fail[@]} -eq 0 ]; then echo "GATE: OK"; else echo "GATE: FAIL (${fail[*]})"; exit 1; fi

@@ -25,7 +25,7 @@
       <button class="spn-b" :disabled="acur >= 0" title="Копия этого листа" @click="add(sheets[cur])"><Copy :size="15" :stroke-width="1.7" />Копия</button>
       <button class="spn-b" :disabled="acur >= 0 || sheets.length < 2" title="Удалить этот лист" @click="askDrop = true"><Trash2 :size="15" :stroke-width="1.7" />Удалить</button>
       <button class="spn-b" title="Все листы по порядку одним PDF, номера листов — в штампе" @click="all"><FileDown :size="15" :stroke-width="1.7" />Все листы в PDF</button>
-      <span class="spn-hint" :title="HINT">{{ HINT }}</span>
+      <span class="spn-hint" :title="HINT" aria-hidden="true">?</span>
       <span class="spn-st" :class="state.kind">{{ state.text }}</span>
     </div>
     <wa-dialog label="Удалить лист" :open="askDrop" @wa-after-hide="askDrop = false">
@@ -61,7 +61,7 @@ const albumList = computed(() => (album.rev, album.sheets, (project.raw?.album?.
 function pick(v) { if (v.startsWith("a")) acur.value = +v.slice(1); else { acur.value = -1; cur.value = +v; } }
 // лист альбома открыли, а его уже нет (пересобрали, удалили) — к листам проекта
 watch(() => albumList.value.length, n => { if (acur.value >= n) acur.value = -1; });
-const HINT = "Те же листы — в окне «Листы и альбом». Карта листа — рамка вида на карте (окно «Виды»).";
+const HINT = "Те же листы — в окне «Листы и альбом». Карта листа — рамка вида на карте (окно «Виды»): перетащите вид на лист, встанет карта с местом и масштабом по рамке. Карту можно и нарисовать кнопкой «Карта» на ленте, вид ей выбирают в «Свойствах».";
 const state = reactive({ kind: "", text: "" });
 const meta = () => project.raw?.album?.meta || {};
 let mine = null, base = "";             // mine — список листов, который панель сама положила в project.layouts
@@ -119,13 +119,14 @@ watch(sheets, () => {
 .spn { display: flex; flex-direction: column; height: 100%; }
 .spn-ed { flex: 1; min-height: 0; }
 .spn-bar { flex: none; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; font: 13px/1.3 var(--wa-font-family-body, system-ui), sans-serif;
-  color: var(--wa-color-text-normal, #1f2328); background: var(--wa-color-surface-default, #fff); border-bottom: 1px solid var(--wa-color-surface-border, #e3e6ea); }
+  color: var(--wa-color-text-normal, #1f2328); background: var(--wa-color-surface-default, #fff); border-bottom: 1px solid var(--wa-color-surface-border, #e3e6ea); overflow: hidden; }
 .spn-cap { color: var(--wa-color-text-quiet, #66707c); }
-.spn-sel { font: inherit; color: inherit; background: var(--wa-color-surface-default, #fff); border: 1px solid var(--wa-color-neutral-border-normal, #cfd4da); border-radius: 5px; height: 26px; padding: 0 6px; max-width: 280px; }
-.spn-b { display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; background: none; border: 1px solid transparent; border-radius: 5px; height: 26px; padding: 0 8px; cursor: pointer; }
+.spn-sel { font: inherit; color: inherit; background: var(--wa-color-surface-default, #fff); border: 1px solid var(--wa-color-neutral-border-normal, #cfd4da); border-radius: 5px; height: 26px; padding: 0 6px; max-width: 280px; min-width: 0; flex: 0 1 auto; }
+.spn-b { display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; background: none; border: 1px solid transparent; border-radius: 5px; height: 26px; padding: 0 8px; cursor: pointer; white-space: nowrap; flex: none; }
 .spn-b:hover:not(:disabled) { background: var(--wa-color-neutral-fill-quiet, #f0f2f5); }
 .spn-b:disabled { opacity: .4; cursor: default; }
-.spn-hint { flex: 1; min-width: 0; margin-left: 8px; color: var(--wa-color-text-quiet, #66707c); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spn-hint { flex: none; width: 18px; height: 18px; margin-left: 6px; border: 1px solid var(--g-line, #d0d5dc); border-radius: 50%; color: var(--wa-color-text-quiet, #66707c); font-size: 11px; line-height: 16px; text-align: center; cursor: help; }
+.spn-st { margin-left: auto; }
 .spn-q { margin: 0; line-height: 1.45; }
 .spn-st { color: var(--wa-color-text-quiet, #66707c); font-size: 12px; white-space: nowrap; }
 .spn-st.ok { color: var(--wa-color-success-on-quiet, #1a7f37); }

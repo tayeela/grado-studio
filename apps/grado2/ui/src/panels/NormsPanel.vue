@@ -122,8 +122,8 @@ function zoneAuto() { const p = tepParams(tn.value); delete p.zoneSet; p.zone = 
 <style>
 .normsp .ncond { border: 1px solid var(--g-line); border-radius: 6px; padding: 4px 8px 6px; margin-bottom: 6px; }
 .normsp .nct { font-weight: 600; font-size: var(--wa-font-size-s); margin: 2px 0 4px; }
-.normsp .nbar { display: flex; gap: 6px; align-items: center; margin: 4px 0 6px; }
-.normsp .nbar wa-input { flex: 1; margin: 0 !important; }
+.normsp .nbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 6px; }   /* узкая боковая панель — кнопка уходит под поиск */
+.normsp .nbar wa-input { flex: 1 1 180px; margin: 0 !important; }
 .normsp .ngrp { margin: 4px 0; }
 .normsp .ngrp summary { font-weight: 600; font-size: var(--wa-font-size-s); cursor: pointer; padding: 3px 0; }
 .normsp .ngrp summary small { font-weight: 400; color: var(--wa-color-warning-on-quiet); margin-left: 6px; }

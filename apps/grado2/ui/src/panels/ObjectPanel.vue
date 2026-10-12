@@ -20,7 +20,7 @@
 
     <template v-else-if="items.length === 1">
       <div class="ph"><b>{{ lyr(items[0].key)?.title }}</b>
-        <wa-button size="s" appearance="plain" title="Приблизить к объекту" @click="mapApi.fitFeature(items[0].f)"><Focus :size="15" /></wa-button></div>
+        <wa-button aria-label="Приблизить к объекту" size="s" appearance="plain" title="Приблизить к объекту" @click="mapApi.fitFeature(items[0].f)"><Focus :size="15" /></wa-button></div>
       <div class="sub">{{ sizeText(items) }}{{ items[0].f.properties._edited ? " · изменён вручную" : "" }}</div>
       <DecisionBar :items="items" />
       <!-- поля — таблицей «поле | значение», как «Определить объекты» в QGIS; значение правится прямо в ячейке -->

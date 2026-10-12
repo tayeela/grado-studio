@@ -7,7 +7,7 @@
   <div ref="box" class="msearch" role="search">
     <div class="msf">
       <input ref="inp" v-model="q" type="text" placeholder="Адрес, кадастровый номер или № КРТ" autocomplete="off" spellcheck="false"
-        aria-label="Поиск по адресу, кадастровому номеру или номеру КРТ" aria-controls="sres" :aria-busy="pend || null"
+        aria-label="Поиск по адресу, кадастровому номеру или номеру КРТ" :aria-controls="msg || R ? 'sres' : null" :aria-busy="pend || null"
         @keydown="onKey" @input="onInput">
       <button :disabled="pend" title="Найти (Enter)" aria-label="Найти" @click="run"><Search :size="15" /></button>
     </div>
@@ -60,11 +60,8 @@ function addrOf(x) {
 }
 const haOf = f => { const a = (sizeOf(f)[1] || 0) / 1e4; return fmt(a, a < 1 ? 4 : 2) + " га"; };
 const srchErr = e => { const m = String(e?.message || e);
-  return /busy/i.test(m) ? "Поиск занят другим запросом — повторите через минуту"
-    : /KRT/i.test(m) ? "Слой КРТ портала ГИС ОГД не получен — повторите позже"
-    : /NSPD/i.test(m) ? "Портал НСПД не ответил — повторите позже"
-    : /Nominatim/i.test(m) ? "Сервис адресов OpenStreetMap не ответил — повторите позже"
-    : /no valid cadastral/i.test(m) ? "Не похоже на кадастровый номер. Пример: 50:27:0000000:126"
+  /* сервер отвечает по-русски (правило 4) — его текст показывается как есть */
+  return /[а-яё]/i.test(m) ? m
     : /Failed to fetch|NetworkError|Load failed/i.test(m) ? "Нет связи с программой ГРАДО — повторите" : "Поиск не удался — повторите позже"; };
 
 const q = ref(""), R = ref(null), act = ref(-1), pend = ref(false), msg = ref(""), msgBad = ref(false), ask = ref(false);

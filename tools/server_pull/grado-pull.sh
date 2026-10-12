@@ -46,8 +46,14 @@ fi
 rm -rf $A.new && mkdir -p $A.new
 # shellcheck disable=SC2086
 git archive --format=tar "$REV" $PATHS | tar -x -C $A.new || { echo "не распаковался код — сервер не тронут"; rm -rf $A.new; exit 1; }
+# зависимости поменялись: прежний набор версий — в freeze.prev, откат ниже вернёт и его (общий venv; аудит 12.10.2026, находка 6)
+rm -f "$P/freeze.prev"
 if ! cmp -s $A/apps/grado2/requirements.txt $A.new/apps/grado2/requirements.txt; then
-  /opt/grado/venv/bin/pip install -q -r $A.new/apps/grado2/requirements.txt || { echo "зависимости не поставились — сервер не тронут"; rm -rf $A.new; exit 1; }
+  /opt/grado/venv/bin/pip freeze > "$P/freeze.prev" 2>/dev/null || rm -f "$P/freeze.prev"
+  /opt/grado/venv/bin/pip install -q -r $A.new/apps/grado2/requirements.txt || {
+    echo "зависимости не поставились — сервер не тронут"; rm -rf $A.new
+    [ -s "$P/freeze.prev" ] && /opt/grado/venv/bin/pip install -q -r "$P/freeze.prev"
+    exit 1; }
 fi
 rm -rf $A.prev && mv $A $A.prev && mv $A.new $A
 systemctl restart grado
@@ -64,6 +70,9 @@ done
 echo "Новая версия $VER не ответила — возвращаю прежнюю"
 journalctl -u grado -n 15 --no-pager | tail -15
 rm -rf $A.failed && mv $A $A.failed && mv $A.prev $A
+if [ -s "$P/freeze.prev" ]; then
+  /opt/grado/venv/bin/pip install -q -r "$P/freeze.prev" && echo "библиотеки возвращены к прежним версиям" || echo "прежние версии библиотек не вернулись"
+fi
 systemctl restart grado; systemctl restart grado-guest 2>/dev/null || true; sleep 3
 echo "$KEY" > "$P/failed"
 echo "Сейчас на сервере: $(health)"

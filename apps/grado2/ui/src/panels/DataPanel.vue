@@ -20,7 +20,7 @@
         <wa-button size="s" appearance="outlined" title="DXF, DWG, GeoJSON, KML, Shapefile: самый большой замкнутый контур файла" @click="pick('terr')"><FileInput :size="14" /> Из файла</wa-button>
         <wa-button size="s" appearance="outlined" title="Объединение земельных участков по кадастровым номерам" @click="numsDlg = true"><Grid2x2 :size="14" /> По участкам</wa-button>
         <wa-button size="s" appearance="outlined" :disabled="!sel.length" title="Граница — объединение выбранных на карте площадных объектов" @click="territoryFromSelection(selected())"><SquareDashed :size="14" /> Из выбранного</wa-button>
-        <wa-button size="s" :class="{ wide: askExample }" :appearance="askExample ? 'filled' : 'outlined'" :variant="askExample ? 'danger' : 'neutral'" @click="example">{{ askExample ? "Заменить вашу границу примером?" : "Пример" }}</wa-button>
+        <wa-button size="s" :class="{ wide: askExample }" :appearance="askExample ? 'filled' : 'outlined'" :variant="askExample ? 'danger' : 'neutral'" @click="example">{{ askExample ? (project.territory ? "Заменить вашу границу примером?" : "Граница-пример на Ходынском поле — поставить?") : "Пример" }}</wa-button>
       </div>
     </section>
 
@@ -51,7 +51,7 @@
         <div class="jh">
           <wa-spinner v-if="!job.t1"></wa-spinner><CircleCheck v-else-if="!jobN.error" :size="16" class="ic done" /><CircleAlert v-else :size="16" class="ic error" />
           <b>{{ jobHead }}</b><span class="t">{{ elapsed }}</span>
-          <wa-button v-if="job.t1" size="s" appearance="plain" title="Убрать отчёт о выгрузке" @click="job.items = []"><X :size="14" /></wa-button>
+          <wa-button aria-label="Убрать отчёт о выгрузке" v-if="job.t1" size="s" appearance="plain" title="Убрать отчёт о выгрузке" @click="job.items = []"><X :size="14" /></wa-button>
         </div>
         <wa-progress-bar :value="jobPct" :label="jobHead"></wa-progress-bar>
         <p v-if="!job.t1" class="hint">Можно работать дальше: слои появятся на карте и в окне «Слои», как только придут.</p>
@@ -60,11 +60,13 @@
             <span class="st"><wa-spinner v-if="it.state === 'run'"></wa-spinner><CircleCheck v-else-if="it.state === 'done'" :size="14" />
               <CircleMinus v-else-if="it.state === 'empty'" :size="14" /><CircleAlert v-else :size="14" /></span>
             <span class="nm">{{ it.title }}</span>
-            <span class="dt">{{ it.state === "done" ? fmt(it.n) : it.state === "run" ? it.detail : it.state === "empty" ? "пусто" : "ошибка" }}</span>
+            <span class="dt">{{ it.state === "done" ? fmt(it.n) : it.state === "run" ? it.detail : it.state === "empty" ? "пусто" : "не ответил" }}</span>
             <span v-if="it.state === 'run' && it.pct != null" class="mini"><i :style="{ width: Math.round(it.pct * 100) + '%' }"></i></span>
             <span v-if="it.state !== 'run' && it.detail" class="sub">{{ it.state === "done" ? "перевыгрузка: " + it.detail : it.detail }}</span>
           </li>
         </ul>
+        <wa-button v-if="job.t1 && jobN.error && !loading" size="s" variant="brand" appearance="outlined" class="all" @click="retryFailed">
+          <RotateCw slot="start" :size="14" />Повторить: {{ plural(jobN.error, ["слой", "слоя", "слоёв"]) }}</wa-button>
         <wa-button v-if="job.t1 && jobN.done && !showAll" size="s" appearance="plain" class="all" @click="showAll = true">Загруженные слои ({{ jobN.done }}) — показать</wa-button>
       </div>
     </section>
@@ -149,7 +151,7 @@
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { Check, ChevronRight, CircleAlert, CircleCheck, CircleMinus, Database, Download, FileDown, FileInput, FileUp, Grid2x2, Info, Landmark, PenLine, RotateCcw, Spline, SquareDashed, X } from "@lucide/vue";
+import { Check, ChevronRight, CircleAlert, CircleCheck, CircleMinus, Database, Download, FileDown, FileInput, FileUp, Grid2x2, Info, Landmark, PenLine, RotateCcw, RotateCw, Spline, SquareDashed, X } from "@lucide/vue";
 import * as turf from "@turf/turf";
 import { project } from "../store.js";
 import { dataRev, lyr } from "../edit.js";
@@ -157,7 +159,7 @@ import { sel, selected } from "../features.js";
 import { plural } from "../geom.js";
 import {
   ERRORS, FG, FILE_ACCEPT, SOURCES, fgFind, fgLoad, fgPick, fgSearch, checked, coverBox, coverOn, coverOwn, coverRev, coverText, setCover, existingSummary, exampleTerritory, importBoundary, importFiles,
-  job, keepChecked, loadKeys, loadSources, loading, localSys, ogd, startOgd, stopOgd, terrTool, territoryByNumbers, territoryFromSelection,
+  job, keepChecked, loadKeys, retryFailed, loadSources, loading, localSys, ogd, startOgd, stopOgd, terrTool, territoryByNumbers, territoryFromSelection,
 } from "../data.js";
 import { call } from "../albumhost.js";
 
@@ -202,7 +204,9 @@ const jobPct = computed(() => { const t = job.items.length; if (!t) return 0; co
 const jobHead = computed(() => {
   const n = jobN.value, t = job.items.length;
   if (!job.t1) return `Выгрузка: готово ${t - n.run} из ${t}`;
-  return ["Загружено " + plural(n.done, ["слой", "слоя", "слоёв"]), n.empty ? `без объектов ${n.empty}` : "", n.error ? `с ошибкой ${n.error}` : ""].filter(Boolean).join(", ");
+  const rest = [n.empty ? `пусты ${n.empty}` : "", n.error ? `портал не ответил ${n.error}` : ""].filter(Boolean).join(", ");
+  if (!n.done) return `Ничего не загружено${rest ? ": " + rest : ""}`;
+  return `Загружено ${plural(n.done, ["слой", "слоя", "слоёв"])}${rest ? "; " + rest : ""}`;
 });
 const elapsed = computed(() => { if (!job.t0) return ""; const sec = Math.max(0, Math.round(((job.t1 || now.value) - job.t0) / 1000)); return sec < 60 ? `${sec} с` : `${Math.floor(sec / 60)} мин ${sec % 60} с`; });
 const hist = d => { if (!d) return ""; const hh = d.history || [], x = hh[hh.length - 1]; return hh.length > 1 && x.added != null ? ` · выгрузок ${hh.length}, в последней +${x.added} −${x.removed} ~${x.changed}` : ""; };
@@ -217,7 +221,8 @@ function fgCheck(id, on) { const s = new Set(FG.sel); if (on) s.add(id); else s.
 function toggle(t) { terrTool.value = terrTool.value === t ? "" : t; }
 let askT = null; const askExample = ref(false);
 function example() {
-  if (project.territory && !askExample.value) { askExample.value = true; askT = setTimeout(() => (askExample.value = false), 5000); return; }
+  // граница или данные уже есть — пример уводит карту в другой район: второе нажатие подтверждает (аудит UX, находка 6)
+  if ((project.territory || Object.keys(project.data || {}).length) && !askExample.value) { askExample.value = true; askT = setTimeout(() => (askExample.value = false), 5000); return; }
   clearTimeout(askT); askExample.value = false; exampleTerritory();
 }
 const numsDlg = ref(false), nums = ref("");

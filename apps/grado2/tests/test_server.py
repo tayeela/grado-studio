@@ -95,7 +95,7 @@ class Grado2Server(unittest.TestCase):
             for bad in (-1, float("nan"), float("inf"), 100001, "5", True, 0.5):
                 with self.assertRaises(ValueError, msg=(k, bad)) as cm:
                     S.tep(**self.B, **{k: bad})
-                self.assertEqual(str(cm.exception), str(cm.exception).encode("ascii", "ignore").decode())
+                self.assertRegex(str(cm.exception), "[а-яё]")          # правило 4: причина по-русски
 
     def test_tep_parking_area_split(self):
         """Parking area. Norm area per place is NOT in the repository texts (945-PP has places only): the preset uses
@@ -651,7 +651,7 @@ class HttpHardening(unittest.TestCase):
         for bad in ({"nope": 1}, {"doo_z1": 1e9}):
             code, _, _, j = self.call("/api/tep", json.dumps({**body, "constants": bad}).encode())
             self.assertEqual(code, 400)
-            self.assertTrue(j["error"].isascii(), j["error"])
+            self.assertRegex(j["error"], "[а-яё]")              # правило 4: текст ошибки по-русски
         code, _, _, j = self.call("/api/tep/norms")
         self.assertEqual(code, 200)
         self.assertEqual(len(j["norms"]), len(json.loads(S.PRESET.read_text("utf-8"))["constants"]))
@@ -666,7 +666,7 @@ class HttpHardening(unittest.TestCase):
         for bad in ({"park_share_multi": 101}, {"park_share_underground": 2.5}, {"park_share_underground": 70, "park_share_multi": 40}):
             code, _, _, j = self.call("/api/tep", json.dumps({**body, **bad}).encode())
             self.assertEqual(code, 400, bad)
-            self.assertTrue(j["error"].isascii(), j["error"])
+            self.assertRegex(j["error"], "[а-яё]")              # правило 4: текст ошибки по-русски
         code, _, _, j = self.call("/api/tep/norms")
         ids = {x["id"]: x for x in j["norms"]}
         for k in ("park_m2_ground", "park_m2_underground", "park_m2_multi"):
@@ -744,6 +744,27 @@ class HttpHardening(unittest.TestCase):
                 code, _, _, j = self.call("/api/project?name=proba2", b'{"a":1}')
                 self.assertEqual(code, 507)
                 self.assertFalse((Path(d) / "proba2.grado2").exists())
+
+    def test_project_save_stale_and_case_clash_are_409(self):
+        """Аудит 12.10.2026, находки 3 и 4: запись поверх правок другой вкладки и проекта с тем же названием в другом регистре."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(S, "PROJECTS", Path(d)):
+            code, _, _, j = self.call("/api/project?name=Dva", b'{"v":1}')
+            base = j["modified"]
+            self.assertEqual(float(self.call("/api/project?name=Dva")[1]["X-Grado-Modified"]), base)
+            S.time.sleep(0.01)
+            code, _, _, j = self.call(f"/api/project?name=Dva&base={base!r}", b'{"v":2}')     # своё окно — запись идёт
+            self.assertEqual(code, 200)
+            code, _, _, j = self.call(f"/api/project?name=Dva&base={base!r}", b'{"v":3}')     # старое окно — 409, файл цел
+            self.assertEqual((code, j["stale"]), (409, True))
+            self.assertRegex(j["error"], "[а-яё]")
+            self.assertEqual((Path(d) / "Dva.grado2").read_bytes(), b'{"v":2}')
+            code, _, _, j = self.call("/api/project?name=DVA", b'{"v":4}')                     # другой регистр — 409
+            self.assertEqual((code, j["clash"]), (409, "Dva"))
+            self.assertEqual(sorted(p.name for p in Path(d).glob("*.grado2")), ["Dva.grado2"])
+            code, _, _, j = self.call("/api/project?name=DVA&replace=1", b'{"v":5}')           # владелец согласился заменить
+            self.assertEqual((code, j["saved"]), (200, "DVA"))
+            self.assertEqual([p.read_bytes() for p in Path(d).glob("*.grado2")], [b'{"v":5}'])
 
     def test_busy_port_is_refused_at_once(self):
         # main() перебирает порты по OSError из конструктора: занятый порт должен отказывать сразу, а не при запуске
@@ -1920,10 +1941,10 @@ class SearchCadastral(unittest.TestCase):
                 "properties": {"opt_cad_num": num, "opt_specified_area": "1000,5", "opt_land_record_area": 900,
                                "opt_permitted_use_established_by_document": "жилая", "service_code": 7}}
 
-    def test_garbage_is_400_ascii(self):
+    def test_garbage_is_400_russian(self):
         s, o = self.get("hello, 12:3")
         self.assertEqual(s, 400)
-        self.assertTrue(o["error"].isascii())
+        self.assertRegex(o["error"], "[а-яё]")
 
     def test_success_shape_and_cache(self):
         def fake(nums, errors=None, **kw):
@@ -1941,20 +1962,20 @@ class SearchCadastral(unittest.TestCase):
             self.assertEqual(self.get("50:27:0000000:126 77:22:0030223:315")[0], 200)
             self.assertEqual(m.call_count, 2)                       # по одному вызову на номер; второй поиск целиком из кэша
 
-    def test_portal_down_is_502_ascii(self):
+    def test_portal_down_is_502_russian(self):
         def fake(nums, errors=None, **kw):
             errors.extend((n, "x") for n in nums)
             return []
         with mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=fake):
             s, o = self.get("50:27:0000000:126")
         self.assertEqual(s, 502)
-        self.assertTrue(o["error"].isascii())
+        self.assertRegex(o["error"], "[а-яё]")
 
-    def test_connector_error_is_502_ascii(self):
+    def test_connector_error_is_502_russian(self):
         with mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=S.ConnectorError("НСПД: что-то")):
             s, o = self.get("50:27:0000000:126")
         self.assertEqual(s, 502)
-        self.assertTrue(o["error"].isascii())
+        self.assertRegex(o["error"], "[а-яё]")
 
     def test_lock_timeout_is_503_but_cache_answers(self):
         S.CAD_CACHE["50:27:0000000:126"] = (S.time.time(), self._feat("50:27:0000000:126"))
@@ -1963,7 +1984,7 @@ class SearchCadastral(unittest.TestCase):
             try:
                 s, o = self.get("77:22:0030223:315")
                 self.assertEqual(s, 503)
-                self.assertEqual(o["error"], "search busy, try again")
+                self.assertEqual(o["error"], S.SEARCH_BUSY)
                 self.assertEqual(self.get("50:27:0000000:126")[0], 200)     # кэш — до замка, занятость его не держит
             finally:
                 S.CAD_LOCK.release()
@@ -1972,7 +1993,7 @@ class SearchCadastral(unittest.TestCase):
     def test_address_lock_timeout_is_503(self):
         with mock.patch.object(S.geocode_mod, "geocode", side_effect=S.geocode_mod.Busy("x")):
             s, o = S.search_addr("Вороново")
-        self.assertEqual((s, o["error"]), (503, "search busy, try again"))
+        self.assertEqual((s, o["error"]), (503, S.SEARCH_BUSY))
 
     def test_failure_is_cached_briefly(self):
         def fake(nums, errors=None, **kw):
@@ -2058,11 +2079,11 @@ class SearchKrt(unittest.TestCase):
         s, o = S.search_any("КРТ 999")
         self.assertEqual((s, o["type"], o["features"], o["missing"]), (200, "krt", [], ["КРТ 999"]))
 
-    def test_layer_failure_is_502_ascii(self):
+    def test_layer_failure_is_502_russian(self):
         self.fetch.side_effect = S.ConnectorError("ГИС ОГД: нет связи")
         s, o = S.search_any("КРТ 3229")
         self.assertEqual(s, 502)
-        self.assertTrue(o["error"].isascii())
+        self.assertRegex(o["error"], "[а-яё]")
 
 
 class SearchAddress(unittest.TestCase):
@@ -2089,16 +2110,16 @@ class SearchAddress(unittest.TestCase):
         self.assertEqual((s, o["results"], o["notes"]), (200, self.RES, []))
         s, o = self.get("   ")
         self.assertEqual(s, 400)
-        self.assertTrue(o["error"].isascii())
+        self.assertRegex(o["error"], "[а-яё]")
         s, o = self.get("я" * 201)
         self.assertEqual(s, 400)
-        self.assertTrue(o["error"].isascii())
+        self.assertRegex(o["error"], "[а-яё]")
 
     def test_address_502(self):
         with mock.patch.object(S.geocode_mod, "geocode", side_effect=S.ConnectorError("x")):
             s, o = self.get("Вороново")
         self.assertEqual(s, 502)
-        self.assertTrue(o["error"].isascii())
+        self.assertRegex(o["error"], "[а-яё]")
 
     def test_dispatcher(self):
         with mock.patch.object(S.geocode_mod, "geocode", return_value=self.RES) as g, \

@@ -23,9 +23,9 @@
         <label title="2152-ПП табл. 1.4.2">Жилые территории</label>
         <select :value="String(tp.mode)" aria-label="Тип территории" @change="e => setTp('mode', +e.target.value)"><option v-for="(l, v) in MODES" :key="v" :value="v">{{ l }}</option></select>
         <label title="Доля встроенно-пристроенных нежилых помещений в МКД; по умолчанию 94 / 6">Нежилое в МКД, %</label>
-        <input type="number" min="0" max="100" :value="Number(tp.nonres)" @change="e => setTp('nonres', clamp(e.target, 0, 100))">
+        <input type="number" min="0" max="100" aria-label="Нежилое в МКД, %" :value="Number(tp.nonres)" @change="e => setTp('nonres', clamp(e.target, 0, 100))">
         <label title="Незастраиваемая территория в составе жилой (баланс территории)">Незастраиваемая, %</label>
-        <input type="number" min="0" max="90" :value="Number(tp.unbuilt)" @change="e => setTp('unbuilt', clamp(e.target, 0, 90))">
+        <input type="number" min="0" max="90" aria-label="Незастраиваемая, %" :value="Number(tp.unbuilt)" @change="e => setTp('unbuilt', clamp(e.target, 0, 90))">
         <label title="Нормы расчёта: 2151-ПП, 2152-ПП, 1557-ПП, 945-ПП. Поля уже заполнены действующими значениями; их можно изменить до расчёта">Нормативы</label>
         <div><wa-button size="s" appearance="outlined" title="Открыть окно «Нормативы расчёта»" @click="winApi.open('norms')">Нормативы…</wa-button></div>
         <template v-if="pz">

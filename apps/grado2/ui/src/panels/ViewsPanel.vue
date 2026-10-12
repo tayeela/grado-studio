@@ -14,18 +14,17 @@
       <wa-button size="s" variant="brand" title="Запомнить видимые слои, их оформление и подложку" @click="add"><BookmarkPlus :size="15" /> Сохранить вид</wa-button>
     </div>
 
-    <p v-if="!project.views.length" class="hint">Видов пока нет. Настройте карту (какие слои видны, их стиль, подложку) и сохраните вид —
-      например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком.</p>
+    <p v-if="!project.views.length" class="hint">Видов пока нет: настройте карту и сохраните вид.<span class="gq" tabindex="0" role="note" title="Вид запоминает, какие слои видны, их стиль и подложку, например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком." aria-label="Вид запоминает, какие слои видны, их стиль и подложку, например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком.">?</span></p>
     <table v-else class="vl">
       <tr v-for="v in project.views" :key="v.id" :class="{ cur: v.id === viewCur }" draggable="true" @dragstart="dragOut(v, $event)">
         <td class="nm" :title="`Показать вид «${v.name}»: ${plural(nOn(v), ['видимый слой', 'видимых слоя', 'видимых слоёв'])}${v.extent ? ', с масштабом' : ''}. Перетащите строку на лист в «Макете листа» — там встанет карта этого вида`" @click="show(v)">
           <div class="t"><Eye :size="14" /><span>{{ v.name }}</span></div>
           <div class="n">{{ plural(nOn(v), ["слой", "слоя", "слоёв"]) }}{{ v.extent ? " · с масштабом" : "" }}<span v-if="v.frame" class="fr"> · рамка {{ sizeT(v.frame) }}</span></div></td>
         <td class="act">
-          <wa-button size="s" :appearance="vframes.draw === v.id || vframes.sel === v.id ? 'filled' : 'plain'" :variant="vframes.sel === v.id ? 'brand' : 'neutral'"
+          <wa-button :aria-label="v.frame ? 'Рамка вида на карте: показать и править' : 'Нарисовать рамку вида на карте — где этот вид встанет на лист'" size="s" :appearance="vframes.draw === v.id || vframes.sel === v.id ? 'filled' : 'plain'" :variant="vframes.sel === v.id ? 'brand' : 'neutral'"
                      :title="v.frame ? 'Рамка вида на карте: показать и править' : 'Нарисовать рамку вида на карте — где этот вид встанет на лист'" @click="frameBtn(v)"><Frame :size="14" /></wa-button>
-          <wa-button size="s" appearance="plain" title="Заменить вид текущим состоянием карты" @click="update(v)"><RefreshCw :size="14" /></wa-button>
-          <wa-button size="s" :appearance="confirmId === v.id ? 'filled' : 'plain'" :variant="confirmId === v.id ? 'danger' : 'neutral'"
+          <wa-button aria-label="Заменить вид текущим состоянием карты" size="s" appearance="plain" title="Заменить вид текущим состоянием карты" @click="update(v)"><RefreshCw :size="14" /></wa-button>
+          <wa-button :aria-label="confirmId === v.id ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить вид'" size="s" :appearance="confirmId === v.id ? 'filled' : 'plain'" :variant="confirmId === v.id ? 'danger' : 'neutral'"
                      :title="confirmId === v.id ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить вид'" @click="remove(v)">
             <Trash2 :size="14" /></wa-button>
         </td>

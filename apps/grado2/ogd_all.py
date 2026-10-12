@@ -767,9 +767,11 @@ def scan(bbox, cache_dir, cat):
 class Job:
     """Одна фоновая выгрузка. Состояние читает GET /api/ogd_all/status."""
 
-    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None, codes=None, where="", redln=None):
+    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None, codes=None, where="", redln=None,
+                 gate=None):
         """bbox WGS84 или sheet — лист МСК (см. build_drawing); styles(code) → CartoCSS слоя портала или None;
-        redln — типы линий REDLN97 (см. build_drawing)."""
+        redln — типы линий REDLN97 (см. build_drawing); gate() — контекст очереди к порталу (portalgate.py), без него — сразу."""
+        self.gate = gate
         self.sheet, self.styles, self.codes, self.redln = sheet, styles, (set(codes) if codes is not None else None), redln
         bbox = sheet_bbox_wgs(sheet) if sheet else bbox
         self.bbox, self.boundary, self.cache_dir, self.out_dir = bbox, boundary, cache_dir, out_dir
@@ -779,7 +781,15 @@ class Job:
                       "started": time.time()}
         self.cancel = threading.Event()
         self.file = None
-        threading.Thread(target=self._run, daemon=True).start()
+        threading.Thread(target=self._queued, daemon=True).start()
+
+    def _queued(self):
+        # портал занят другой выгрузкой — ждём её (одно место за раз, #51)
+        if self.gate is None:
+            return self._run()
+        self.state["message"] = "Ждёт очереди к порталу ГИС ОГД…"
+        with self.gate():
+            self._run()
 
     def _run(self):
         st = self.state

@@ -152,8 +152,8 @@ async function saveProject(name) {
   if (!name) return openProjects(true);
   // другое название, чем у своего файла, и такой проект в папке уже есть (регистр и «ё» не различаются файловой
   // системой) — без второго нажатия чужой проект не заменяется
+  const norm = x => x.normalize("NFC").toLowerCase();
   if (name !== PROJ.file) {
-    const norm = x => x.normalize("NFC").toLowerCase();
     try {
       const clash = (await (await fetch("/api/projects")).json()).projects.find(q => norm(q.name) === norm(name));
       if (clash && !(PROJ.askName === norm(name) && Date.now() - PROJ.askT < 8000)) {
@@ -162,13 +162,17 @@ async function saveProject(name) {
       }
     } catch { }
   }
-  PROJ.askName = null;
+  const replace = PROJ.askName === norm(name); PROJ.askName = null;
+  // base — время файла, каким его видело окно: другая вкладка успела записать — сервер ответит 409 (server.py save_project)
+  const base = name === PROJ.file ? PROJ.base : null;
   const prev = PROJ.name, prevFile = PROJ.file; PROJ.name = name; PROJ.file = name;
   const tick = PROJ.tick, body = projectJSON({ dirty: false });
   busy(true);
   try {
-    const r = await fetch("/api/project?name=" + encodeURIComponent(name), { method: "POST", headers: { "Content-Type": "application/json" }, body }); const j = await r.json();
-    if (!r.ok) throw new Error(j.error === "bad project name" ? "в названии не должно быть знаков / \\ : * ? \" < > | и точки в начале" : j.error);
+    const q = "/api/project?name=" + encodeURIComponent(name) + (base ? "&base=" + base : "") + (replace ? "&replace=1" : "");
+    const r = await fetch(q, { method: "POST", headers: { "Content-Type": "application/json" }, body }); const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    PROJ.base = j.modified ?? null;
     PROJ.savedTick = tick; PROJ.dirty = PROJ.tick !== tick; syncProjTitle(); autosave(true);
     toast(`Проект «${name}» сохранён в папке «${j.saved.split(/[\\/]/).slice(-2, -1)[0] || "проектов"}».`); if (!$("wProjects").hidden) renderProjects();
   } catch (e) { PROJ.name = prev; PROJ.file = prevFile; syncProjTitle(); toast("Проект не сохранён: " + e.message); }
@@ -181,7 +185,7 @@ async function openProject(name) {
   busy(true);
   try {
     const r = await fetch("/api/project?name=" + encodeURIComponent(name)); if (!r.ok) throw new Error("файл не найден");
-    applyProject(await r.json()); PROJ.file = name; PROJ.dirty = false; syncProjTitle(); autosave(true);
+    applyProject(await r.json()); PROJ.file = name; PROJ.dirty = false; PROJ.base = Number(r.headers.get("X-Grado-Modified")) || null; syncProjTitle(); autosave(true);
     toast(`Открыт проект «${name}».`); winOpen("wProjects", false);
   } catch (e) { toast("Проект не открылся: " + e.message); } finally { busy(false); }
 }
