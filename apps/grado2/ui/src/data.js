@@ -14,10 +14,13 @@ import { busy, markDirty, notice } from "./project.js";
 import { setSel, sizeOf } from "./features.js";
 import { CAT, assignCats, fullStyle } from "./symbology.js";
 import { plural } from "./geom.js";
+import * as mskMod from "../../web/msk.js";
+import { cornersM } from "./viewframes.js";
 
 export const SOURCES = reactive({});   // ключ → {title, kind, code?}: /api/sources и импорт проекта
 export const ERRORS = reactive({});    // ключ → текст ошибки последней выгрузки
-export const coverOn = ref(false);     // окно «Данные» на виду: область загрузки — синим пунктиром на карте
+export const coverOn = ref(false);     // окно «Данные» на виду: область загрузки — синей рамкой на карте
+export const coverRev = ref(0);        // своя область загрузки задана или снята — карта и окно «Данные» перечитывают
 export const terrTool = ref("");       // "draw" — рисуем границу, "edit" — правим её вершины
 export const loading = ref("");        // строка хода выгрузки («Участки: 42 %…»), пусто — не идёт
 /* Ход выгрузки по слоям — для окна «Данные» (владелец 09.10.2026: «невозможно отследить процесс выгрузки»):
@@ -169,20 +172,44 @@ function frameBox(s, tb, tc) {
   const dLon = hx / 111320 * k, dLat = hy / 110540;
   return [c[0] - dLon, c[1] - dLat, c[0] + dLon, c[1] + dLat];
 }
-/* Листы альбома с картой (не ТЭП, не титул, не фото, не готовая вёрстка); листов нет — лист А3 вокруг границы.
-   Рамка листа с подбором масштаба по схеме района или контуру альбома считается здесь проще: по своему центру и масштабу. */
-export function coverBox() {
+const MSK = globalThis.MSK || mskMod.default || mskMod;
+/* рамка (центр — долгота и широта, стороны w × h — метры МСК, как рамка вида) → прямоугольник в долготе и широте */
+export function frameBbox(f) {
+  const ll = cornersM(MSK.fromWgs(f.center), f.w, f.h).map(m => MSK.toWgs(m));
+  return [Math.min(...ll.map(c => c[0])), Math.min(...ll.map(c => c[1])), Math.max(...ll.map(c => c[0])), Math.max(...ll.map(c => c[1]))];
+}
+/* прямоугольник в долготе и широте → рамка в метрах МСК */
+export function bboxFrame(b) {
+  const a = MSK.fromWgs([b[0], b[1]]), c = MSK.fromWgs([b[2], b[3]]);
+  return { center: MSK.toWgs([(a[0] + c[0]) / 2, (a[1] + c[1]) / 2]).map(v => +v.toFixed(7)), w: Math.round(Math.abs(c[0] - a[0])), h: Math.round(Math.abs(c[1] - a[1])), aspect: "free" };
+}
+/* Область загрузки — рамка, как рамки видов (одна логика, как в QGIS: охват выгрузки задаётся той же рамкой, что и карта
+   макета). Своя (project.raw.cover — рамка { center, w, h }) — её сдвинули или растянули на карте; иначе сама: граница
+   с запасом 60 м, рамки видов и листы альбома с картой (не ТЭП, не титул, не фото, не готовая вёрстка); ни видов, ни
+   листов — лист А3 вокруг границы. Рамка листа с подбором масштаба по схеме района считается здесь проще: по своему центру и масштабу. */
+export const coverOwn = () => !!project.raw?.cover?.center;
+export function autoCoverBox() {
   const t = project.territory, tb = t ? turf.bbox(t) : null, tc = t ? turf.centroid(t).geometry.coordinates : null;
   const own = (project.raw?.album?.sheets || []).filter(s => !["tep", "title", "photos"].includes(s.kind) && !s.fit && !s.panels && !s.frozen);
-  const bs = [...(own.length ? own : t ? [{ size: "A3" }] : []).map(s => frameBox(s, tb, tc)).filter(Boolean), ...(t ? [turf.bbox(turf.buffer(t, 60, { units: "meters" }))] : [])];
+  const vs = project.views.filter(v => v.frame?.center).map(v => frameBbox(v.frame));
+  const bs = [...(own.length || vs.length ? own : t ? [{ size: "A3" }] : []).map(s => frameBox(s, tb, tc)).filter(Boolean), ...vs, ...(t ? [turf.bbox(turf.buffer(t, 60, { units: "meters" }))] : [])];
   if (!bs.length) return null;
   return [Math.min(...bs.map(b => b[0])), Math.min(...bs.map(b => b[1])), Math.max(...bs.map(b => b[2])), Math.max(...bs.map(b => b[3]))];
 }
+export function coverBox() { return coverOwn() ? frameBbox(project.raw.cover) : autoCoverBox(); }
+export const coverFrame = () => { if (coverOwn()) return project.raw.cover; const b = autoCoverBox(); return b ? bboxFrame(b) : null; };
+/* своя область загрузки (рамка) или null — снова сама по границе, видам и листам */
+export function setCover(f) {
+  if (f) project.raw.cover = { center: f.center, w: f.w, h: f.h }; else delete project.raw.cover;
+  coverRev.value++; markDirty();
+}
 export function coverText() {
-  const b = coverBox(); if (!b) return "Нарисуйте границу территории — данные загружаются на неё и на рамки листов.";
-  const own = (project.raw?.album?.sheets || []).length;
+  const b = coverBox(); if (!b) return "Нарисуйте границу территории — данные загружаются на неё, на рамки видов и листов.";
+  const own = coverOwn(), sheets = (project.raw?.album?.sheets || []).length, views = project.views.some(v => v.frame?.center);
   const km = (b[2] - b[0]) * 111.32 * Math.cos((b[1] + b[3]) / 2 * Math.PI / 180), kmy = (b[3] - b[1]) * 110.54;
-  return `${project.territory ? `Площадь ${fmt(terrArea() / 1e4, 2)}\u00a0га. ` : ""}Данные загружаются на ${own ? "рамки листов альбома и границу" : "рамку листа А3 вокруг границы"}: ${fmt(km, 1)}\u00a0×\u00a0${fmt(kmy, 1)}\u00a0км, на карте — синий пунктир.`;   // размер не рвётся на две строки (владелец 09.10.2026)
+  const where = own ? "вашу рамку" : sheets || views ? "границу, рамки видов и листов" : "рамку листа А3 вокруг границы";
+  const tail = own ? "Синюю рамку на карте можно сдвинуть и растянуть за углы." : "Синяя рамка на карте ставится сама; сдвиньте или растяните её — станет вашей.";
+  return `${project.territory ? `Площадь ${fmt(terrArea() / 1e4, 2)}\u00a0га. ` : ""}Данные загружаются на ${where}: ${fmt(km, 1)}\u00a0×\u00a0${fmt(kmy, 1)}\u00a0км. ${tail}`;   // размер не рвётся на две строки (владелец 09.10.2026)
 }
 
 /* ---------- слои: место в списке и оформление по умолчанию (web/layers.js) ---------- */
