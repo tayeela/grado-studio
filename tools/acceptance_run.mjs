@@ -131,6 +131,7 @@ try {
   });
   await step("Альбом ППТ КРТ: собрать", async () => {
     await page.locator("header.top wa-button", { hasText: "Листы и альбом" }).click(); await page.waitForTimeout(2500);
+    await page.locator(".alb wa-details.albsec").evaluate(d => { d.open = true; }); await page.waitForTimeout(500);   // раздел «Альбом ППТ КРТ» под листами проекта
     await page.locator("wa-button[slot=trigger]", { hasText: "Собрать" }).first().click();
     await page.locator("wa-dropdown-item[value=pptkrt]").first().click();
     // ход сборки — строка «Лист 3 из 11: … загрузка …» с кнопкой «Остановить»; листы сами докачивают данные порталов.

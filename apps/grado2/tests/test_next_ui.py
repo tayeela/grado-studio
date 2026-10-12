@@ -193,6 +193,20 @@ class NextUi(unittest.TestCase):
         for k in ("albumFile(v)", "ogdDxf()", "winApi.open('album')", '{ id: "album", title: "Листы и альбом" }'):
             self.assertIn(k, app)
 
+    def test_one_logic_for_sheets_and_frames(self):
+        # одна логика везде (владелец 12.10.2026): «Листы и альбом» показывает и создаёт те же листы, что «Макет листа»
+        # (project.layouts, новый — пустой, без заготовок по формату); область загрузки — рамка, как рамка вида
+        src = NEXT.parents[1] / "ui" / "src"
+        panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        self.assertIn("blank: true", panel)
+        self.assertIn('winApi.open("sheet")', panel)
+        self.assertNotIn('value="A1">Лист A1', panel)                    # прежнее «Добавить лист» по формату ушло
+        self.assertIn("sheetNav.tick", (src / "panels" / "SheetPanel.vue").read_text(encoding="utf-8"))
+        frames, data = (src / "viewframesmap.js").read_text(encoding="utf-8"), (src / "data.js").read_text(encoding="utf-8")
+        self.assertIn("setCover(f)", frames)
+        self.assertIn("project.raw.cover = { center: f.center, w: f.w, h: f.h }", data)
+        self.assertIn("coverOwn() ? frameBbox(project.raw.cover) : autoCoverBox()", data)
+
     def test_album_frames_on_the_new_map(self):
         # рамки листов альбома на карте нового интерфейса (шаг 2 фаза 2, #94): рамки считает движок (albumapi state().frames —
         # те же sheetCenter, sheetScale, frameMM, что у frames.js), карта рисует их, пока вкладка на виду; сдвиг и угол пишут

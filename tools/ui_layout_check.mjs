@@ -129,7 +129,7 @@ async function keyboard(page, tag) {
     const h = e?.getRootNode()?.host || e; return { cls: typeof h?.className === "string" ? h.className : "", tag: h?.tagName, text: (h?.getAttribute?.("aria-label") || h?.textContent || "").trim().replace(/\s+/g, " ").slice(0, 40) }; });
   const order = [];
   for (let i = 0; i < 4; i++) { await page.keyboard.press("Tab"); const a = await act(); order.push(/\bptitle\b/.test(a.cls) ? "Название проекта" : a.text); }
-  // после переходов — шапка: название проекта (щелчок — правка, v0.99.94) или сразу меню «Проект»
+  // после переходов — шапка: название проекта (щелчок — правка, v0.99.95) или сразу меню «Проект»
   if (order.slice(0, 3).join("|") !== "К карте|К слоям|К таблице объектов" || !["Проект", "Название проекта"].includes(order[3])) bad("порядок Tab", order.join(" → "));
   const noName = await page.evaluate(() => [...document.querySelectorAll("header.top wa-button")].filter(b => b.offsetParent && !b.textContent.trim()).length);
   if (noName) bad("кнопки шапки без имени для диктора", String(noName));
