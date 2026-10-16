@@ -537,13 +537,19 @@ export function watchOgd() { clearInterval(ogdT); ogd.running = true; ogdT = set
 /* запуск: codes — коды слоёв портала; занятый сервер («уже идёт») — показываем ход той выгрузки */
 export async function startOgd(req, codes) {
   ogd.where = req.where;
-  try { await api("/api/ogd_all/start", { sheet: req.sheet, codes, where: req.where, boundary: req.boundary || null, name: req.name }); }
+  try { await api("/api/ogd_all/start", { ...(req.sheet ? { sheet: req.sheet } : { bbox: req.bbox }), codes, where: req.where, boundary: req.boundary || null, name: req.name }); }
   catch (e) {
     if (/уже идёт|already/i.test(e.message)) { notice.value = "Выгрузка ГИС ОГД уже идёт — показываю её ход. Новая начнётся, когда эта закончится."; watchOgd(); return false; }
     notice.value = "Выгрузка ГИС ОГД не началась: " + e.message; return false;
   }
   notice.value = `Выгрузка всех отмеченных слоёв ГИС ОГД по ${req.where}. Ход — в окне «Данные»; работать можно дальше.`;
   watchOgd(); return true;
+}
+/* без листа альбома на карте — по области загрузки (граница, рамки видов или своя рамка), как у кнопки «Загрузить» (16.10.2026) */
+export function areaOgdReq() {
+  const bb = coverBox(); if (!bb) return null;
+  return { sheet: null, bbox: bb, codes: project.raw.album?.meta?.ogdCodes || [], boundary: project.territory?.geometry || null,
+    where: "области загрузки", name: `ОГД ${project.name || "область"}` };
 }
 export async function stopOgd() {
   try { await api("/api/ogd_all/cancel", {}); notice.value = "Остановка: текущий слой дочитывается, потом выгрузка ГИС ОГД встанет."; } catch (e) { notice.value = "Не остановлено: " + e.message; }
