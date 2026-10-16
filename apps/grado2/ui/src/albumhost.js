@@ -11,7 +11,7 @@ import * as collabMod from "../../web/collab.js";
 import { C, adopt } from "./collab.js";
 import { editTick, markDirty, notice, projectJSON } from "./project.js";
 import { project, theme } from "./store.js";
-import { ogd, stopOgd } from "./data.js";
+import { areaOgdReq, ogd, stopOgd } from "./data.js";
 
 const { split } = collabMod.default || collabMod;
 
@@ -160,8 +160,11 @@ export const albumFile = kind => { album.want = kind; albumHooks.panel(); };
    «Исходные данные» в режиме DXF (слои портала по рамке листа), выгрузку ведёт data.js startOgd. Идёт выгрузка — пункт её останавливает. */
 export async function ogdDxf() {
   if (ogd.running) return stopOgd();
-  let r = null; try { r = await call(a => a.ogdSheet(album.cur)); } catch (e) { notice.value = "ГИС ОГД в DXF: " + (e.message || e); return; }
-  if (!r) { notice.value = "ГИС ОГД в DXF: сначала добавьте лист альбома на карте — вкладка «Листы и альбом» → «Добавить лист»"; albumHooks.panel(); return; }
+  // лист альбома на карте — по его рамке; листов нет или движок альбома не ответил за 15 с — по области загрузки (раньше кнопка молчала)
+  let r = null;
+  if (album.sheets) try { r = await Promise.race([call(a => a.ogdSheet(album.cur)), new Promise(ok => setTimeout(() => ok(null), 15000))]); } catch { r = null; }
+  r ||= areaOgdReq();
+  if (!r) { notice.value = "ГИС ОГД в DXF: сначала нарисуйте границу территории или рамку вида — по ней выгружаются слои"; albumHooks.data(); return; }
   ogd.req = JSON.parse(JSON.stringify(r)); albumHooks.data();
 }
 

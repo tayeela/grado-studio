@@ -306,6 +306,7 @@ class NextUi(unittest.TestCase):
             self.assertIn(k, bridge)
         # «ГИС ОГД в DXF»: лист из движка, выбор слоёв портала в окне «Данные», выгрузка фоном на сервере, ход после перезагрузки
         self.assertIn("a.ogdSheet(album.cur)", host)
+        self.assertIn("r ||= areaOgdReq();", host)          # листа альбома нет — по области загрузки (16.10.2026)
         data = (src / "data.js").read_text(encoding="utf-8")
         for k in ('"/api/ogd_all/start"', '"/api/ogd_all/status"', '"/api/ogd_all/cancel"', '"/api/ogd_all/file"', "export function ogdResume()"):
             self.assertIn(k, data)

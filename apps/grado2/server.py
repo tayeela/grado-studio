@@ -484,6 +484,7 @@ CAD_FAIL_SEC = 45
 CAD_LOCK = threading.Lock()       # к порталу — по одному запросу за раз, как и везде
 CAD_LOCK_TIMEOUT = 20             # сколько ждать очереди; не дождались — 503
 FETCH_LOCK_TIMEOUT = 120          # выгрузка слоёв ждёт чужую выгрузку к тому же порталу не дольше, с
+OGD_PARALLEL = 4                  # слоёв портала ГИС ОГД из окна «Исходные данные» качаются сразу (одна выгрузка)
 CAD_PAUSE = 0.5                   # пауза между номерами одного поиска (как в коннекторе)
 SEARCH_DEADLINE = 30              # общий срок одного запроса поиска, с: оставшиеся номера — в notes как не проверенные
 SEARCH_BUSY = "Поиск занят другим запросом — повторите через минуту"
@@ -1104,13 +1105,16 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
         layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})
 
     def run_ogd(ks):
-        """Слои портала, выбранные в окне «Исходные данные», — по очереди: портал не долбим параллельно."""
-        for i, k in enumerate(ks, 1):
+        """Слои портала, выбранные в окне «Исходные данные», — по OGD_PARALLEL сразу: параллельные слои одной выгрузки
+        владелец разрешил (#51), а по одному 100 слоёв первой выгрузки шли часами (16.10.2026)."""
+        def one(i, k):
             try:
                 run_gisogd(k, i, len(ks))
             except ConnectorError as e:
                 PROGRESS.pop(k, None)
                 errors[k] = str(e)
+        with ThreadPoolExecutor(max_workers=min(OGD_PARALLEL, len(ks))) as pool:
+            list(pool.map(one, range(1, len(ks) + 1), ks))
 
     def run_egko(ks):
         """ЕГКО — по очереди, один слой за другим: первая выгрузка газонов — 1,3 ГБ, портал не долбим параллельно."""

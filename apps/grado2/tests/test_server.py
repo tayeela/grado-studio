@@ -585,6 +585,33 @@ class AnyOgdLayer(unittest.TestCase):
         self.assertNotIn("ogd.nope", layers)
         S.SOURCES.pop("ogd.virtual25", None)
 
+    def test_ogd_layers_of_one_request_download_side_by_side(self):
+        # 16.10.2026: на сайте 108 слоёв портала шли по одному — «готово 1 из 108» за 4 минуты; теперь по OGD_PARALLEL сразу
+        import threading
+        import time
+        now, peak, lock = [0], [0], threading.Lock()
+
+        class FakeApi:
+            def __init__(self, **kw):
+                pass
+
+            def fetch(self, bbox, code):
+                with lock:
+                    now[0] += 1
+                    peak[0] = max(peak[0], now[0])
+                time.sleep(0.05)
+                with lock:
+                    now[0] -= 1
+                return {"features": [], "source_doc": "ГИС ОГД", "notes": []}
+        cat = [{"code": f"c{i}", "name": f"Слой {i}", "type": "layer"} for i in range(8)]
+        with mock.patch.object(S, "ogd_catalog", return_value=cat), mock.patch.object(S, "GisogdApi", FakeApi):
+            layers, errors = S.fetch([37.59, 55.74, 37.61, 55.76], [f"ogd.c{i}" for i in range(8)])
+        self.assertEqual(errors, {})
+        self.assertEqual(len(layers), 8)
+        self.assertEqual(peak[0], S.OGD_PARALLEL)          # сразу несколько, но не больше OGD_PARALLEL
+        for i in range(8):
+            S.SOURCES.pop(f"ogd.c{i}", None)
+
 
 class ProjectVersions(unittest.TestCase):
     """Перед перезаписью проекта прежний файл сохраняется сжатой версией в .versions/<проект>/."""
