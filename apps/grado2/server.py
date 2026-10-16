@@ -342,6 +342,24 @@ def okn_props(p):
             "Ограничения": _v(p.get("ogran")), "Документ": _v(p.get("doc")), "Район": _v(p.get("raion_pos")), "Округ": _v(p.get("okrug"))}
 
 
+# ЗОУИТ ЕГРН (НСПД): вид зоны, название по документу, реестровый номер. Зоны затопления и подтопления в ЕГРН — один вид
+# «Зоны затопления и подтопления»; степень (затопление, сильное, умеренное, слабое подтопление) есть только в названии —
+# вид берётся из него, как в слое ОГД (virtual2383–2386), чтобы легенда и «Ограничения» различали зоны (сверено 16.10.2026).
+FLOOD_RE = re.compile(r"(сильного|умеренного|слабого)?\s*(подтоплен|затоплен)", re.I)
+
+
+def nspd_zouit_props(p):
+    kind, name = _v(p.get("opt_type_zone")), str(_v(p.get("opt_name_by_doc")) or "")
+    m = FLOOD_RE.search(name) if kind and "затоплен" in str(kind).lower() else None
+    if m:
+        kind = "Зона затопления" if m.group(2).lower() == "затоплен" else \
+            "Зона " + (m.group(1).lower() + " " if m.group(1) else "") + "подтопления"
+    act = " ".join(str(_v(p.get(k)) or "") for k in ("opt_legal_act_document_name", "opt_legal_act_document_number")).strip()
+    date_ = _v(p.get("opt_legal_act_document_date"))
+    return {"Вид зоны": kind, "Наименование": _v(name), "Реестровый номер": _v(p.get("opt_reg_numb_border")),
+            "Документ": (act + (f" от {date_}" if date_ else "")) or None, "Дата внесения в ЕГРН": _v(p.get("opt_registration_date"))}
+
+
 def demolition_props(p):
     return {"Номер уведомления": _v(p.get("nomer")), "Дата": _v(p.get("data_")), "Адрес": _v(p.get("adres")),
             "Территория": _v(p.get("terri")), "Объект": _v(str(p.get("name_obj") or "").strip())}
@@ -412,7 +430,7 @@ def _renamed(names):
 
 
 # ключ источника → свойства портала в читаемые поля (служебные поля портала не нужны в таблице)
-PRESENT = {"gisogd.pzz_sub": pzz_sub_props, "gisogd.pzz_zones": pzz_zone_props, "gisogd.okn": okn_props,
+PRESENT = {"nspd.zouit": nspd_zouit_props, "gisogd.pzz_sub": pzz_sub_props, "gisogd.pzz_zones": pzz_zone_props, "gisogd.okn": okn_props,
            "gisogd.demolition": demolition_props, "relief.contours": lambda p: {"Высота, м": p.get("elev")},
            "osm.social": social_props,
            "egko.buildings": egko_building_props, "egko.roads": egko_road_props, "egko.paths": egko_path_props,
@@ -446,7 +464,8 @@ def linetype_props(props):
 def _layer(key, result):
     present = PRESENT.get(key)
     feats = [{"type": "Feature", "geometry": f["geometry"],
-              "properties": {**clean_props(present(f.get("properties") or {}) if present else f.get("properties"), f.get("_extra"), SOURCES[key][0] == "nspd"),
+              "properties": {**clean_props(present(f.get("properties") or {}) if present else f.get("properties"), f.get("_extra"),
+                                             SOURCES[key][0] == "nspd" and not present),
                              **({} if present else linetype_props(f.get("properties"))),
                              **({"_key": f["grado_key"]} if f.get("grado_key") else {}),
                              **({"_clip": f["grado_clip"]} if f.get("grado_clip") else {})}}
