@@ -1,4 +1,5 @@
-"""Ночная выгрузка ГИС ОГД и ЕГКО (ogd_warm.py): порядок слоёв, утренний стоп, список неудач (16.10.2026)."""
+"""Ночная выгрузка ГИС ОГД и ЕГКО (ogd_warm.py): порядок слоёв, утренний стоп, список неудач, один прогон за раз,
+запуск сайтом сразу (16.10.2026)."""
 
 import sys
 import unittest
@@ -39,6 +40,41 @@ class Warm(unittest.TestCase):
         self.assertEqual(got, ["a", "bad", "b"])         # «skip» сутки не повторяется, после трёх — предел
         self.assertEqual(st, {"got": 2, "err": 1, "left": 1})
         self.assertIn("bad", failed)
+
+
+class WarmStart(unittest.TestCase):
+    def test_second_run_exits_while_lock_held(self):
+        import fcntl
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            held = open(Path(d) / "warm.lock", "w")
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with mock.patch.object(sys, "argv", ["ogd_warm.py", "--cache", d]), \
+                 mock.patch.object(W, "catalog", side_effect=AssertionError("второй прогон пошёл на портал")):
+                W.main()
+            self.assertFalse((Path(d) / "warm_status.json").exists())
+            held.close()
+
+    def test_site_starts_warm_only_when_no_fresh_result(self):
+        import os
+        import tempfile
+        import server
+        with tempfile.TemporaryDirectory() as d, mock.patch("subprocess.Popen") as popen:
+            env = {"GRADO2_PUBLIC_HOST": "grado.example"}
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("GRADO2_PUBLIC_HOST", None)
+                self.assertIsNone(server.start_warm(8650, d))        # программа на Маке — не начинает
+            with mock.patch.dict(os.environ, env), mock.patch.object(server, "GUEST", True):
+                self.assertIsNone(server.start_warm(8650, d))        # гостевая копия — не начинает
+            with mock.patch.dict(os.environ, env):
+                server.start_warm(8650, d)
+                self.assertEqual(popen.call_count, 1)
+                args = popen.call_args[0][0]
+                self.assertTrue(args[1].endswith("ogd_warm.py"))
+                self.assertEqual(args[2:], ["--cache", d, "--port", "8650"])
+                (Path(d) / "warm_status.json").write_text("{}")
+                self.assertIsNone(server.start_warm(8650, d))        # итог свежий — второй раз не начинает
+                self.assertEqual(popen.call_count, 1)
 
 
 if __name__ == "__main__":
