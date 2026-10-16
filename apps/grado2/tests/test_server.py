@@ -2191,6 +2191,19 @@ class T61Portal(unittest.TestCase):
             S.SOURCES.pop("zz.test", None)
             S.LIMIT_KM2.pop("zz", None)
 
+    def test_fetch_does_not_hang_while_another_job_holds_the_portal(self):
+        # 16.10.2026: на сайте слои ГИС ОГД «не выгружались» — запрос ждал чужую выгрузку без срока
+        import portalgate
+        other = object()
+        portalgate.GATE.acquire({"gisogd"}, other)
+        try:
+            with mock.patch.object(S, "FETCH_LOCK_TIMEOUT", 0.05):
+                layers, errors = S.fetch([37.5, 55.7, 37.51, 55.71], ["gisogd.zouit"])
+        finally:
+            portalgate.GATE.release({"gisogd"}, other)
+        self.assertEqual(layers, {})
+        self.assertIn("портал занят", errors["gisogd.zouit"])
+
     def test_plain_portal_error_hides_raw_text(self):
         raw = "Overpass не ответил (Errno 54; HTTP 504; timed out) — попробуйте позже или уменьшите область"
         out = S.plain_portal_error(raw)
