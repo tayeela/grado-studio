@@ -77,11 +77,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_load_failed`, `_save_failed`, `catalog_tree`, `layer_list`, `_linetypes`, `_lgr_code`, `_polys`, `orient_lines`, `_cut_bytes`, `_xdata`, `sheet_box`, `sheet_bbox_wgs`, `portal_color`, `_decls`, `_hex`, `_num`, `etalon_code`, `lgr_entry`, `dxf_hatch`, `etalon_style`, `layer_style`, `portal_style`, `label_siblings`, `label_angles`, `set_label_angles`, `_zone_hatch`, `_label`, `build_drawing`, `portal_styles`, `_save_json`, `scan`, `Job`
 
-### `apps/grado2/ogd_warm.py` — 85 стр.
+### `apps/grado2/ogd_warm.py` — 163 стр.
 
-Прогрев кэша ГИС ОГД на сервере: все слои каталога лежат на диске свежими, выгрузка по листу берёт их оттуда.
+Ночная выгрузка ГИС ОГД и ЕГКО на сервер: все слои лежат на диске свежими, «Данные» и DXF берут их оттуда, а не с портала.
 
-Функции: `busy`, `main`
+Функции: `busy`, `ogd_age`, `egko_age`, `stale`, `late`, `run`, `main`
 
 ### `apps/grado2/portalgate.py` — 71 стр.
 
