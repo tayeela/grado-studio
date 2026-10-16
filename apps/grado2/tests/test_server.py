@@ -134,6 +134,29 @@ class Grado2Server(unittest.TestCase):
         p = S.clean_props({"opt_floors": "9", "systemInfo": {"inserted": "x"}, "interactionId": "1", "opt_cost_index": "5"}, None, True)
         self.assertEqual(p, {"Этажность": 9})
 
+    def test_nspd_zouit_flood_kind_from_name(self):
+        # ЕГРН даёт один вид «Зоны затопления и подтопления»; степень — из названия (как у ОГД, virtual2383–2386)
+        base = {"opt_type_zone": "Зоны затопления и подтопления", "opt_reg_numb_border": "50:10-6.810", "systemInfo": {"x": 1},
+                "opt_legal_act_document_name": "Приказ", "opt_legal_act_document_number": "123", "opt_legal_act_document_date": "01.02.2023"}
+        names = {"Зона умеренного подтопления в отношении территорий г.о. Химки, прилегающих к зоне затопления р. Сходня": "Зона умеренного подтопления",
+                 "Зона затопления в отношении территорий г.о. Химки, затапливаемых при половодьях": "Зона затопления",
+                 "Границы зоны подтопления в отношении территорий г.о. Красногорск": "Зона подтопления",
+                 "Зона сильного подтопления р. Серебрянка": "Зона сильного подтопления"}
+        for name, kind in names.items():
+            p = S.clean_props(S.nspd_zouit_props({**base, "opt_name_by_doc": name}))
+            self.assertEqual(p["Вид зоны"], kind)
+            self.assertEqual(p["Реестровый номер"], "50:10-6.810")
+            self.assertEqual(p["Документ"], "Приказ 123 от 01.02.2023")
+        other = S.nspd_zouit_props({"opt_type_zone": "Водоохранная зона", "opt_name_by_doc": "Водоохранная зона р. Москва, зона затопления рядом"})
+        self.assertEqual(other["Вид зоны"], "Водоохранная зона")
+
+    def test_nspd_zouit_layer_keeps_named_fields(self):
+        f = {"geometry": {"type": "Point", "coordinates": [37.5, 55.7]}, "properties": {
+            "opt_type_zone": "Зоны затопления и подтопления", "opt_name_by_doc": "Зона слабого подтопления р. Пахра", "interactionId": 5}}
+        props = S._layer("nspd.zouit", {"features": [f]})["features"]["features"][0]["properties"]
+        self.assertEqual(props["Вид зоны"], "Зона слабого подтопления")
+        self.assertNotIn("interactionId", props)
+
     def test_area_limit_blocks_before_network(self):
         layers, errors = S.fetch([37.0, 55.0, 37.5, 55.5], ["nspd.parcels", "unknown"])
         self.assertEqual(layers, {})
