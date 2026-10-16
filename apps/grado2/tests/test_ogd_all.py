@@ -228,6 +228,39 @@ class OgdAll(unittest.TestCase):
                 self.assertIn("пропущен", job.state["errors"][0])
 
 
+    def test_job_takes_the_portal_per_layer_not_for_the_whole_run(self):
+        # 16.10.2026: «Всё из ГИС ОГД» держала портал всю выгрузку (часы) — у остальных слои ГИС ОГД не грузились
+        held, between = [], []
+
+        class FakeApi:
+            def __init__(self, **kw):
+                pass
+
+            def fetch(self, bbox, code):
+                between.append(len(held))
+                return {"features": []}
+
+        import contextlib
+
+        @contextlib.contextmanager
+        def gate():
+            held.append(1)
+            try:
+                yield
+            finally:
+                held.pop()
+        with mock.patch.object(ogd_all, "catalog", return_value=CAT), mock.patch.object(ogd_all, "GisogdApi", FakeApi), \
+                mock.patch.object(ogd_all.dxf_io, "oda_converter", return_value=None):
+            import tempfile
+            with tempfile.TemporaryDirectory() as d:
+                job = ogd_all.Job((37.60, 55.70, 37.62, 55.72), None, Path(d), Path(d) / "out", gate=gate)
+                for _ in range(100):
+                    if not job.state["running"]:
+                        break
+                    time.sleep(0.05)
+                self.assertEqual(between, [1, 1, 1, 1])        # каждый слой — в очереди
+                self.assertEqual(held, [])                     # и между слоями портал свободен
+
 @unittest.skipIf(ogd_all is None, "ezdxf not installed")
 class SheetValidation(unittest.TestCase):
     def test_bad_sheet_size_rejected(self):

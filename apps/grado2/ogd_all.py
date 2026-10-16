@@ -781,20 +781,20 @@ class Job:
                       "started": time.time()}
         self.cancel = threading.Event()
         self.file = None
-        threading.Thread(target=self._queued, daemon=True).start()
+        threading.Thread(target=self._run, daemon=True).start()
 
-    def _queued(self):
-        # портал занят другой выгрузкой — ждём её (одно место за раз, #51)
+    def _portal(self, fn, *args):
+        """Один запрос к порталу — в очереди (одно место за раз, #51). Очередь берётся на слой, а не на всю выгрузку:
+        «Всё из ГИС ОГД» идёт часами, и пока она держала портал целиком, слои ГИС ОГД на сайте не грузились ни у кого (16.10.2026)."""
         if self.gate is None:
-            return self._run()
-        self.state["message"] = "Ждёт очереди к порталу ГИС ОГД…"
+            return fn(*args)
         with self.gate():
-            self._run()
+            return fn(*args)
 
     def _run(self):
         st = self.state
         try:
-            cat = catalog()
+            cat = self._portal(catalog)
             todo = layer_list(cat, self.codes)
             st["total"] = len(todo)
 
@@ -817,7 +817,7 @@ class Job:
                     continue
                 try:
                     feats = []
-                    for f in api.fetch(self.bbox, it["code"])["features"]:
+                    for f in self._portal(api.fetch, self.bbox, it["code"])["features"]:
                         g = clip_geometry(f.get("geometry"), self.bbox) if f.get("geometry") else None
                         if g:
                             feats.append({"geometry": g, "properties": f.get("properties") or {}})
@@ -840,7 +840,7 @@ class Job:
                 for code, (area, lc) in _AREA_OF.items():
                     if code in have:
                         try:
-                            feats = have[area]["features"] if area in have else api.fetch(self.bbox, area)["features"]
+                            feats = have[area]["features"] if area in have else self._portal(api.fetch, self.bbox, area)["features"]
                             orient_lines(have[code]["features"], feats, lc)
                         except ConnectorError:          # полигонов нет — стороны остаются, как в ГИС ОГД
                             pass
@@ -851,7 +851,7 @@ class Job:
                     sib = []
                     for c in label_siblings(cat, it["code"]):
                         try:
-                            sib += have[c]["features"] if c in have else api.fetch(self.bbox, c)["features"]
+                            sib += have[c]["features"] if c in have else self._portal(api.fetch, self.bbox, c)["features"]
                         except ConnectorError:
                             pass
                     set_label_angles(it["features"], sib)

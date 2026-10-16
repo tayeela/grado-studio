@@ -483,6 +483,7 @@ CAD_FAIL = {}                     # номер -> время сбоя порта
 CAD_FAIL_SEC = 45
 CAD_LOCK = threading.Lock()       # к порталу — по одному запросу за раз, как и везде
 CAD_LOCK_TIMEOUT = 20             # сколько ждать очереди; не дождались — 503
+FETCH_LOCK_TIMEOUT = 120          # выгрузка слоёв ждёт чужую выгрузку к тому же порталу не дольше, с
 CAD_PAUSE = 0.5                   # пауза между номерами одного поиска (как в коннекторе)
 SEARCH_DEADLINE = 30              # общий срок одного запроса поиска, с: оставшиеся номера — в notes как не проверенные
 SEARCH_BUSY = "Поиск занят другим запросом — повторите через минуту"
@@ -1191,15 +1192,21 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
     if not jobs:
         return layers, errors
     # к порталу — одно место программы за раз (#51): вторая выгрузка к тем же порталам ждёт эту (portalgate.py)
-    with portalgate.GATE.use(portalgate.portals_of(SOURCES[k][0] for k in planned), gate_token), ThreadPoolExecutor(max_workers=len(jobs)) as pool:
-        for job_keys, fut in [(ks, pool.submit(fn)) for ks, fn in jobs]:
-            try:
-                fut.result()
-            except Exception as e:   # сеть/разбор: слой помечается ошибкой, остальные доезжают
-                for k in job_keys:
-                    PROGRESS.pop(k, None)
-                    if k not in layers:
-                        errors.setdefault(k, str(e) or type(e).__name__)
+    # ждём не бесконечно: занятый портал — понятная ошибка слоя и «Повторить», а не висящий запрос (16.10.2026)
+    try:
+        with portalgate.GATE.use(portalgate.portals_of(SOURCES[k][0] for k in planned), gate_token, timeout=FETCH_LOCK_TIMEOUT), \
+                ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+            for job_keys, fut in [(ks, pool.submit(fn)) for ks, fn in jobs]:
+                try:
+                    fut.result()
+                except Exception as e:   # сеть/разбор: слой помечается ошибкой, остальные доезжают
+                    for k in job_keys:
+                        PROGRESS.pop(k, None)
+                        if k not in layers:
+                            errors.setdefault(k, str(e) or type(e).__name__)
+    except portalgate.Busy:
+        for k in planned:
+            errors.setdefault(k, "портал занят другой выгрузкой, повторите через минуту")
     for k, v in list(errors.items()):
         plain = plain_portal_error(v)
         if plain != v:
