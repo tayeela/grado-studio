@@ -9,6 +9,8 @@
 Пока сайт сам качает с портала (первая загрузка слоя или «DXF ГИС ОГД»), новые слои не начинаются: один портал
 не качают из двух мест сразу. Слои, которые портал не отдаёт, пишутся в список неудач «DXF ГИС ОГД» (сутки не повторяются).
 Итог прогона — в журнал (journalctl -u grado-warm) и в <кэш>/warm_status.json.
+Прогон один за раз (замок <кэш>/warm.lock): сайт начинает его и днём, если ночного итога нет или он старше суток
+(владелец 16.10: «начинай сейчас»), и ночной таймер тогда не запускает второй.
 
 Запуск вручную:  python3 apps/grado2/ogd_warm.py [--cache DIR] [--egko-cache DIR] [--limit N] [--no-egko]
 """
@@ -120,6 +122,14 @@ def main():
     a = ap.parse_args()
     cache = Path(a.cache)
     egko_cache = Path(a.egko_cache) if a.egko_cache else cache.parent / "egko"
+    import fcntl                           # только на сервере (Linux, macOS)
+    cache.mkdir(parents=True, exist_ok=True)
+    lockf = open(cache / "warm.lock", "w")
+    try:
+        fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("выгрузка уже идёт (другой прогон держит warm.lock) — выхожу", flush=True)
+        return
     t0 = time.time()
     report = {"started": datetime.now(timezone.utc).isoformat(timespec="seconds")}
 
@@ -154,7 +164,6 @@ def main():
               f"не отдано {es['err']}, отложено до следующей ночи {es['left']}", flush=True)
 
     report["seconds"] = round(time.time() - t0)
-    cache.mkdir(parents=True, exist_ok=True)
     (cache / "warm_status.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), "utf-8")
     print(f"итог за {report['seconds']} с", flush=True)
 
