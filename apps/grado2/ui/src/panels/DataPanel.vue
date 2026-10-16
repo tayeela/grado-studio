@@ -127,7 +127,7 @@
       <wa-button slot="footer" size="s" variant="brand" :disabled="!nums.trim()" @click="byNumbers">Сделать границей</wa-button>
     </wa-dialog>
 
-    <wa-dialog class="picker" :label="pk.dxf ? 'ГИС ОГД в DXF — ' + pk.dxf.where.replace(/^листу/, 'лист') : 'Исходные данные'" :open="pk.open" @wa-after-hide="pk.open = false; pk.dxf = null">
+    <wa-dialog class="picker" :label="pk.dxf ? 'ГИС ОГД в DXF — ' + pk.dxf.where.replace(/^листу/, 'лист').replace(/^области/, 'область') : 'Исходные данные'" :open="pk.open" @wa-after-hide="pk.open = false; pk.dxf = null">
       <div class="pbar">
         <wa-input size="s" type="search" placeholder="Поиск слоя или папки" with-clear :value="pk.q" @input="e => (pk.q = e.target.value)"></wa-input>
         <wa-checkbox size="s" :checked="pk.only" title="Скрыть слои ГИС ОГД, у которых в области нет объектов" @change="e => (pk.only = e.target.checked)">ГИС ОГД — только с объектами</wa-checkbox>
@@ -140,7 +140,7 @@
                    :title="p[2] + '.\nСлои (' + presetKeys(p).length + '): ' + presetKeys(p).map(k => SOURCES[k].title).join(', ')" @click="togglePreset(p)">{{ p[1] }} · {{ presetKeys(p).length }}</wa-button>
       </div>
       <div class="tree"><TreeNode v-for="n in tree" :key="n.num" :n="n" :depth="0" /><p v-if="!tree.length" class="hint">Ничего не найдено.</p></div>
-      <span v-if="pk.dxf" slot="footer" class="hint foot">{{ pk.counts ? "" : "Считаю объекты ГИС ОГД на листе… " }}Слоёв портала отмечено: <b>{{ nOgdSel }}</b>. В DXF — каждый слой портала своим слоем, лист бумаги с видовым экраном в масштабе листа.</span>
+      <span v-if="pk.dxf" slot="footer" class="hint foot">{{ pk.counts ? "" : (pk.dxf.sheet ? "Считаю объекты ГИС ОГД на листе… " : "Считаю объекты ГИС ОГД в области… ") }}Слоёв портала отмечено: <b>{{ nOgdSel }}</b>. В DXF — каждый слой портала своим слоем{{ pk.dxf.sheet ? ", лист бумаги с видовым экраном в масштабе листа" : ", по области загрузки" }}.</span>
       <span v-else slot="footer" class="hint foot">{{ pk.counts ? "" : "Считаю объекты ГИС ОГД в области… " }}Отмечено: <b>{{ pk.sel.size }}</b>. Большая область для НСПД и OpenStreetMap загружается по частям.</span>
       <wa-button slot="footer" size="s" appearance="plain" @click="pk.open = false">Отмена</wa-button>
       <wa-button v-if="pk.dxf" slot="footer" size="s" variant="brand" :disabled="!nOgdSel || ogd.running" data-act="ogd-dxf" @click="runDxf"><FileDown :size="14" /> ГИС ОГД в DXF</wa-button>
@@ -161,7 +161,7 @@ import {
   ERRORS, FG, FILE_ACCEPT, SOURCES, fgFind, fgLoad, fgPick, fgSearch, checked, coverBox, coverOn, coverOwn, coverRev, coverText, setCover, existingSummary, exampleTerritory, importBoundary, importFiles,
   job, keepChecked, loadKeys, retryFailed, loadSources, loading, localSys, ogd, startOgd, stopOgd, terrTool, territoryByNumbers, territoryFromSelection,
 } from "../data.js";
-import { call } from "../albumhost.js";
+import { album, call } from "../albumhost.js";
 
 const props = defineProps({ params: Object });
 
@@ -306,7 +306,7 @@ async function openPicker(dxf = null) {
   if (!Object.keys(SOURCES).length) await loadSources();
   try { if (!pk.ogd) pk.ogd = (await (await fetch("/api/ogd_all/tree")).json()).tree || []; } catch { pk.ogd = []; }
   try {
-    const r = await fetch("/api/ogd_all/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dxf ? { sheet: dxf.sheet } : { bbox: bb }) });
+    const r = await fetch("/api/ogd_all/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dxf?.sheet ? { sheet: dxf.sheet } : { bbox: bb }) });
     pk.counts = r.ok ? (await r.json()).counts || {} : {};
   } catch { pk.counts = {}; }
   if (first && pk.dxf === dxf) ogdWithObjects();
@@ -316,8 +316,8 @@ const nOgdSel = computed(() => [...pk.sel].filter(isOgd).length);
 async function runDxf() {
   const req = pk.dxf, codes = [...pk.sel].filter(isOgd).map(k => k.slice(4)); if (!req || !codes.length) return;
   keepChecked(pk.sel); pk.open = false;
-  try { await call(a => a.keepOgd(codes)); } catch { }
   startOgd(req, codes);
+  if (album.sheets) call(a => a.keepOgd(codes)).catch(() => { });   // выбор слоёв — в альбом; не ждём движок (он мог не ответить, и выгрузка не начиналась)
 }
 watch(() => ogd.req, r => { if (!r) return; ogd.req = null; openPicker(r); }, { immediate: true });
 function loadPicked() {
