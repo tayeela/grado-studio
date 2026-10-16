@@ -55,3 +55,5 @@
 их не ставит: они стояли раньше. Кэш ЕГКО — `egko` рядом с кэшем ГИС ОГД (`/var/lib/grado/.grado2/cache/egko`), он внутри
 `ReadWritePaths=/var/lib/grado`. Проверка: `ssh msk 'systemctl list-timers grado-warm.timer'`; лог —
 `ssh msk 'journalctl -u grado-warm -n 50'`; итог прогона — `/var/lib/grado/.grado2/cache/gisogd/warm_status.json`.
+С v0.99.104 сайт сам начинает такой прогон при запуске, если итога нет или он старше 20 ч (`start_warm` в `server.py`, лог —
+`journalctl -u grado`); один прогон за раз — замок `warm.lock` в том же кэше.

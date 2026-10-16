@@ -3097,6 +3097,26 @@ def _is_our_process(pid):
 
 
 
+WARM_EVERY = 20 * 3600
+
+
+def start_warm(port, cache=None):
+    """Сайт: ночной выгрузки ГИС ОГД и ЕГКО ещё не было или итог старше WARM_EVERY — начать её сразу, отдельным
+    процессом с пониженным приоритетом (владелец 16.10.2026: «начинай сейчас»). Второй прогон ogd_warm.py не начнёт сам
+    (замок warm.lock); перезапуск сайта прерывает прогон, следующий запуск продолжает со старейших слоёв. Вывод — в журнал сайта."""
+    if GUEST or not os.environ.get("GRADO2_PUBLIC_HOST"):
+        return None
+    cache = Path(cache or CACHE / "gisogd")
+    st = cache / "warm_status.json"
+    if st.exists() and time.time() - st.stat().st_mtime < WARM_EVERY:
+        return None
+    import subprocess
+    script = Path(__file__).resolve().parent / "ogd_warm.py"
+    print(f"ГРАДО 2: начинаю выгрузку всех слоёв ГИС ОГД и ЕГКО в {cache}", flush=True)
+    return subprocess.Popen([sys.executable, str(script), "--cache", str(cache), "--port", str(port)],
+                            stdin=subprocess.DEVNULL, start_new_session=True, preexec_fn=lambda: os.nice(10))
+
+
 def main(argv=None):
     """Запуск: свободный порт от 8650, прежняя версия на порту заменяется, окно браузера открывается само."""
     argv = sys.argv[1:] if argv is None else argv
@@ -3144,6 +3164,7 @@ def main(argv=None):
     print(f"ГРАДО 2: http://127.0.0.1:{p}")
     if not os.environ.get("GRADO2_NO_BROWSER"):      # тестовый запуск без открытия окна
         webbrowser.open(f"http://127.0.0.1:{p}")
+    start_warm(p)
     server.serve_forever()
 
 
