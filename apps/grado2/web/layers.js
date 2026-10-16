@@ -52,7 +52,7 @@ function tidyLayers(fresh) {
   return { buildings: on[0]?.title, hidden };
 }
 // цвета штриховки ЗОУИТ по знакам Эталона ЛГР (береговые — синим контуром знака): общие для слоёв ОГД и ЕГРН
-const ZOUIT_LGR = {
+const ZOUIT_HATCH = {
   "Водоохранная зона": "#0669b2", "Прибрежная защитная полоса": "#3a86d4", "Береговая полоса": "#0018b8", "Зона затопления": "#5b8fd9",
   "Зона сильного подтопления": "#8f63a8", "Зона умеренного подтопления": "#6fa4e0", "Зона слабого подтопления": "#5fb89c",
   "Санитарно-защитная зона (ПЗЗ)": "#62a51b", "Зона охраняемого объекта": "#694720", "Зона военного объекта": "#e3007b",
@@ -75,7 +75,7 @@ function defaultStyle(key, fc) {
     "sit.rail": { fill: "#1f1f1f", width: 3 },
     "nspd.buildings": { fill: "#cbc6be", stroke: "#4d4d4d", width: .8, opacity: 1 },
     // ЗОУИТ ЕГРН: по виду зоны; зоны затопления и подтопления — теми же цветами, что в слое ОГД
-    "nspd.zouit": { mode: "cat", hatch: true, width: 1.2, cat: { field: "Вид зоны", off: [], colors: { ...ZOUIT_LGR } } },
+    "nspd.zouit": { mode: "cat", hatch: true, width: 1.2, cat: { field: "Вид зоны", off: [], colors: { ...ZOUIT_HATCH } } },
     "osm.roads": { mode: "cat", width: 1.6, cat: { field: "Тип дороги", colors: {}, off: [] } },
     "osm.buildings": { fill: "#dcd7ce", stroke: "#8a857c", width: .7, opacity: 1 },
     "osm.water": { fill: "#b9d6ec", stroke: "#6fa6e6", width: .8, opacity: 1 },
@@ -86,7 +86,7 @@ function defaultStyle(key, fc) {
     "gisogd.airfield": { mode: "cat", opacity: 0, width: 1, cat: { field: "Вид зоны", colors: {}, off: [] } },
     "gisogd.vodookhr": { fill: "#2a78d6", stroke: "#2a78d6", hatch: true, width: 1.2 },
     // ЗОУИТ по СПРИТ: вид зоны — цветом штриховки знака Эталона ЛГР (береговые — синим контуром знака)
-    "gisogd.zouit": { mode: "cat", hatch: true, width: 1.2, cat: { field: "Вид зоны", off: [], colors: { ...ZOUIT_LGR } } },
+    "gisogd.zouit": { mode: "cat", hatch: true, width: 1.2, cat: { field: "Вид зоны", off: [], colors: { ...ZOUIT_HATCH } } },
     "gisogd.red_lines": { mode: "lgr", fill: "#d7191c", width: 1.3 },
     // ПЗЗ: подзоны окрашены по предельной плотности — она задана чаще высоты (серые — не установлена или «по факту»); зоны — контуром
     "gisogd.pzz_sub": { mode: "grad", opacity: .45, stroke: "#8a5a00", width: .6, grad: { field: "Плотность, тыс. м²/га", n: 5, ramp: "brick", method: "quantile" } },
