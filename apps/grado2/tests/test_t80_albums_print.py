@@ -52,6 +52,66 @@ class OverLayerOrder(unittest.TestCase):
         self.assertLess(max(self._idx(ops, (0x44, 0x55, 0x66))), mask)
 
 
+class TopLayerOverTerritory(unittest.TestCase):
+    """Слой с top: true (участки территории на схеме землепользователей) — после границы территории (владелец 21.10.2026, #144)."""
+    def _ops(self, top, mask=None):
+        sh = {"title": "Лист", "size": "A3", "scale": 2000, "center": [LON, LAT], "territory": sq(.0012, .0007), "legend": [], "tep": [],
+              "terrStyle": {"stroke": "#ff00ff", "width": 1.8, "dash": [1.8, 1.8]}, **({"terrMask": mask} if mask else {}),
+              "layers": [{"title": "Участки", **({"top": True} if top else {}),
+                          "features": [{"g": sq(.0005, .0003), "stroke": "#0000ff", "fill": "#0000ff", "a": 0, "w": 1}]},
+                         {"title": "Граница района", "over": True, "features": [{"g": line(LON - .002, LON + .002), "stroke": "#445566", "w": 1.5}]}]}
+        doc = print_io.build_document({"sheets": [sh]}, S.REDLN, S.LGR_DASH)
+        return print_io.document_pages_ops(doc, None)[0][2]
+
+    def test_top_after_territory(self):
+        for mask in (None, .55):
+            ops = self._ops(True, mask)
+            terr, parcel, over = (OverLayerOrder._idx(ops, c) for c in ((255, 0, 255), (0, 0, 255), (0x44, 0x55, 0x66)))
+            self.assertTrue(terr and parcel and over)
+            self.assertGreater(min(parcel), max(terr))
+            self.assertLess(max(over), min(terr))         # over по-прежнему под границей
+
+    def test_without_top_under_territory(self):
+        ops = self._ops(False)
+        self.assertLess(max(OverLayerOrder._idx(ops, (0, 0, 255))), min(OverLayerOrder._idx(ops, (255, 0, 255))))
+
+
+class LineLabelInsideMap(unittest.TestCase):
+    """Надпись знака вдоль линии (ЗОУИТ) — только целиком в рамке карты, не поверх колонки легенды (#144)."""
+    def test_label_kept_in_frame(self):
+        code = next(iter(S.LGR_DASH))
+        f = {"g": {"type": "LineString", "coordinates": [[LON - .05, LAT], [LON + .05, LAT]]}, "stroke": "#ff0000", "w": 1,
+             "miss": [[code, None]], "ll": "зона мин расстояний"}
+        sh = {"title": "Лист", "size": "A3", "scale": 2000, "center": [LON, LAT], "legend": [], "tep": [], "layers": [{"title": "ЗОУИТ", "features": [f]}]}
+        doc = print_io.build_document({"sheets": [sh]}, S.REDLN, S.LGR_DASH)
+        ops = print_io.document_pages_ops(doc, None)[0][2]
+        clip = next(o for o in ops if o.get("op") == "clip")
+        x0, y0, w, h = clip["rect"]
+        txt = [o for o in ops if o.get("op") == "text" and o.get("text") == "зона мин расстояний"]
+        self.assertTrue(txt)
+        for o in txt:
+            self.assertTrue(x0 < o["x"] < x0 + w and y0 < o["y"] < y0 + h, o)
+
+
+class LegendLineLabel(unittest.TestCase):
+    """Надпись в знаке линии легенды — до 2 мм, не шире знака, над линией (владелец 21.10.2026, #144)."""
+    def test_short_label_two_mm_above_line(self):
+        size, base = album_io.ll_text_fit("ТЗ", 13.0, 21.5)
+        self.assertEqual(size, 2.0)
+        self.assertLess(base, 21.5)
+
+    def test_long_label_fits_swatch(self):
+        size, _ = album_io.ll_text_fit("техническая зона", 13.0, 21.5)
+        self.assertLess(size, 2.0)
+        self.assertLessEqual(size * .56 * len("техническая зона"), 14.0 + 1e-9)
+
+    def test_swatch_uses_fit(self):
+        out = album_io.concept_swatch(10, 20, {"kind": "lt", "ll": "ТЗ", "stroke": "#ff0000"}, None)
+        t = next(o for o in out if o.get("op") == "text")
+        self.assertAlmostEqual(t["size"], 2.0, places=6)
+        self.assertLess(t["y"], 21.5)
+
+
 class MapNoteCorners(unittest.TestCase):
     RECT = (0, 44, 420, 253)
 

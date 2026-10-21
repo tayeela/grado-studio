@@ -467,6 +467,14 @@ def _dash_fit(dash, w):
     return [d * k for d in dash]
 
 
+def ll_text_fit(text, w, line_y):
+    """Надпись в знаке линии легенды («техническая зона»): кегль до 2 мм, но не шире знака (длинная — мельче);
+    базовая линия — над линией знака с зазором, буквы не садятся на линию (владелец 21.10.2026, #144: «читаемы»;
+    было 1,25 мм по центру линии). Возвращает (кегль, мм; базовая линия, мм)."""
+    size = min(2.0, (w + 1) / (max(1, len(str(text))) * .56))
+    return size, line_y - .55
+
+
 def concept_swatch(x, y, it, lib=None, w=SW_W, h=3.0):
     """Знак легенды 8 × 3 мм: заливка (с штриховкой), контур, линия (со штрихом), тип линии REDLN97, образец текста."""
     from print_io import _mix, hatch_ops, linetype_ops, LT_SHAPE_MM
@@ -484,8 +492,8 @@ def concept_swatch(x, y, it, lib=None, w=SW_W, h=3.0):
             out.append({"op": "path", "closed": False, "fill": None, "stroke": _rgb(it.get("stroke"), (1, 0, 0)), "width": 0.6,
                         "dash": it.get("dash"), "rings": [[(x, y + h / 2), (x + w, y + h / 2)]]})
         if it.get("ll"):                        # надпись знака над линией — как в образце «ГК Царицыно»
-            size_mm = min(1.25, (w + 1) / (len(it["ll"]) * .56))      # не шире знака: длинная надпись — мельче
-            out.append({**_text(x + w / 2, y + h / 2 - .45, size_mm / PT, it["ll"], _rgb(it.get("stroke"), (1, 0, 0)), "sans", "middle")})
+            size_mm, base = ll_text_fit(it["ll"], w, y + h / 2)
+            out.append({**_text(x + w / 2, base, size_mm / PT, it["ll"], _rgb(it.get("stroke"), (1, 0, 0)), "sans", "middle")})
     elif k == "rail":                                   # железная дорога — как на карте: чёрная линия, белые штрихи
         line = [[(x, y + h / 2), (x + w, y + h / 2)]]
         out.append({"op": "path", "closed": False, "fill": None, "stroke": (0.12, 0.12, 0.12), "width": 1.04, "dash": None, "rings": line})
