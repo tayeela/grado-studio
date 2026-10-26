@@ -100,12 +100,13 @@ def _now():
 
 
 class HubError(Exception):
-    """Ошибка API: код HTTP и сообщение пользователю."""
+    """Ошибка API: код HTTP и сообщение пользователю; code — короткий ASCII-код (вход через Telegram: #tg=код)."""
 
-    def __init__(self, status, message):
+    def __init__(self, status, message, code=None):
         super().__init__(message)
         self.status = status
         self.message = message
+        self.code = code
 
 
 class Conflict(HubError):
@@ -487,6 +488,8 @@ class Hub:
         out = {"login": login, "name": u.get("name") or login, "admin": bool(u.get("admin"))}
         if u.get("guest"):
             out["guest"] = True
+        if u.get("tg"):
+            out["tg"] = True                         # Telegram привязан (сам id наружу не уходит)
         return out
 
     def _actor(self, user):
@@ -717,6 +720,66 @@ class Hub:
             self._save("users.json", self.users)
             self._save("invites.json", self.invites)
             return self._new_session(login, ua), self._public(login)
+
+    def _tg_owner(self, tid):
+        return next((k for k, v in self.users.items() if str(v.get("tg") or "") == tid), None)
+
+    def _free_login(self, want, tid):
+        """Свободный логин для нового человека из Telegram: его @имя, если подходит и не занято, иначе tg<id>."""
+        for cand in (str(want or "").lower(), "tg" + tid):
+            if LOGIN_RE.fullmatch(cand) and cand not in self.users and cand != GUEST_LOGIN:
+                return cand
+        raise HubError(409, "не удалось подобрать логин")
+
+    def tg_login(self, person, ip, ua="", invite=None, bind=None, admin=False):
+        """Вход через Telegram (tglogin.py проверил id_token): person = {"id", "username", "name"}.
+        1) Telegram уже привязан к учётной записи — вход в неё. 2) bind — логин вошедшего: привязать Telegram к нему.
+        3) Действующий код приглашения — новая учётная запись без пароля. 4) admin (GRADO2_TG_ADMINS): учётная запись
+        с логином, равным @имени и ещё без Telegram, получает привязку; нет такой — создаётся администратор.
+        Иначе 403: незнакомого человека сайт не пускает."""
+        tid, ip = str(person["id"]), str(ip or "?")[:64]
+        with self.lock:
+            self._sync()
+            owner = self._tg_owner(tid)
+            if bind:
+                if bind not in self.users or self.users[bind].get("disabled") or self.users[bind].get("guest"):
+                    raise HubError(403, "привязать Telegram можно только к своей учётной записи", "fail")
+                if owner and owner != bind:
+                    raise HubError(409, "этот Telegram уже привязан к другой учётной записи", "taken")
+                self.users[bind]["tg"] = tid
+                self._save("users.json", self.users)
+                owner = bind
+            if owner is None and isinstance(invite, str) and invite:
+                inv = self.invites.get(invite)
+                if not isinstance(inv, dict) or inv.get("used_by") or inv.get("expires", 0) < _now():
+                    self._throttle_check(None, ip)
+                    self._fail(None, ip)
+                    raise HubError(403, "приглашение не найдено, просрочено или уже использовано", "invite")
+                owner = self._free_login(person.get("username"), tid)
+                self._add_tg_user(owner, person, False)
+                inv["used_by"], inv["used_at"] = owner, _now()
+                self._save("invites.json", self.invites)
+            if owner is None and admin:
+                want = str(person.get("username") or "").lower()
+                if want in self.users and not self.users[want].get("tg") and not self.users[want].get("guest"):
+                    owner = want
+                    self.users[want]["tg"] = tid
+                    self._save("users.json", self.users)
+                else:
+                    owner = self._free_login(want, tid)
+                    self._add_tg_user(owner, person, True)
+            if owner is None:
+                raise HubError(403, "этот Telegram не знаком сайту: попросите у администратора приглашение", "unknown")
+            if self.users[owner].get("disabled"):
+                raise HubError(403, "учётная запись отключена", "disabled")
+            return self._new_session(owner, ua), self._public(owner)
+
+    def _add_tg_user(self, login, person, admin):
+        salt = os.urandom(16)
+        self.users[login] = {"pw": _hash_password(secrets.token_urlsafe(32), salt), "salt": salt.hex(),   # пароль никто не знает
+                             "admin": bool(admin), "name": _clean_name(person.get("name"), login), "created": _now(),
+                             "disabled": False, "tg": str(person["id"])}
+        self._save("users.json", self.users)
 
     def session_user(self, token):
         if not isinstance(token, str) or not 16 <= len(token) <= 200:

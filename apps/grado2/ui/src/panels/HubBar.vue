@@ -22,6 +22,7 @@
       <wa-dropdown-item value="teams">Команды</wa-dropdown-item>
       <wa-dropdown-item v-if="hub.me.admin" value="admin">Пользователи и приглашения</wa-dropdown-item>
       <wa-dropdown-item v-if="!hub.me.guest" value="pw">Сменить пароль</wa-dropdown-item>
+      <wa-dropdown-item v-if="hub.login.tg && !hub.me.guest && !hub.me.tg" value="tg">Привязать Telegram</wa-dropdown-item>
       <wa-divider></wa-divider>
       <wa-dropdown-item value="out">Выйти</wa-dropdown-item>
     </wa-dropdown>
@@ -44,7 +45,7 @@
 <script setup>
 import { computed, reactive, ref } from "vue";
 import { CircleUser, FolderOpen, History, MessageSquare, MessageSquarePlus, Users } from "@lucide/vue";
-import { C, ROLE, SYNC, changePassword, hub, initials, ink, logout, myRole, openComments, openWin, safeColor, setCMode, viewer } from "../hub.js";
+import { C, ROLE, SYNC, changePassword, hub, initials, ink, logout, myRole, openComments, openWin, safeColor, setCMode, tgBind, viewer } from "../hub.js";
 import { winApi } from "../store.js";
 
 const others = computed(() => { const seen = new Set(); return hub.others.filter(u => u.login !== hub.me?.login && !seen.has(u.login) && seen.add(u.login)); });
@@ -54,6 +55,7 @@ function onAcc(e) {
   const v = e.detail.item.value;
   if (v === "pw") { Object.assign(pw, { old: "", nw: "", nw2: "", msg: "" }); pwDlg.value = true; }
   else if (v === "out") logout();
+  else if (v === "tg") tgBind();
   else openWin(v);
 }
 async function savePw() {

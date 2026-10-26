@@ -11,3 +11,4 @@ starlette>=0.47
 uvicorn>=0.35
 pydantic>=2.11
 pyshp>=2.3
+PyJWT[crypto]>=2.10
