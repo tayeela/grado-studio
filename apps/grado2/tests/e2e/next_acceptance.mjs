@@ -229,7 +229,7 @@ try {
       await showWin(page, "Виды");
       const inp = page.locator(".views .bar wa-input").first();
       await inp.click(); await page.keyboard.press("Control+A"); await page.keyboard.type(name);
-      await winButton(page, "Виды", "Сохранить вид").click(); await page.waitForTimeout(400);
+      await winButton(page, "Виды", "Без рамки").click(); await page.waitForTimeout(400);
     };
     const shown = () => page.evaluate(() => { const r = [...document.querySelectorAll(".pane.layers .row[data-key]")].find(e => e.textContent.includes("Здания (ЕГКО)")); return r?.querySelector("button.eye")?.title; });
     await save("Существующее");
@@ -246,6 +246,16 @@ try {
     await page.locator(".dv-content-container td.nm", { hasText: "Анализ" }).click(); await page.waitForTimeout(600);
     await showWin(page, "Слои");
     check(await shown() === "Показать слой", "вид «Анализ» снова их скрыл", String(await shown()));
+    // вид выделением (владелец 26.10.2026): кнопка «Вид» на ленте, рамка мышью по карте — вид с рамкой готов
+    await showWin(page, "Виды");
+    const n0 = await page.locator(".views table.vl td.nm").count();
+    await page.locator('[data-act="view-by-sel"]').click(); await page.waitForTimeout(200);
+    const m = await page.evaluate(() => { const r = [...document.querySelectorAll(".ol-viewport")].map(e => e.getBoundingClientRect()).find(q => q.width > 200); return r && { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    if (m) { await page.mouse.move(m.x - 80, m.y - 50); await page.mouse.down(); await page.mouse.move(m.x + 80, m.y + 50, { steps: 8 }); await page.mouse.up(); }
+    await page.waitForTimeout(500);
+    await showWin(page, "Виды");
+    const vt = await winText(page, "Виды");
+    check(await page.locator(".views table.vl td.nm").count() === n0 + 1 && /рамка \d/.test(vt), "«Вид» на ленте: выделенная область стала видом с рамкой", vt.slice(0, 300));
   });
 } catch (e) {
   failed++; console.log("STEP FAILED запуск: " + e.message.split("\n")[0]);

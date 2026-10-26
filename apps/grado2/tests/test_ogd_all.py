@@ -261,6 +261,28 @@ class OgdAll(unittest.TestCase):
                 self.assertEqual(between, [1, 1, 1, 1])        # каждый слой — в очереди
                 self.assertEqual(held, [])                     # и между слоями портал свободен
 
+    def test_job_takes_project_layers_without_portal(self):
+        # 26.10.2026: отмечены только «Здания (ЕГКО)» — кнопка «В DXF» была серой; теперь слои проекта идут своими слоями, портал не нужен
+        sq = {"type": "Polygon", "coordinates": [[[37.605, 55.705], [37.615, 55.705], [37.615, 55.715], [37.605, 55.715], [37.605, 55.705]]]}
+        far = {"type": "Point", "coordinates": [38.5, 56.5]}
+        extra = [{"title": "Здания (ЕГКО)", "color": "#aa5500", "features": [{"geometry": sq, "properties": {"h": 5}}, {"geometry": far}]},
+                 {"title": "Пусто (OSM)", "features": [{"geometry": far}]}]
+        with mock.patch.object(ogd_all, "catalog", side_effect=AssertionError("портал не нужен")), \
+                mock.patch.object(ogd_all.dxf_io, "oda_converter", return_value=None):
+            import tempfile
+            with tempfile.TemporaryDirectory() as d:
+                job = ogd_all.Job((37.60, 55.70, 37.62, 55.72), None, Path(d), Path(d) / "out", codes=[], extra=extra)
+                for _ in range(100):
+                    if not job.state["running"]:
+                        break
+                    time.sleep(0.05)
+                st = job.state
+                self.assertEqual((st["found"], st["objects"], st["message"]), (1, 1, "Готово."), st)
+                doc = ezdxf.read(io.StringIO(zipfile.ZipFile(job.file).read("gisogd.dxf").decode("utf-8")))
+                self.assertIn("Здания (ЕГКО)", [la.dxf.name for la in doc.layers])
+                self.assertEqual(len(doc.modelspace().query('LWPOLYLINE[layer=="Здания (ЕГКО)"]')), 1)
+
+
 @unittest.skipIf(ogd_all is None, "ezdxf not installed")
 class SheetValidation(unittest.TestCase):
     def test_bad_sheet_size_rejected(self):
