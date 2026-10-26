@@ -22,7 +22,8 @@ import { fromLonLat, toLonLat } from "ol/proj.js";
 import { Fill, RegularShape, Stroke, Style, Text } from "ol/style.js";
 import { reactive, watch } from "vue";
 import * as mskMod from "../../web/msk.js";
-import { project } from "./store.js";
+import { basemapId, project, viewCur, viewNow } from "./store.js";
+import { notice } from "./project.js";
 import { cadApi } from "./cad.js";
 import { cornersM, fromCorners, frameLabel, ratioOf, sheetFromCorners } from "./viewframes.js";
 import { album, editSheet, wantFrames } from "./albumhost.js";
@@ -48,10 +49,35 @@ const albumItem = f => ({ id: ALB + f.id, i: f.i, mm: f.mm, name: f.label, tip: 
   } });
 export const albumItems = () => (album.frames || []).map(albumItem);
 
+/* вид = видимые слои, их оформление, группы, подложка (как «Темы карты» QGIS); ext — и масштаб карты */
+const clone = o => JSON.parse(JSON.stringify(o));
+export function captureView(title, ext) {
+  return { id: "v" + Date.now().toString(36), name: title, basemap: basemapId.value,
+    layers: project.layers.map(l => ({ key: l.key, visible: l.visible, style: clone(l.style), layerOpacity: l.layerOpacity })),
+    groups: project.groups.map(g => ({ id: g.id, visible: g.visible })),
+    extent: ext && viewNow.center ? { center: [...viewNow.center], zoom: viewNow.zoom } : null };
+}
+/* «Вид выделением» (владелец 26.10.2026: «просто хочу назначить вид выделением и всё»): выделил область на карте — вид готов:
+   слои и оформление — как сейчас на карте, рамка — выделенная область. Рисуется как рамка вида с id NEW. */
+export const NEW = "__newview";
+const newItem = () => ({ id: NEW, name: "новый вид", made: "",
+  set frame(fr) {
+    if (!fr?.center || this.made) return;
+    const v = captureView(`Вид ${project.views.length + 1}`, false);
+    v.frame = fr; project.views.push(v); viewCur.value = v.id; this.made = v.id;
+    notice.value = `Вид «${v.name}» готов: его можно поставить на лист. Переименовать — в окне «Виды»`;
+  },
+  get frame() { return null; } });
+export function newViewBySelection() {
+  if (cadApi.active?.()) cadApi.cancel?.();          // идущая команда черчения перехватила бы мышь
+  vframes.aspect = "free"; vframes.sel = ""; vframes.draw = NEW;
+  notice.value = "Выделите область на карте: тяните рамку от угла до угла. Esc — отмена";
+}
+
 /* общее состояние: on — сколько окон просят рамки (Виды, Макет листа); draw — id вида, которому рисуют рамку;
    sel — выбранный вид; aspect — пропорции новой рамки; fit — «приблизить к рамке вида» (id); msg — подсказка над картой */
 export const vframes = reactive({ on: 0, draw: "", sel: "", aspect: "a", fit: "", msg: "" });
-export const viewOf = id => id === COVER ? coverItem() : String(id).startsWith(ALB) ? albumItems().find(v => v.id === id)
+export const viewOf = id => id === COVER ? coverItem() : id === NEW ? newItem() : String(id).startsWith(ALB) ? albumItems().find(v => v.id === id)
   : project.views.find(v => v.id === id);
 export const frameCorners = f => cornersM(MSK.fromWgs(f.center), f.w, f.h);
 /* рамка по текущему экрану карты (центр и охват окна «Карта» с полями 10 %) с пропорциями aspect */
@@ -84,7 +110,7 @@ export function attachViewFrames(map) {
   const views = () => vframes.on > 0 || !!vframes.draw;
   const shown = () => views() || coverOn.value || album.tab;
   const items = () => [...(views() ? project.views : []), ...((views() || album.tab) && !vframes.draw ? albumItems() : []),
-    ...(coverOn.value && !vframes.draw ? [coverItem()] : [])];
+    ...(coverOn.value && !vframes.draw ? [coverItem()] : []), ...(vframes.draw === NEW ? [newItem()] : [])];
   const geomOf = v => live && live.id === v.id ? live : v.frame ? { c: MSK.fromWgs(v.frame.center), w: v.frame.w, h: v.frame.h } : null;
   function redraw() {
     src.clear(true); layer.setVisible(shown()); if (!shown()) return;
@@ -140,7 +166,7 @@ export function attachViewFrames(map) {
       if (d.moved && live && v && live.w > 1 && live.h > 1) {
         if (d.mode === "draw") v.frame = { aspect: vframes.aspect };
         save(v, live);
-        vframes.sel = v.id;
+        vframes.sel = v.made || v.id;
         if (d.mode === "draw") { vframes.draw = ""; vframes.msg = ""; }
       }
       live = null; redraw();
