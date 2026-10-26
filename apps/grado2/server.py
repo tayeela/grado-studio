@@ -1076,12 +1076,20 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
             except ConnectorError as e:
                 errors[k] = str(e)
 
+    @contextlib.contextmanager
+    def ogd_gate():
+        try:
+            with portalgate.GATE.use({"gisogd"}, gate_token, timeout=FETCH_LOCK_TIMEOUT, fair=True):
+                yield
+        except portalgate.Busy:
+            raise ConnectorError("портал занят другой выгрузкой, повторите через минуту") from None
+
     def run_gisogd(k, nth=0, of=0):
         feats, notes, doc = [], [], None
         def tell(code, got, total, stage):
             PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage, "nth": nth, "of": of}
         tell(None, 0, None, "wait")          # имя слоя в строке состояния — сразу, не после первого мегабайта
-        api = GisogdApi(cache_dir=CACHE / "gisogd", progress=tell)
+        api = GisogdApi(cache_dir=CACHE / "gisogd", progress=tell, gate=ogd_gate)
         missed = []
         for code, zone in SOURCES[k][1].items():
             try:
@@ -1198,7 +1206,9 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
     # к порталу — одно место программы за раз (#51): вторая выгрузка к тем же порталам ждёт эту (portalgate.py)
     # ждём не бесконечно: занятый портал — понятная ошибка слоя и «Повторить», а не висящий запрос (16.10.2026)
     try:
-        with portalgate.GATE.use(portalgate.portals_of(SOURCES[k][0] for k in planned), gate_token, timeout=FETCH_LOCK_TIMEOUT), \
+        # ГИС ОГД — не на всю выгрузку, а на каждую загрузку слоя с портала (ogd_gate): слой с диска сервера (ночной
+        # прогрев) очередь не ждёт, и вторая вкладка не получает «портал занят» из-за чужих 100 слоёв (26.10.2026)
+        with portalgate.GATE.use(portalgate.portals_of(SOURCES[k][0] for k in planned) - {"gisogd"}, gate_token, timeout=FETCH_LOCK_TIMEOUT), \
                 ThreadPoolExecutor(max_workers=len(jobs)) as pool:
             for job_keys, fut in [(ks, pool.submit(fn)) for ks, fn in jobs]:
                 try:
@@ -2515,7 +2525,7 @@ def post_ogd_start(c):
                                    codes=req.get("codes"), where=req.get("where"),
                                    extra=[x for x in (req.get("extra") or [])[:200] if isinstance(x, dict)],
                                    redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH},
-                                   gate=lambda: portalgate.GATE.use({"gisogd"}))]
+                                   gate=(lambda tok=object(): portalgate.GATE.use({"gisogd"}, tok, fair=True)))]
         OGD_OWNER["login"] = (c.who() or {}).get("login")
     return _json(200, OGD_JOB[0].state)
 
