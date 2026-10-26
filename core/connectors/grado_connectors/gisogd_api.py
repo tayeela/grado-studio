@@ -26,6 +26,7 @@ GeoJSON, пересчитанный сервером портала, стоит 
 кэша с «shp»).
 """
 
+import contextlib
 import csv
 import gzip
 import io
@@ -387,14 +388,16 @@ class GisogdApi(Connector):
     name = "gisogd"
     source = "gisogd"
 
-    def __init__(self, transport=None, cache_dir=None, ttl=_TTL_SEC, progress=None, map_name="isogd", clip=False):
+    def __init__(self, transport=None, cache_dir=None, ttl=_TTL_SEC, progress=None, map_name="isogd", clip=False, gate=None):
         """progress(code, получено, всего или None, этап) — ход первой выгрузки слоя целиком.
 
         map_name="base2" (ЕГКО): слой идёт потоком и раскладывается по клеткам сетки на диске — в памяти его нет
         ни при выгрузке, ни при выборке; ключ объекта несёт карту («base2:код:id»), потому что коды base2 пишутся
         так же, как коды isogd (virtual6…). clip=True — объекты режутся по рамке области, а не отбираются целиком.
-        Карта isogd работает как раньше (слой целиком в памяти, ключ «код:id»)."""
+        Карта isogd работает как раньше (слой целиком в памяти, ключ «код:id»).
+        gate() — контекст очереди к порталу только на время запроса к сети: слой из кэша очереди не ждёт (26.10.2026)."""
         self.transport = transport or _http_get
+        self.gate = gate or contextlib.nullcontext
         self.progress = progress
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.ttl = ttl
@@ -575,10 +578,11 @@ class GisogdApi(Connector):
             except (OSError, EOFError, zlib.error, ConnectorError):
                 path.unlink(missing_ok=True)       # недописанный кэш — скачать заново, а не падать до конца срока
         url = f"{self.base}/layers/{code}/export/?format=shp"
-        if self.progress and self.transport is _http_get:
-            raw = _http_get(url, progress=lambda got, total: self.progress(code, got, total, "download"))
-        else:
-            raw = self.transport(url)
+        with self.gate():
+            if self.progress and self.transport is _http_get:
+                raw = _http_get(url, progress=lambda got, total: self.progress(code, got, total, "download"))
+            else:
+                raw = self.transport(url)
         if self.progress:
             self.progress(code, len(raw), len(raw), "parse")
         if not zipfile.is_zipfile(io.BytesIO(raw)):       # страница ошибки портала не должна лечь в кэш на неделю
@@ -615,7 +619,8 @@ class GisogdApi(Connector):
         if fail and fail.exists() and 0 <= time.time() - fail.stat().st_mtime < _CSV_COOLDOWN:
             raise ConnectorError(f"ГИС ОГД: слой {code} — CSV недавно не получен, повтор позже")
         try:
-            raw = self.transport(f"{self.base}/layers/{code}/export/?format=csv")
+            with self.gate():
+                raw = self.transport(f"{self.base}/layers/{code}/export/?format=csv")
             try:
                 text = raw.decode("utf-8-sig")
             except UnicodeDecodeError:
