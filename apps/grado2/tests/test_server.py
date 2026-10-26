@@ -2231,6 +2231,38 @@ class T61Portal(unittest.TestCase):
         self.assertEqual(layers, {})
         self.assertIn("портал занят", errors["gisogd.zouit"])
 
+    def test_fetch_cached_ogd_layer_does_not_wait_for_the_portal(self):
+        # 26.10.2026: на сайте 110 слоёв ГИС ОГД — «портал занят»: выгрузка держала портал целиком, даже слои с диска.
+        # Теперь очередь — только на загрузку с портала (gate в GisogdApi); слой из кэша приходит сразу
+        import portalgate
+        seen = []
+
+        class Cached:
+            def __init__(self, **kw):
+                seen.append(kw.get("gate"))
+
+            def fetch(self, bbox, code):
+                return {"features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [37.505, 55.705]},
+                                      "properties": {}}], "source_doc": "кэш", "notes": []}
+        other = object()
+        portalgate.GATE.acquire({"gisogd"}, other)
+        try:
+            with mock.patch.object(S, "FETCH_LOCK_TIMEOUT", 0.05), mock.patch.object(S, "GisogdApi", Cached):
+                layers, errors = S.fetch([37.5, 55.7, 37.51, 55.71], ["gisogd.szz"])
+        finally:
+            portalgate.GATE.release({"gisogd"}, other)
+        self.assertEqual(errors, {})
+        self.assertIn("gisogd.szz", layers)
+        self.assertTrue(seen and all(callable(g) for g in seen))
+        with self.assertRaises(S.ConnectorError):           # загрузка с портала, пока он у чужой выгрузки, — ждёт срок и «занят»
+            portalgate.GATE.acquire({"gisogd"}, other)
+            try:
+                with mock.patch.object(S, "FETCH_LOCK_TIMEOUT", 0.05):
+                    with seen[0]():
+                        pass
+            finally:
+                portalgate.GATE.release({"gisogd"}, other)
+
     def test_plain_portal_error_hides_raw_text(self):
         raw = "Overpass не ответил (Errno 54; HTTP 504; timed out) — попробуйте позже или уменьшите область"
         out = S.plain_portal_error(raw)
