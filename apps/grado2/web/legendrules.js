@@ -48,7 +48,13 @@
   // пояснения без заголовка (группа из одних строк «note») — после всех групп легенды (слайд-правило 5.9, F12)
   const isNoteGroup = g => !g.title && (g.items || []).length > 0 && g.items.every(i => i.kind === "note");
   const notesLast = groups => { const g = groups || []; return [...g.filter(x => !isNoteGroup(x)), ...g.filter(isNoteGroup)]; };
-  const api = { docKinds, docTitle, docWhy, pruneGroups, obstacleSource, szzNote, notesLast };
+  // цвет заливки так, как его видно под белой маской за территорией (alpha — доля белого, печать кладёт белый с этой
+  // прозрачностью поверх цвета): знаки легенды сущпола — «с учётом маски» (владелец 21.10.2026, #144)
+  const underMask = (hex, alpha) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "")); if (!m || !(alpha > 0)) return hex;
+    return "#" + [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)).map(c => Math.round(c + (255 - c) * Math.min(1, alpha)).toString(16).padStart(2, "0")).join("");
+  };
+  const api = { docKinds, docTitle, docWhy, pruneGroups, obstacleSource, szzNote, notesLast, underMask };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.LegendRules = api;
 })(typeof window !== "undefined" ? window : globalThis);
