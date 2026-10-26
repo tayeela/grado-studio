@@ -44,4 +44,10 @@ const NT = { items: [{ kind: "note", label: "x" }] }, G1 = { title: "A", items: 
 eq(R.notesLast([G1, NT, G2]).map(g => g.title), ["A", "Транспорт", undefined], "пояснение — последним");
 eq(R.notesLast([G1, G2]).map(g => g.title), ["A", "Транспорт"], "без пояснений порядок тот же");
 eq(R.notesLast(undefined), [], "нет легенды");
+// знак заливки под белой маской 55 % (владелец 21.10.2026, #144)
+eq(R.underMask("#000000", .55), "#8c8c8c", "чёрный под маской");
+eq(R.underMask("#ffffff", .55), "#ffffff", "белый не меняется");
+eq(R.underMask("#F4B598", .55), "#faded1", "цвет зоны под маской");
+eq(R.underMask("#f4b598", undefined), "#f4b598", "без маски — как есть");
+eq(R.underMask("red", .55), "red", "не шестнадцатеричный — как есть");
 console.log(n + " checks ok");

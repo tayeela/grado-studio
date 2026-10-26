@@ -968,7 +968,11 @@ class SketchMapFrame(Frame):
                                             "dash": [d * LT_MM for d in dash] if dash else None, "rings": [pts]})
                             if f.get("ll"):                     # надпись знака вдоль линии (Эталон ЛГР: «техническая зона», «береговая»)
                                 from grado_render.scene import line_label_ops
-                                out.extend(dict(t, font_family="sans") for t in line_label_ops([tuple(p) for p in pts], f["ll"], color, 1.6, False))
+                                # только надписи целиком в рамке карты: за рамкой их не видно в PDF, но в PPTX и в тексте PDF
+                                # они лежали поверх колонки легенды (album_lint, сущпол Безобразово 21.10.2026, #144)
+                                hw = len(f["ll"]) * 1.6 * .6 / 2 + .5
+                                out.extend(dict(t, font_family="sans") for t in line_label_ops([tuple(p) for p in pts], f["ll"], color, 1.6, False)
+                                           if rect[0] + hw <= t["x"] <= rect[0] + rect[2] - hw and rect[1] + hw <= t["y"] <= rect[1] + rect[3] - hw)
                         else:
                             out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": w, "dash": dash, "rings": [pts]})
                         if f.get("label"):
@@ -1012,17 +1016,21 @@ class SketchMapFrame(Frame):
                         if f.get("label"):
                             labels.append((x, y - 2, f["label"], f.get("ls"), f))
         # слои с over (граница района) — поверх белой маски за территорией: иначе их не отличить от бледных линий под ней
-        if any(L_.get("over") for L_, _ in spans):
+        # слои с top (участки территории на схеме землепользователей) — даже поверх границы территории (владелец 21.10.2026, #144)
+        moved, top = [], []
+        if any(L_.get("over") or L_.get("top") for L_, _ in spans):
             ends = [i for _, i in spans[1:]] + [len(out)]
-            moved, keep_from = [], []
+            keep_from = []
             for (L_, a_), b_ in zip(spans, ends):
-                if L_.get("over"):
+                if L_.get("top") and sh.get("territory"):
+                    top.extend(out[a_:b_])
+                elif L_.get("over"):
                     moved.extend(out[a_:b_])
-                    keep_from.append((a_, b_))
+                else:
+                    continue
+                keep_from.append((a_, b_))
             for a_, b_ in reversed(keep_from):
                 del out[a_:b_]
-        else:
-            moved = []
         # слои over — над белой маской, но под границей территории: граница всегда поверх всех слоёв (владелец 06.10.2026)
         if not (sh.get("territory") and sh.get("terrMask") and not sh.get("terrPoint")):
             out.extend(moved)
@@ -1049,6 +1057,7 @@ class SketchMapFrame(Frame):
                             "fill": _mix(ts["fill"], .35) if ts.get("fill") else None,
                             "stroke": hex_to_rgb(ts.get("stroke", "#b3261f")), "width": ts.get("width", 0.6),
                             "dash": ts.get("dash") if ts else [4, 1.2, 0.6, 1.2]})
+        out.extend(top)
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
         mem = self.memo.setdefault((tuple(round(v, 1) for v in rect), tuple(round(float(c), 7) for c in sh["center"]), sh["scale"]), {})
