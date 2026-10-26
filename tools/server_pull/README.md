@@ -26,6 +26,7 @@
 | `grado-pull.service` | `/etc/systemd/system/` | служба, один запуск скрипта |
 | `grado-pull.timer` | `/etc/systemd/system/` | таймер: раз в 5 минут, первый раз через 2 минуты после загрузки |
 | `install-on-msk.sh` | — | установка; повторяемая, перед заменой файла кладёт копию `.bak-gradopull-<время>` |
+| `tg-login-on-msk.sh` | — | вход через Telegram (v0.99.108): ключи бота в службу `grado` (drop-in `tglogin.conf`), снять `basic_auth` Caddy у grado.tailink.tech; копии `.bak-tglogin-<время>`, откат при сбое. Ключи — в переменных `TG_ID`, `TG_SECRET`, `TG_ADMINS` при запуске |
 
 Ключ и копия репозитория — `/opt/grado/pull/` (права 700). В GitHub никаких ключей от сервера нет, входящий доступ на msk не нужен.
 
