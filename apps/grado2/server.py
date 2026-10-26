@@ -2513,6 +2513,7 @@ def post_ogd_start(c):
                                    str(req.get("name") or "gisogd"), sheet=req.get("sheet"),
                                    styles=ogd_all.portal_styles(CACHE / "gisogd"),
                                    codes=req.get("codes"), where=req.get("where"),
+                                   extra=[x for x in (req.get("extra") or [])[:200] if isinstance(x, dict)],
                                    redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH},
                                    gate=lambda: portalgate.GATE.use({"gisogd"}))]
         OGD_OWNER["login"] = (c.who() or {}).get("login")
