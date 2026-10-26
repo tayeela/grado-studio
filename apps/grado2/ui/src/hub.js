@@ -24,7 +24,7 @@ export const SYNC = {
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* частный режим */ } };
 export const hub = reactive({
-  me: null, login: { open: false, msg: "", guest: false }, pid: null, name: "", role: null, members: [], projects: [], teams: null, names: {}, others: [],
+  me: null, login: { open: false, msg: "", guest: false, tg: false }, pid: null, name: "", role: null, members: [], projects: [], teams: null, names: {}, others: [],
   comments: [], cFilter: "open", cSel: null, draft: null, cMode: false, hist: null, adm: null, newCode: null, link: null,
   win: "", q: lsGet("grado2.hub.q") || "", ord: lsGet("grado2.hub.order") === "name" ? "name" : "recent", album: lsGet("grado2.hub.album") === "1",
 });
@@ -61,7 +61,7 @@ export async function api(path, body) {
   catch { throw new Error("нет связи с сервером"); }
   let j = null; try { j = await r.json(); } catch { /* без тела */ }
   if (r.status === 401 && !/^(login|register|me|password)$/.test(path)) { sessionLost(); throw Object.assign(new Error("нужно войти заново"), { status: 401 }); }
-  if (!r.ok) throw Object.assign(new Error(j?.error || "ошибка сервера " + r.status), { status: r.status, guest: !!j?.guest });
+  if (!r.ok) throw Object.assign(new Error(j?.error || "ошибка сервера " + r.status), { status: r.status, guest: !!j?.guest, tg: !!j?.tg });
   return j;
 }
 export const fail = pre => e => { if (e.status !== 401) toast((pre ? pre + ": " : "") + e.message); };
@@ -83,6 +83,23 @@ export async function submitLogin(f) {
     const r = await api(reg ? "register" : "login", reg ? { invite: f.invite.trim(), login, name: f.name.trim() || login, password: pw } : { login, password: pw });
     loggedIn(r.user); return true;
   } catch (err) { msg(err.message); return false; }
+}
+/* вход через Telegram: сервер уводит на oauth.telegram.org и возвращает сюда с сессией или с #tg=код ошибки */
+export function tgLogin(invite) { location.href = "/api/hub/tg/start" + (invite ? "?invite=" + encodeURIComponent(invite) : ""); }
+export function tgBind() { location.href = "/api/hub/tg/start?bind=1"; }
+const TG_MSG = {
+  unknown: "Этот Telegram сайту не знаком. Попросите у администратора код приглашения и войдите через Telegram на вкладке «Регистрация по приглашению».",
+  invite: "Код приглашения не найден, просрочен или уже использован.", taken: "Этот Telegram уже привязан к другой учётной записи.",
+  disabled: "Учётная запись отключена администратором.", denied: "Вход через Telegram отменён.", expired: "Вход через Telegram занял больше 10 минут. Попробуйте ещё раз.",
+  state: "Вход через Telegram прервался. Попробуйте ещё раз.", token: "Telegram не подтвердил вход. Попробуйте ещё раз.",
+  net: "Сервер не смог связаться с Telegram. Попробуйте через минуту.", busy: "Слишком много попыток. Повторите позже.",
+  off: "Вход через Telegram на этом сервере не настроен.", fail: "Вход через Telegram не удался."
+};
+function grabTg() {
+  const parts = location.hash.replace(/^#/, "").split("&").filter(Boolean), keep = [];
+  let code = null; parts.forEach(x => { const m = /^tg=(\w+)$/.exec(x); if (m) code = m[1]; else keep.push(x); });
+  if (code) try { history.replaceState(null, "", location.pathname + location.search + (keep.length ? "#" + keep.join("&") : "")); } catch { /* не важно */ }
+  return code;
 }
 export async function guestLogin() {
   try { loggedIn((await api("guest", {})).user); } catch (err) { hub.login.msg = err.message; }
@@ -331,8 +348,11 @@ async function boot() {
   let faultAt = 0; Collab.listen("fault", d => { if (Date.now() - faultAt < 10000) return; faultAt = Date.now(); toast("Правки не сохранены: " + (d?.message || "хранилище на сервере заполнено")); });
   setInterval(presenceTick, 500);
   setInterval(() => { if (!document.hidden && (hub.pid || ["projects", "teams"].includes(hub.win))) refreshMeta(); }, 15000);
-  let u = null; try { u = (await api("me")).user; } catch (e) { hub.login.guest = !!e.guest; }
-  if (!u) u = await askLogin();
+  const tg = grabTg();
+  let u = null; try { const r = await api("me"); u = r.user; hub.login.tg = !!r.tg; } catch (e) { hub.login.guest = !!e.guest; hub.login.tg = !!e.tg; }
+  if (u && tg === "bound") toast("Telegram привязан: теперь можно входить через Telegram");
+  else if (u && tg) toast(TG_MSG[tg] || TG_MSG.fail);
+  if (!u) u = await askLogin(tg ? TG_MSG[tg] || TG_MSG.fail : "");
   enter(u);
 }
 let histT = 0;

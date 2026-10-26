@@ -7,6 +7,7 @@
 |---|---|---|
 | `server.py` | HTTP-сервер (Starlette под uvicorn, тела запросов проверяет pydantic) и API `/api/...`: отдаёт `web/`, расчёты, импорт, экспорт, печать, проекты | `ГРАДО 2.command`, `ГРАДО 2.bat`, `packaging/grado2_entry.py` (сборка), тесты (`import server`) |
 | `hub.py` | совместный режим: аккаунты, проекты с ролями, ревизии разделов, история версий | `server.py` при `--hub` или `GRADO2_HUB=1`; `tests/test_hub.py`; консоль: adduser, passwd, invite, list |
+| `tglogin.py` | вход на общий сайт через Telegram: OpenID Connect (код + PKCE), проверка id_token по ключам Telegram | `server.py` (`/api/hub/tg/start`, `/api/hub/tg/callback`), `hub.py` (`Hub.tg_login`), `ui/src/panels/HubLogin.vue`, `tests/test_tglogin.py` |
 | `print_io.py` | листы и альбом в PDF, SVG и PPTX через рендер и вёрстку ядра | `server.py` (печать), `album_io.py`, `rail_icons.py`, `tests/test_t86_pptx_speed.py` |
 | `layout_io.py` | лист из «Макета листа» нового интерфейса в PDF и SVG, карта блока картинкой: карта — печать альбома, остальное — как рисует редактор | `server.py` (`/api/print/layout`, `/api/print/map_svg`; листы в проекте — ключ `layouts`, `save_project` его сохраняет), `ui/src/panels/sheetmaps.js`, `tests/test_layout_io.py` |
 | `fonts.py` | шрифты для подписей альбома: готовые, шрифты компьютера, свои файлы; OTF и TTC переводит в TTF для печати | `print_io.py` (семейство «f:<id>»), `server.py` (`/api/fonts`), `ui/src/panels/FontPicker.vue`, `tests/test_fonts.py` |
@@ -19,7 +20,7 @@
 | `ogd_all.py` | «Всё из ГИС ОГД в DWG»: все слои портала по области одним чертежом, с кэшем на диске | `server.py`, `ogd_warm.py`, `tests/test_ogd_all.py` |
 | `ogd_warm.py` | прогрев кэша ГИС ОГД; запускается таймером `grado-warm` на msk ночью в 00:30 UTC или вручную | `ogd_all.py`; службы — `tools/server_pull/grado-warm.*` |
 | `rail_icons.py` | значки метро, МЦК и МЦД для листов альбома: векторные контуры | `album_io.py`, `print_io.py`, `tests/test_t82_rail_icons.py` |
-| `requirements.txt` | зависимости Python: ezdxf, certifi, Pillow, shapely, httpx, tenacity, ReportLab, python-pptx, Starlette, uvicorn, pydantic | `ГРАДО 2.command`, `ГРАДО 2.bat`, `.github/workflows/grado2-release.yml` |
+| `requirements.txt` | зависимости Python: ezdxf, certifi, Pillow, shapely, httpx, tenacity, ReportLab, python-pptx, Starlette, uvicorn, pydantic, PyJWT с cryptography (вход через Telegram) | `ГРАДО 2.command`, `ГРАДО 2.bat`, `.github/workflows/grado2-release.yml` |
 | `requirements-dev.txt` | только для проверок: pytest | `tools/gate.sh`, `.claude/hooks/session-start.sh`, CI |
 | `web/` | браузерный код: страницы и скрипты без сборки; `web/vendor/` — сторонние библиотеки; `web/next/` — собранный новый интерфейс (не править руками) | `server.py` отдаёт файлы браузеру; `tests/*_js.py` запускают `*_test.js` через node |
 | `ui/` | исходники нового интерфейса (Vue 3, dockview, Web Awesome), сборка Vite в `web/next/`; там же редактор раскладки листа на Konva ([ui/README.md](ui/README.md)) | `tools/ui_check.sh`, `.github/workflows/grado2-release.yml` |
@@ -83,6 +84,8 @@
 - `GRADO2_HUB_DIR` — папка данных совместного режима; по умолчанию подпапка «.hub» внутри папки проектов.
 - `GRADO2_TOKEN` — ключ доступа: без куки `grado_token` или заголовка `X-Grado-Token` сервер отвечает только страницей входа; в совместном режиме не действует.
 - `GRADO2_GUEST` — `1` открывает совместный сайт без пароля под учётной записью «Гость».
+- `GRADO2_TG_CLIENT_ID`, `GRADO2_TG_CLIENT_SECRET` — вход через Telegram в совместном режиме (Client ID и Client Secret из @BotFather → бот → Login Widget); без них кнопки «Войти через Telegram» нет.
+- `GRADO2_TG_ADMINS` — через запятую id Telegram или @имена: такой человек входит через Telegram без приглашения, администратором.
 - `GRADO2_PUBLIC_HOST` — имя сайта за обратным прокси; без него запросы с этим именем считаются чужими (проверка Host и Origin).
 - `GRADO2_NO_BROWSER` — если задана и не пуста, сервер не открывает окно браузера.
 - `GRADO2_NO_DIALOG` — `1` отключает окно с ошибкой запуска на Windows (`packaging/grado2_entry.py`).

@@ -67,6 +67,7 @@ from grado_connectors.yandex_vmap import YandexVmap                # noqa: E402
 from grado_render import acad_lin                                  # noqa: E402
 import hub as hubmod                                               # noqa: E402  совместный режим (GRADO2_HUB=1)
 import catalog as catmod                                           # noqa: E402  каталог проектов: превью, избранное, корзина (SQLite)
+import tglogin                                                     # noqa: E402  вход на сайт через Telegram (OIDC)
 import portalgate                                                  # noqa: E402  очередь к порталам: одно место за раз (#51)
 
 WEB = ROOT / "web" if FROZEN else Path(__file__).resolve().parent / "web"
@@ -2134,7 +2135,7 @@ class Ctx:
             return None
         if method == "POST" and path in ("/api/hub/login", "/api/hub/register", "/api/hub/guest"):
             return None
-        if method == "GET" and path == "/api/hub/me":
+        if method == "GET" and path in ("/api/hub/me", "/api/hub/tg/start", tglogin.CALLBACK):
             return None
         if self.who():
             return None
@@ -2695,11 +2696,15 @@ def hub_get(c):
     q, path, u = c.query, c.route, c.who()
     if path == "/api/hub/me":
         if u:
-            return _json(200, {"user": u})
+            return _json(200, {"user": u, **({"tg": True} if tglogin.config() else {})})
         if GUEST and not c.cookie_value(NOGUEST_COOKIE):     # гостевой сайт: сразу внутрь, без экрана входа
             token, user = HUB.guest_session(c.headers.get("User-Agent") or "")
             return _json(200, {"user": user}, {"Set-Cookie": c.session_cookie(token, 2592000)})
-        return _json(401, {"error": "нужен вход", **({"guest": True} if GUEST else {})})
+        return _json(401, {"error": "нужен вход", **({"guest": True} if GUEST else {}), **({"tg": True} if tglogin.config() else {})})
+    if path == "/api/hub/tg/start":
+        return tg_start(c, u)
+    if path == tglogin.CALLBACK:
+        return tg_callback(c, u)
     if path == "/api/hub/users":
         return _json(200, {"users": HUB.list_users(u)})
     if path == "/api/hub/invites":
@@ -2767,6 +2772,67 @@ def hub_events(c, user, pid):
         finally:
             sub.close()
     return StreamingResponse(stream(), media_type="text/event-stream; charset=utf-8", headers={"X-Accel-Buffering": "no"})
+
+
+# ----- вход через Telegram (tglogin.py): /api/hub/tg/start → oauth.telegram.org → /api/hub/tg/callback -----
+# Ошибка входа — переход на страницу с #tg=<код> (заголовки только ASCII); текст по коду показывает экран входа (ui/src/hub.js).
+def _tg_host(c):
+    return os.environ.get("GRADO2_PUBLIC_HOST") or c.headers.get("Host") or ""
+
+
+def _tg_cookie(c, value, max_age):
+    return (f"{tglogin.STATE_COOKIE}={value}; Path=/api/hub/tg/; HttpOnly; SameSite=Lax; Max-Age={max_age}"
+            + ("; Secure" if c.tls() else ""))
+
+
+def _tg_back(c, code=None, session=None):
+    """Назад на страницу программы: с ошибкой (#tg=код) или с новой сессией; кука состояния гасится."""
+    cookies = [_tg_cookie(c, "", 0)]
+    if session:
+        cookies.append(c.session_cookie(session, 2592000))
+        if GUEST:
+            cookies.append(c.noguest_cookie(False))
+    r = Response(b"", 302, headers={"Location": "/next/" + (f"#tg={code}" if code else "")})
+    for v in cookies:
+        r.headers.append("Set-Cookie", v)
+    return r
+
+
+def tg_start(c, u):
+    cfg = tglogin.config()
+    if not cfg:
+        return _tg_back(c, "off")
+    bind = u["login"] if u and not u.get("guest") and c.q("bind") == "1" else None
+    url, cookie = tglogin.start(cfg, _tg_host(c), invite=c.q("invite")[:64] or None, bind=bind)
+    r = Response(b"", 302, headers={"Location": url})
+    r.headers.append("Set-Cookie", _tg_cookie(c, cookie, tglogin.STATE_TTL))
+    return r
+
+
+def tg_callback(c, u):
+    cfg = tglogin.config()
+    if not cfg:
+        return _tg_back(c, "off")
+    if c.q("error"):                                   # человек нажал «Отмена» в Telegram
+        return _tg_back(c, "denied")
+    try:
+        st = tglogin.check_state(cfg, c.cookie_value(tglogin.STATE_COOKIE), c.q("state"))
+        bind = st.get("b")
+        if bind and (u or {}).get("login") != bind:    # привязка — только тому, кто её начал и всё ещё вошёл
+            raise tglogin.TgError("state", "привязку начал другой вход")
+        person = tglogin.verify(cfg, tglogin.exchange(cfg, _tg_host(c), c.q("code")[:2000], st["v"]))
+        token, user = HUB.tg_login(person, c.client_ip(), c.headers.get("User-Agent") or "", invite=st.get("i"),
+                                   bind=bind, admin=tglogin.is_admin(cfg, person))
+    except tglogin.TgError as e:
+        c.log_fail(e)
+        return _tg_back(c, e.code)
+    except hubmod.HubError as e:
+        c.log_fail(e)
+        return _tg_back(c, e.code or ("busy" if e.status == 429 else "fail"))
+    except Exception as e:                             # сеть до Telegram и прочее: причина в журнале
+        c.log_fail(e)
+        return _tg_back(c, "net")
+    return _tg_back(c, "bound" if bind else None, None if bind else token)
 
 
 def hub_post(c):
