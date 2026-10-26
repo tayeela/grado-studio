@@ -55,10 +55,13 @@
         <wa-dropdown-item value="shp">SHP как в ГИС ОГД<span slot="details">МСК</span></wa-dropdown-item>
         <wa-dropdown-item value="xlsx">Excel: показатели ТЭП и листы<span slot="details">XLSX</span></wa-dropdown-item>
         <wa-divider></wa-divider>
-        <h4 class="menu-h">Альбом — во вкладке «Листы и альбом»</h4>
-        <wa-dropdown-item value="pdf" :disabled="!album.sheets">PDF альбома<span slot="details">{{ album.sheets ? "все листы" : "нет листов" }}</span></wa-dropdown-item>
+        <h4 class="menu-h">Листы</h4>
+        <wa-dropdown-item value="sheets" :disabled="!project.layouts?.length">Все листы в PDF<span slot="details">{{ project.layouts?.length ? plural(project.layouts.length, ["лист", "листа", "листов"]) : "нет листов" }}</span></wa-dropdown-item>
+        <wa-dropdown-item value="ogd">Слои порталов в DXF — по области<span slot="details">МСК</span></wa-dropdown-item>
+        <wa-divider></wa-divider>
+        <h4 class="menu-h">Альбом ППТ КРТ — во вкладке «Листы и альбом»</h4>
+        <wa-dropdown-item value="pdf" :disabled="!album.sheets">PDF альбома<span slot="details">{{ album.sheets ? "все листы" : "альбом не собран" }}</span></wa-dropdown-item>
         <wa-dropdown-item value="pptx" :disabled="!album.sheets">PPTX альбома<span slot="details">PowerPoint</span></wa-dropdown-item>
-        <wa-dropdown-item value="ogd">ГИС ОГД в DXF — по рамке листа<span slot="details">МСК</span></wa-dropdown-item>
       </wa-dropdown>
       <wa-button size="s" appearance="plain" title="Листы и альбом (Ctrl+P): сборка альбома ППТ КРТ, штамп, листы, PDF и PPTX — вкладкой справа от карты"
                  @click="winApi.open('album')"><Printer slot="start" :size="16" />Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
@@ -103,6 +106,15 @@
           </wa-dropdown>
         </div>
         <div class="tlabel">{{ g.title }}</div>
+      </div>
+      <!-- вид выделением (владелец 26.10.2026): выделил область на карте — вид готов, его ставят на лист -->
+      <div class="tgroup">
+        <div class="tbtns">
+          <wa-button size="s" appearance="plain" :disabled="!cad.ready" :class="{ on: vframes.draw === NEW }" aria-label="Вид выделением" data-act="view-by-sel"
+                     :title="cad.ready ? 'Вид выделением: тяните рамку на карте — выделенная область станет видом со слоями, как сейчас на карте. Вид ставят на лист' : 'Откройте окно «Карта»'"
+                     @click="vframes.draw === NEW ? (vframes.draw = '') : newViewBySelection()"><SquareDashedMousePointer :size="18" :stroke-width="1.6" /></wa-button>
+        </div>
+        <div class="tlabel">Вид</div>
       </div>
       <!-- без окна «Карта» команды черчения недоступны: серые кнопки объясняются здесь же -->
       <div v-if="!cad.ready" class="nomap">Команды черчения работают на карте:
@@ -168,7 +180,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
-import { ChevronDown, Undo2, Redo2, CircleHelp, Pencil, Printer, Sun, Moon } from "@lucide/vue";
+import { ChevronDown, Undo2, Redo2, CircleHelp, Pencil, Printer, SquareDashedMousePointer, Sun, Moon } from "@lucide/vue";
 import ProjectCatalog from "./panels/ProjectCatalog.vue";
 import CadModes from "./panels/CadModes.vue";
 import HubBar from "./panels/HubBar.vue";
@@ -179,6 +191,9 @@ import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
 import { exportDxf, exportGeojson, exportShp, exportXlsx } from "./exports.js";
 import { album, albumFile, albumHooks, ogdDxf } from "./albumhost.js";
 import { ogdResume, terrTool } from "./data.js";
+import { NEW, newViewBySelection, vframes } from "./viewframesmap.js";
+import { printAll } from "./panels/sheetmaps.js";
+import { plural } from "./geom.js";
 import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
 import { BASEMAPS, basemapId, current, cursor, mapOnly, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
@@ -370,6 +385,7 @@ function onExport(e) {
   const v = e.detail.item.value;
   if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "shp") exportShp(); else if (v === "xlsx") exportXlsx();
   else if (v === "pdf" || v === "pptx") albumFile(v); else if (v === "ogd") ogdDxf();
+  else if (v === "sheets") printAll(JSON.parse(JSON.stringify(project.layouts)), project.raw?.album?.meta || {}, project.name || "листы").catch(e => { notice.value = "PDF не собран: " + e.message; });
 }
 
 winApi.open = id => { const p = api?.getPanel(id); if (p) p.api.setActive(); else if (api) addOne(id); syncOpen(); };

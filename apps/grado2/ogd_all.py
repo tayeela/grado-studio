@@ -763,15 +763,21 @@ def scan(bbox, cache_dir, cat):
     return counts
 
 
+def _rgb_hex(c):
+    return c if isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c) else None
+
+
 # ---------- Фоновая выгрузка: одна за раз, состояние и отмена ----------
 class Job:
     """Одна фоновая выгрузка. Состояние читает GET /api/ogd_all/status."""
 
     def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None, codes=None, where="", redln=None,
-                 gate=None):
+                 gate=None, extra=None):
         """bbox WGS84 или sheet — лист МСК (см. build_drawing); styles(code) → CartoCSS слоя портала или None;
-        redln — типы линий REDLN97 (см. build_drawing); gate() — контекст очереди к порталу (portalgate.py), без него — сразу."""
-        self.gate = gate
+        redln — типы линий REDLN97 (см. build_drawing); gate() — контекст очереди к порталу (portalgate.py), без него — сразу.
+        extra — слои проекта не из каталога портала (ЕГКО, OSM, ЕГРН…): [{"title", "features": [GeoJSON WGS84], "color"?}],
+        каждый своим слоем чертежа после слоёв портала (26.10.2026: отмеченные ЕГКО не попадали в DXF, кнопка была серой)."""
+        self.gate, self.extra = gate, extra or []
         self.sheet, self.styles, self.codes, self.redln = sheet, styles, (set(codes) if codes is not None else None), redln
         bbox = sheet_bbox_wgs(sheet) if sheet else bbox
         self.bbox, self.boundary, self.cache_dir, self.out_dir = bbox, boundary, cache_dir, out_dir
@@ -782,6 +788,24 @@ class Job:
         self.cancel = threading.Event()
         self.file = None
         threading.Thread(target=self._run, daemon=True).start()
+
+    def _extra_layers(self, used):
+        """Слои проекта (extra) → слои чертежа «<название>»: объекты, обрезанные по области, без пустых."""
+        out = []
+        for lay in self.extra:
+            feats = []
+            for f in lay.get("features") or []:
+                g = clip_geometry(f.get("geometry"), self.bbox) if isinstance(f, dict) and f.get("geometry") else None
+                if g:
+                    feats.append({"geometry": g, "properties": f.get("properties") or {}})
+            if not feats:
+                continue
+            name = dxf_io.acad_name(_BAD.sub("_", str(lay.get("title") or "Слой")).strip(), _NAME_MAX) or "Слой"
+            while name.lower() in used:
+                name = f"{name[:_NAME_MAX - 4].strip()} ({len(used)})"
+            used.add(name.lower())
+            out.append({"code": "", "title": str(lay.get("title") or name), "dxf": name, "features": feats, "color": _rgb_hex(lay.get("color"))})
+        return out
 
     def _portal(self, fn, *args):
         """Один запрос к порталу — в очереди (одно место за раз, #51). Очередь берётся на слой, а не на всю выгрузку:
@@ -794,8 +818,8 @@ class Job:
     def _run(self):
         st = self.state
         try:
-            cat = self._portal(catalog)
-            todo = layer_list(cat, self.codes)
+            cat = self._portal(catalog) if self.codes is None or self.codes else []    # только слои проекта — портал не нужен
+            todo = layer_list(cat, self.codes) if cat else []
             st["total"] = len(todo)
 
             def tell(code, got, total, stage):
@@ -871,6 +895,8 @@ class Job:
                         it["color"] = own["style"]["stroke"] if own else lgr_color or portal_color(self.styles(it["code"]), it["features"][0]["geometry"]["type"])
                     except Exception:              # без цвета слой остаётся со своим номером цвета
                         pass
+            found += self._extra_layers({it["dxf"].lower() for it in found})
+            st["found"], st["objects"] = len(found), sum(len(it["features"]) for it in found)
             st.update(message="Сборка чертежа…")
             body, dwg = (build_drawing(found, self.boundary, sheet=self.sheet, redln=self.redln) if self.sheet
                          else build_drawing(found, self.boundary, self.bbox, redln=self.redln))

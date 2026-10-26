@@ -9,12 +9,12 @@
 <template>
   <div class="pane views">
     <div class="bar">
+      <wa-button size="s" variant="brand" :appearance="vframes.draw === NEW ? 'filled' : 'accent'" title="Выделите область на карте — она станет видом: слои и оформление как сейчас на карте" @click="newViewBySelection"><SquareDashedMousePointer :size="15" /> Вид выделением</wa-button>
       <wa-input size="s" placeholder="Название вида" title="Название нового вида, например «Ограничения»" :value="name" @input="e => (name = e.target.value)" @keydown.enter="add"></wa-input>
       <wa-checkbox size="s" :checked="withExt" title="Вид запомнит и масштаб карты" @change="e => (withExt = e.target.checked)">с масштабом</wa-checkbox>
-      <wa-button size="s" variant="brand" title="Запомнить видимые слои, их оформление и подложку" @click="add"><BookmarkPlus :size="15" /> Сохранить вид</wa-button>
+      <wa-button size="s" appearance="outlined" title="Запомнить видимые слои, их оформление и подложку, без рамки на карте" @click="add"><BookmarkPlus :size="15" /> Без рамки</wa-button>
     </div>
-
-    <p v-if="!project.views.length" class="hint">Видов пока нет: настройте карту и сохраните вид.<span class="gq" tabindex="0" role="note" title="Вид запоминает, какие слои видны, их стиль и подложку, например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком." aria-label="Вид запоминает, какие слои видны, их стиль и подложку, например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком.">?</span></p>
+    <p v-if="!project.views.length" class="hint">Видов пока нет. Вид — область карты с её слоями; нажмите «Вид выделением» и выделите область на карте. Вид ставят на лист.<span class="gq" tabindex="0" role="note" title="Вид запоминает, какие слои видны, их стиль и подложку, например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком." aria-label="Вид запоминает, какие слои видны, их стиль и подложку, например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком.">?</span></p>
     <table v-else class="vl">
       <tr v-for="v in project.views" :key="v.id" :class="{ cur: v.id === viewCur }" draggable="true" @dragstart="dragOut(v, $event)">
         <td class="nm" :title="`Показать вид «${v.name}»: ${plural(nOn(v), ['видимый слой', 'видимых слоя', 'видимых слоёв'])}${v.extent ? ', с масштабом' : ''}. Перетащите строку на лист в «Макете листа» — там встанет карта этого вида`" @click="show(v)">
@@ -43,7 +43,8 @@
       </table>
     </template>
 
-    <p v-if="vframes.draw" class="hint drawing">Тяните рамку на карте для вида «{{ viewOf(vframes.draw)?.name }}». Shift — без пропорций, Esc — отмена.</p>
+    <p v-if="vframes.draw === NEW" class="hint drawing">Выделите область на карте: тяните от угла до угла. Esc — отмена.</p>
+    <p v-else-if="vframes.draw" class="hint drawing">Тяните рамку на карте для вида «{{ viewOf(vframes.draw)?.name }}». Shift — без пропорций, Esc — отмена.</p>
 
     <template v-if="fv">
       <div class="sect">Рамка вида «{{ fv.name }}»</div>
@@ -80,11 +81,11 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { BookmarkPlus, Eye, Frame, RefreshCw, Scan, Trash2 } from "@lucide/vue";
+import { BookmarkPlus, Eye, Frame, RefreshCw, Scan, SquareDashedMousePointer, Trash2 } from "@lucide/vue";
 import { ASPECTS, frameLabel, ratioOf, withRatio, VIEW_MIME } from "../viewframes.js";
-import { ALB, frameFromExtent, vframes, viewOf } from "../viewframesmap.js";
+import { ALB, NEW, captureView, frameFromExtent, newViewBySelection, vframes, viewOf } from "../viewframesmap.js";
 import { album } from "../albumhost.js";
-import { basemapId, project, setBasemap, viewCur, viewNow } from "../store.js";
+import { project, setBasemap, viewCur } from "../store.js";
 import LayerSwatch from "./LayerSwatch.vue";
 import { dataRev, grp, mapApi } from "../edit.js";
 import { notice } from "../project.js";
@@ -95,12 +96,7 @@ const name = ref(""), withExt = ref(false), confirmId = ref("");
 const clone = o => JSON.parse(JSON.stringify(o));
 const nOn = v => v.layers.filter(x => x.visible).length;
 
-function capture(title, ext) {
-  return { id: "v" + Date.now().toString(36), name: title, basemap: basemapId.value,
-    layers: project.layers.map(l => ({ key: l.key, visible: l.visible, style: clone(l.style), layerOpacity: l.layerOpacity })),
-    groups: project.groups.map(g => ({ id: g.id, visible: g.visible })),
-    extent: ext && viewNow.center ? { center: [...viewNow.center], zoom: viewNow.zoom } : null };
-}
+const capture = captureView;
 function add() {
   const t = name.value.trim() || `Вид ${project.views.length + 1}`, v = capture(t, withExt.value);
   project.views.push(v); viewCur.value = v.id; name.value = "";

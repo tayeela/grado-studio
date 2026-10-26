@@ -529,20 +529,20 @@ async function ogdTick() {
   if (!st.file) { notice.value = st.message || "Выгрузка ГИС ОГД остановлена."; return; }
   const a = document.createElement("a"); a.href = "/api/ogd_all/file"; a.download = st.file; document.body.appendChild(a); a.click(); a.remove();
   const miss = (st.errors || []).map(e => "«" + String(e).split(": ")[0] + "»");
-  notice.value = `ГИС ОГД готово по ${st.where || ogd.where}: ${plural(st.found || 0, ["слой", "слоя", "слоёв"])}, ${plural(st.objects || 0, ["объект", "объекта", "объектов"])}. `
+  notice.value = `DXF готов по ${st.where || ogd.where}: ${plural(st.found || 0, ["слой", "слоя", "слоёв"])}, ${plural(st.objects || 0, ["объект", "объекта", "объектов"])}. `
     + (st.dwg ? "В архиве DWG, DXF" : "В архиве DXF (в AutoCAD — вкладка листа с видовым экраном)") + " и таблицы атрибутов."
     + (miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : "") + " Файл — в папке загрузок браузера.";
 }
 export function watchOgd() { clearInterval(ogdT); ogd.running = true; ogdT = setInterval(ogdTick, 1500); ogdTick(); }
 /* запуск: codes — коды слоёв портала; занятый сервер («уже идёт») — показываем ход той выгрузки */
-export async function startOgd(req, codes) {
+export async function startOgd(req, codes, extra = []) {
   ogd.where = req.where;
-  try { await api("/api/ogd_all/start", { ...(req.sheet ? { sheet: req.sheet } : { bbox: req.bbox }), codes, where: req.where, boundary: req.boundary || null, name: req.name }); }
+  try { await api("/api/ogd_all/start", { ...(req.sheet ? { sheet: req.sheet } : { bbox: req.bbox }), codes, extra, where: req.where, boundary: req.boundary || null, name: req.name }); }
   catch (e) {
     if (/уже идёт|already/i.test(e.message)) { notice.value = "Выгрузка ГИС ОГД уже идёт — показываю её ход. Новая начнётся, когда эта закончится."; watchOgd(); return false; }
     notice.value = "Выгрузка ГИС ОГД не началась: " + e.message; return false;
   }
-  notice.value = `Выгрузка всех отмеченных слоёв ГИС ОГД по ${req.where}. Ход — в окне «Данные»; работать можно дальше.`;
+  notice.value = `Выгрузка отмеченных слоёв в DXF по ${req.where}. Ход — в окне «Данные»; работать можно дальше.`;
   watchOgd(); return true;
 }
 /* без листа альбома на карте — по области загрузки (граница, рамки видов или своя рамка), как у кнопки «Загрузить» (16.10.2026) */

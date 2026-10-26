@@ -164,7 +164,7 @@ export async function ogdDxf() {
   let r = null;
   if (album.sheets) try { r = await Promise.race([call(a => a.ogdSheet(album.cur)), new Promise(ok => setTimeout(() => ok(null), 15000))]); } catch { r = null; }
   r ||= areaOgdReq();
-  if (!r) { notice.value = "ГИС ОГД в DXF: сначала нарисуйте границу территории или рамку вида — по ней выгружаются слои"; albumHooks.data(); return; }
+  if (!r) { notice.value = "Слои в DXF: сначала нарисуйте границу территории или вид — по ним выгружаются слои"; albumHooks.data(); return; }
   ogd.req = JSON.parse(JSON.stringify(r)); albumHooks.data();
 }
 
