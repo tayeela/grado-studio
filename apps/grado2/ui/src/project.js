@@ -45,7 +45,7 @@ export const hooks = { touched: () => {}, shared: () => {} };
 /* проект с сервера совместной работы: открыт, своих несохранённых правок нет */
 export async function loadShared(p, name) { await load(p, name || "", "hub"); project.file = null; dirty.value = false; loadError.value = ""; }
 export function markClean() { dirty.value = false; autoTick = tick; }
-export const editTick = () => tick;   // номер последней правки: окно «Листы и альбом» (albumhost.js) знает, видело ли оно её
+export const editTick = () => tick;   // номер последней правки: окно «Листы» (albumhost.js) знает, видело ли оно её
 watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, () => project.layouts, basemapId, dataRev, graphRev], markDirty, { deep: true });
 
 async function load(p, name, source) {

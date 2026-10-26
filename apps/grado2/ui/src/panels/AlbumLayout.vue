@@ -30,7 +30,7 @@
         <canvas ref="rulerY" class="al-ry" title="Тяните вправо — вертикальная направляющая" @pointerdown="rulerDown('x', $event)"></canvas>
         <div ref="stage" class="al-stage" :class="{ busy, adding, pan: panning }" @pointerdown="down" @pointermove="hover" @pointerleave="cursor = null" @wheel.prevent="wheel">
           <div ref="paper" class="al-paper" :style="paperStyle"></div>
-          <p v-if="!sheet" class="al-empty">Выберите лист во вкладке «Листы и альбом» и нажмите «Надписи».</p>
+          <p v-if="!sheet" class="al-empty">Выберите лист во вкладке «Листы» и нажмите «Надписи».</p>
           <p v-else-if="err" class="al-empty">Лист не собран: {{ err }}</p>
         </div>
       </div>

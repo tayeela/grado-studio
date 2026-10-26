@@ -3,20 +3,20 @@
      (albumapi preview → /api/print/svg, album_io.build_pptkrt): что на экране, то и на бумаге. Карта листа — рамка на карте,
      общая с рамками видов (viewframesmap.js, id «alb:…»): «Рамка на карте» выбирает её и приближает; сдвиг рамки или масштаб
      за угол — и картинка перерисуется. Надписи листа правит окно «Макет надписей» (AlbumLayout.vue), остальные свойства —
-     вкладка «Листы и альбом». -->
+     вкладка «Листы». -->
 <template>
   <div class="asv">
-    <div class="asv-bar" role="toolbar" aria-label="Лист альбома">
+    <div class="asv-bar" role="toolbar" aria-label="Лист ППТ КРТ">
       <span class="asv-t" :title="title">{{ title }}</span>
       <button class="asv-b" :disabled="!frame" title="Выбрать рамку листа на карте и приблизить к ней: тянуть внутри — сдвиг, за угол — масштаб" @click="showFrame"><Frame :size="15" :stroke-width="1.7" />Рамка на карте</button>
       <button v-if="sheet?.kind !== 'tep'" class="asv-b" title="Двигать, выравнивать и править надписи листа — окно «Макет надписей»" @click="openLay"><Type :size="15" :stroke-width="1.7" />Надписи</button>
-      <button class="asv-b" :disabled="busy" title="PDF только этого листа — та же печать, что у альбома" @click="pdf"><FileDown :size="15" :stroke-width="1.7" />PDF листа</button>
-      <button class="asv-b" title="Слои листа, формат, масштаб, штамп — вкладка «Листы и альбом»" @click="props"><SlidersHorizontal :size="15" :stroke-width="1.7" />Свойства</button>
+      <button class="asv-b" :disabled="busy" title="PDF только этого листа" @click="pdf"><FileDown :size="15" :stroke-width="1.7" />PDF листа</button>
+      <button class="asv-b" title="Слои листа, формат, масштаб, штамп — вкладка «Листы»" @click="props"><SlidersHorizontal :size="15" :stroke-width="1.7" />Свойства</button>
       <span class="asv-st" :class="{ warn: err }">{{ err || (busy ? "Лист рисуется…" : "") }}</span>
     </div>
     <div class="asv-page">
       <img v-if="url" :src="url" :alt="title" class="asv-img" :class="{ dim: busy }">
-      <p v-else class="asv-hint">{{ busy ? "Лист рисуется той же печатью, что и PDF альбома…" : err ? "" : "Лист альбома" }}</p>
+      <p v-else class="asv-hint">{{ busy ? "Лист рисуется той же печатью, что и PDF…" : err ? "" : "Лист ППТ КРТ" }}</p>
     </div>
   </div>
 </template>

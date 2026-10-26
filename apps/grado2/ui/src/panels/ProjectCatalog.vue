@@ -65,7 +65,7 @@ import { copyProject, listProjects, listTrash, projDir, projects, renameProject,
 const props = defineProps({ open: Boolean });
 const emit = defineEmits(["close", "open", "new", "file"]);
 
-const FILTERS = [["all", "Все"], ["star", "Избранные"], ["album", "С альбомом"]];
+const FILTERS = [["all", "Все"], ["star", "Избранные"], ["album", "С листами ППТ КРТ"]];
 const KEY = "grado-catalog";
 const pref = reactive((() => { try { return { filter: "all", ord: "modified", ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { return { filter: "all", ord: "modified" }; } })());
 function setPref(k, v) { pref[k] = v; try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch { /* частный режим браузера */ } }
@@ -93,7 +93,7 @@ function when(t) {
   return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
 }
 const size = b => b >= 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} МБ` : `${Math.max(1, Math.round((b || 0) / 1024))} КБ`;
-const subOf = p => [`изменён ${when(p.modified)}`, size(p.size), +p.album_n ? `альбом ${p.album_n} л.` : ""].filter(Boolean).join(" · ");
+const subOf = p => [`изменён ${when(p.modified)}`, size(p.size), +p.album_n ? `ППТ КРТ ${p.album_n} л.` : ""].filter(Boolean).join(" · ");
 
 async function doRename(name, to) { ren.value = null; await renameProject(name, to); }
 async function toggleTrash() { tab.value = tab.value === "trash" ? "all" : "trash"; if (tab.value === "trash") listTrash().catch(() => {}); }

@@ -34,7 +34,7 @@
       Листов с этим видом: {{ usedBy(confirmId).length }} — они перейдут на текущую карту.</template></p>
 
     <template v-if="album.frames?.length">
-      <div class="sect">Листы альбома ППТ КРТ</div>
+      <div class="sect">Листы ППТ КРТ</div>
       <table class="vl">
         <tr v-for="f in album.frames" :key="f.id" :class="{ cur: vframes.sel === ALB + f.id }">
           <td class="nm" :title="`${f.title || f.label}. Рамка листа на карте — серым пунктиром, как рамка вида: тяните внутри — сдвиг, за угол — масштаб`" @click="showSheet(f)">

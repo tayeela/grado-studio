@@ -190,7 +190,7 @@ class NextUi(unittest.TestCase):
         self.assertLess(html.index('src="embed.js"'), html.index('src="app.js"'))      # класс embed и EMBED — до скриптов страницы
         self.assertLess(html.index('src="albums.js"'), html.index('src="albumapi.js"'))
         app = (src / "App.vue").read_text(encoding="utf-8")
-        for k in ("albumFile(v)", "ogdDxf()", "winApi.open('album')", '{ id: "album", title: "Листы и альбом" }'):
+        for k in ("albumFile(v)", "ogdDxf()", "winApi.open('album')", '{ id: "album", title: "Листы" }'):
             self.assertIn(k, app)
 
     def test_one_logic_for_sheets_and_frames(self):
@@ -201,6 +201,16 @@ class NextUi(unittest.TestCase):
         self.assertIn("blank: true", panel)
         self.assertIn('winApi.open("sheet")', panel)
         self.assertNotIn('value="A1">Лист A1', panel)                    # прежнее «Добавить лист» по формату ушло
+        # 26.10.2026 («да» владельца): альбом ППТ КРТ — обычные листы: один список с номерами подряд, «Новый лист ▾» —
+        # пустой или листы по правилам ППТ КРТ, «PDF» — все листы одним файлом (листы «Макета листа» — после листов ППТ КРТ)
+        self.assertNotIn("albsec", panel)
+        self.assertIn('<wa-dropdown-item value="blank">Пустой лист', panel)
+        self.assertIn('<wa-dropdown-item value="pptkrt"', panel)
+        self.assertIn("{{ sheets.length + i + 1 }}", panel)
+        self.assertIn("a.file(kind, i, more)", panel)
+        self.assertIn("file(kind, i, extra) { return albumFile(kind, sheetAt(i), true, extra); }", (NEXT.parent / "albumapi.js").read_text(encoding="utf-8"))
+        self.assertIn("{ layouts: extra }", (NEXT.parent / "sheets.js").read_text(encoding="utf-8"))
+        self.assertNotIn("Листы и альбом", (src / "App.vue").read_text(encoding="utf-8"))
         self.assertIn("sheetNav.tick", (src / "panels" / "SheetPanel.vue").read_text(encoding="utf-8"))
         frames, data = (src / "viewframesmap.js").read_text(encoding="utf-8"), (src / "data.js").read_text(encoding="utf-8")
         self.assertIn("setCover(f)", frames)
@@ -237,7 +247,7 @@ class NextUi(unittest.TestCase):
         # открываются картинкой той же печати, что PDF альбома (albumapi preview), карта листа — общая рамка «alb:…»
         src = NEXT.parents[1] / "ui" / "src"
         panel = (src / "panels" / "SheetPanel.vue").read_text(encoding="utf-8")
-        self.assertIn('label="Альбом ППТ КРТ"', panel)
+        self.assertIn("{{ a.t }} · ППТ КРТ</option>", panel)            # с 26.10.2026 — одним списком, номера сквозные
         self.assertIn('<AlbumSheetView v-if="acur >= 0"', panel)
         self.assertIn("id.startsWith(ALB)", panel)                         # «В макете листа» из вкладки: sheetNav.id = «alb:<id>»
         view = (src / "sheet" / "AlbumSheetView.vue").read_text(encoding="utf-8")

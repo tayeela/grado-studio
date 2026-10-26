@@ -701,7 +701,7 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
   window.markDirty?.(); renderSheets();
   const lostT = lost.length ? `Листы собраны без части данных: ${lost.join("; ")}. ` : "";
   toast(stopped ? `${lostT}Сборка остановлена: готово ${nDone} из ${sheets.length} листов — «${name}», остальные листы прежние (если были). Чтобы собрать всё, запустите сборку снова.`
-    : `${lostT}${name}: ${sheets.length} листов, формат «${SIZE_T[size] || size}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
+    : `${lostT}${name}: ${sheets.length} листов, формат «${SIZE_T[size] || size}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF» в окне «Листы» — выгрузка; рамку любого листа можно сдвинуть.`);
 }
 // прямоугольник рамки листа в градусах (как frameGeom)
 function frameBox(sh) { const g = frameGeom(sh).clone(); g.transform("EPSG:3857", "EPSG:4326"); return g.getExtent(); }
@@ -722,7 +722,7 @@ async function previewSheet(i) {
 // карты — фигурами по слоям, снимки — рисунками)
 let buildingN = 0;      // идущие сборки; пока >0, пункты PDF и PPTX в меню «Выгрузка» серые (app.js: expSync)
 const setBuilding = on => { buildingN += on ? 1 : -1; window.albumBuilding = buildingN > 0; if (!$("expMenu").hidden) window.expSync?.(); };
-const albumFile = (kind, only, force) => track(() => albumFile0(kind, only, force));
+const albumFile = (kind, only, force, extra) => track(() => albumFile0(kind, only, force, extra));
 // T74: что не готово до выгрузки. Пустой слой в рамке листа считается по уже загруженным данным (ничего не скачивается)
 function emptyInFrame(sh) {
   if (sh.frozen || sh.panels || ["tep", "title", "photos"].includes(sh.kind)) return [];
@@ -737,7 +737,8 @@ function exportIssues(kind, only) {
     const i = ALBUM.sheets.indexOf(s), why = [NOTREADY.get(s.id), FITWHY.get(s.id), LOSTNOTE.has(s.id) ? "часть слоёв не загрузилась при сборке" : ""].filter(Boolean).join("; ");
     return { i, title: s.title, why, photos: s.kind === "photos" ? (s.photos || []).length : null, empty: emptyInFrame(s) }; }) });
 }
-async function albumFile0(kind = "pdf", only = null, force = false) {
+// extra — листы «Макета листа» нового интерфейса ({meta, sheets: [{sheet, maps}]}): «Все листы в PDF» кладёт их после листов ППТ КРТ
+async function albumFile0(kind = "pdf", only = null, force = false, extra = null) {
   if (!ALBUM.sheets.length) return toast("В альбоме нет листов: «Добавить лист».");
   if (!force) { const lines = exportIssues(kind, only); if (lines.length) return askExport(kind, only, lines); }
   const list = only ? [only] : ALBUM.sheets;
@@ -748,13 +749,13 @@ async function albumFile0(kind = "pdf", only = null, force = false) {
   const poll = setInterval(async () => { try { const p = await (await fetch("/api/print/progress")).json();
     if (p && p.kind === kind && p.total) bpStep(`${KN}: лист ${Math.min(p.got + 1, p.total)} из ${p.total}${p.got >= p.total ? " — сборка файла" : ""}…`); } catch { } }, 1000);
   try {
-    const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(list)) });
+    const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...albumSpec(list), ...(extra && kind === "pdf" && !only ? { layouts: extra } : {}) }) });
     if (!r.ok) throw new Error((await r.json()).error);
     const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = (only ? only.title : ALBUM.meta.object || PROJ.name || "альбом") + "." + kind; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     if (!only) stampAlbum(kind === "pdf" ? "pdfAt" : "pptxAt");
     // листы «не готов»: что-то не поместилось, а мельчить и обрывать молча нельзя — пометка серым внизу листа
     const nr = readFit(r, list);                    // «лист 6: легенда из 23 позиций не помещается — …; лист 10: …»
-    toast((only ? `Лист «${only.title}» — PDF.` : kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
+    toast((only ? `Лист «${only.title}» — PDF.` : kind === "pdf" ? `PDF: ${ALBUM.sheets.length + (extra && !only ? extra.sheets.length : 0)} л. Координаты — МСК, красные линии — типами REDLN97.`
       : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`)
       + (nr ? ` Не готовы: ${nr}. Причина — и серым внизу листа.` : "")
       + (list.some(s => LAYOUTQA.has(s.id)) ? ` Проверка оформления: ${list.reduce((n, s) => n + (LAYOUTQA.get(s.id)?.n || 0), 0)} подписей на линиях, под надписями или у рамки — список в строке альбома.` : "")

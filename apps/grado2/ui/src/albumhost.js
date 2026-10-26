@@ -1,4 +1,4 @@
-/* ГРАДО 2 · окно «Листы и альбом»: связь с движком альбома — рабочей страницей /old?embed=album (web/embed.js, albumapi.js).
+/* ГРАДО 2 · окно «Листы»: связь с движком альбома — рабочей страницей /old?embed=album (web/embed.js, albumapi.js).
    Движок без изменений (web/sheets.js, albums.js, frames.js, layout.js, ogdpick.js) собирает альбом тем же кодом, что и
    прежде, лист в лист. Он работает скрыто — невидимой рамкой iframe внутри нового интерфейса, а весь экран альбома —
    вкладка panels/AlbumPanel.vue, рамки листов на карте (те же рамки, что у видов, — viewframesmap.js) и «Макет надписей» (AlbumLayout.vue). Отдельного
@@ -18,7 +18,7 @@ const { split } = collabMod.default || collabMod;
 /* open — движок загружен; rev — номер приёма правок движка (окно перечитывает альбом) */
 export const album = reactive({ lay: null, layTick: 0, open: false, ready: false, sheets: 0, rev: 0, say: "", want: null,   // want — выгрузка из меню, ждёт вкладку
   tab: false, cur: 0, fit: 0, frames: [] });   // вкладка на виду, выбранный лист, «приблизить к рамке», рамки листов (viewframesmap.js)
-/* App.vue подставляет: «Сохранить» (Ctrl+S в окне альбома), открыть другой проект и показать вкладку «Листы и альбом» */
+/* App.vue подставляет: «Сохранить» (Ctrl+S в окне альбома), открыть другой проект и показать вкладку «Листы» */
 export const albumHooks = { save: async () => {}, open: () => {}, panel: () => {}, data: () => {} };
 
 let win = null, frame = null, base = null, seenTick = -1, firstPush = true, timer = null, waiting = [];
@@ -54,7 +54,7 @@ function push(force) {
     album.sheets = p.album?.sheets?.length || 0;
   } catch (e) {
     console.warn("albumhost: проект не передан", e);
-    notice.value = "Окно «Листы и альбом» не получило проект: " + e.message;
+    notice.value = "Окно «Листы» не получило проект: " + e.message;
   }
   role();
 }
@@ -141,7 +141,7 @@ export function editSheet(i, patch) {
 export const engineState = () => live() && album.ready ? win.albumApi?.state() : null;
 export const startEngine = () => engine();
 /* Рамки листов альбома — те же рамки, что у видов (viewframesmap.js): пока открыты «Виды» или «Макет листа», движок
-   запускается (если в проекте есть листы) и рамки перечитываются раз в секунду, как во вкладке «Листы и альбом». */
+   запускается (если в проекте есть листы) и рамки перечитываются раз в секунду, как во вкладке «Листы». */
 let fpoll = 0, lastFrames = "";
 function pollFrames() {
   const f = engineState()?.frames; if (!f) return;
@@ -154,7 +154,7 @@ export function wantFrames(on) {
   pollFrames(); fpoll = setInterval(pollFrames, 1000);
 }
 
-/* PDF и PPTX из меню «Выгрузка» — вкладка «Листы и альбом» (там видно ход выгрузки и вопрос «не всё готово»). */
+/* PDF и PPTX из меню «Выгрузка» — вкладка «Листы» (там видно ход выгрузки и вопрос «не всё готово»). */
 export const albumFile = kind => { album.want = kind; albumHooks.panel(); };
 /* «Выгрузка» → «ГИС ОГД в DXF»: лист — выбранный во вкладке (если он на карте) или последний на карте; окно «Данные» открывает
    «Исходные данные» в режиме DXF (слои портала по рамке листа), выгрузку ведёт data.js startOgd. Идёт выгрузка — пункт её останавливает. */

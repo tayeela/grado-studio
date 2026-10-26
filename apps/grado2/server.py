@@ -2463,7 +2463,14 @@ def _album(kind, render, ctype):
         req = c.obj()
         prog = lambda got, total: PRINT_PROGRESS.update(kind=kind, got=got, total=total)
         try:
-            body = getattr(print_io, render)(req, REDLN, LGR_DASH, esri_tile, prog)
+            more = req.get("layouts") if kind == "pdf" and isinstance(req.get("layouts"), dict) else None
+            if more:   # «Все листы в PDF»: листы ППТ КРТ, за ними листы «Макета листа» — одним файлом
+                import layout_io
+                pages = print_io._pages(req, REDLN, LGR_DASH, esri_tile, prog)
+                more = {**more, "skip": len(pages)}
+                body = print_io.PdfBackend(None).render(pages + layout_io.build_pages(more, REDLN, LGR_DASH, esri_tile))
+            else:
+                body = getattr(print_io, render)(req, REDLN, LGR_DASH, esri_tile, prog)
         finally:
             PRINT_PROGRESS.clear()
         return _file(body, ctype, f"grado2-album.{kind}", not_ready_headers(req))   # листы «не готов»: номера и причины (ASCII)
