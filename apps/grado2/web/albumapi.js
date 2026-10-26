@@ -82,8 +82,9 @@
     stop() { if (BP.on && BP.canStop) { BP.stop = true; BP.stopAt = BP.cur; bpShow(); syncBusy(); } },
     /* что проверить до выгрузки: [{ text, sheet?, stamp? }]; пусто — можно выгружать */
     issues(kind, i) { return exportIssues(kind, sheetAt(i)); },
-    /* PDF или PPTX: всего альбома (i не задан) или одного листа; вопрос «не всё готово» окно уже задало */
-    file(kind, i) { return albumFile(kind, sheetAt(i), true); },
+    /* PDF или PPTX: всего альбома (i не задан) или одного листа; вопрос «не всё готово» окно уже задало;
+       extra — листы «Макета листа» после листов ППТ КРТ в том же PDF */
+    file(kind, i, extra) { return albumFile(kind, sheetAt(i), true, extra); },
     /* картинка листа (SVG той же печати) — адрес blob: для <img> окна */
     async preview(i) {
       const s = sheetAt(i); if (!s) return null;

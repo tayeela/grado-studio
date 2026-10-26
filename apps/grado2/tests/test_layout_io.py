@@ -101,6 +101,21 @@ class LayoutPrint(unittest.TestCase):
         with self.assertRaises(ValueError):
             layout_io.render_pdf({"sheets": []}, S.REDLN, S.LGR_DASH)
 
+    def test_empty_sheets_after_ppt_krt_sheets_in_one_pdf(self):
+        # «Все листы в PDF» (владелец 26.10.2026: альбом ППТ КРТ — обычные листы): /api/print/pdf с layouts — листы ППТ КРТ,
+        # за ними листы «Макета листа»; их номера в штампе продолжают номера листов ППТ КРТ
+        from test_print import sheet
+        one = spec(title="Пустой лист")
+        lay = {"meta": one["meta"], "sheets": [{"sheet": one["sheet"], "maps": one["maps"]}]}
+        texts = [o["text"] for o in layout_io.build_pages({**lay, "skip": 2}, S.REDLN, S.LGR_DASH)[0][2] if o["op"] == "text"]
+        self.assertIn("3", texts)                                        # «Лист 3» из 3
+        req = {"meta": {"object": "Хорошёво"}, "sheets": [sheet(), sheet(title="Эскиз")], "layouts": lay}
+        c = type("C", (), {"obj": lambda self: req})()
+        pdf = S.POST_ROUTES["/api/print/pdf"](c).body
+        self.assertEqual(pdf.count(b"/Type /Page") - pdf.count(b"/Type /Pages"), 3)
+        alone = S.POST_ROUTES["/api/print/pdf"](type("C", (), {"obj": lambda self: {k: v for k, v in req.items() if k != "layouts"}})()).body
+        self.assertEqual(alone.count(b"/Type /Page") - alone.count(b"/Type /Pages"), 2)
+
     def test_single_sheet_keeps_its_number(self):
         s = {**spec(), "page": {"page_no": 3, "page_total": 4}}
         texts = [o["text"] for o in layout_io.build_page(s, S.REDLN, S.LGR_DASH)[2] if o["op"] == "text"]

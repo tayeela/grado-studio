@@ -3,8 +3,8 @@
      удалить, все листы одним PDF; листы — часть проекта (store.js project.layouts, ключ layouts файла): правка листа — правка
      проекта, её держит автосохранение и пишет «Сохранить», как и правки слоёв (project.js). Карта блока — настоящая карта проекта в масштабе блока, «PDF»
      печатает лист тем же рендером, что альбом (sheetmaps.js). Штамп берёт поля альбома (album.meta файла). Новый
-     лист пустой (без заготовки): карту рисуют на листе и выбирают ей вид. Листы альбома ППТ КРТ — в том же списке, группой
-     «Альбом ППТ КРТ»: открываются картинкой той же печати, что PDF альбома (sheet/AlbumSheetView.vue). Те же листы списком — в окне «Листы и альбом»
+     лист пустой (без заготовки): карту рисуют на листе и выбирают ей вид. Листы по правилам ППТ КРТ — в том же списке первыми,
+     номера сквозные (владелец 26.10.2026: одно слово «лист»): открываются картинкой той же печати, что их PDF (sheet/AlbumSheetView.vue). Те же листы списком — в окне «Листы»
      (AlbumPanel.vue): оттуда «Новый лист» и щелчок по листу открывают его здесь (store.js sheetNav). Удаление листа — через диалог Web Awesome.
      Блок карты с видом (#119) следует за рамкой вида: сдвинули или растянули рамку на карте — листы с этим видом
      меняются сами (sheetmaps.js sync); пока окно открыто, рамки видов видны на карте (viewframesmap.js). -->
@@ -12,14 +12,9 @@
   <div class="spn">
     <div class="spn-bar" role="toolbar" aria-label="Листы макета">
       <span class="spn-cap">Лист</span>
-      <select class="spn-sel" :value="acur >= 0 ? 'a' + acur : String(cur)" aria-label="Лист макета" @change="pick($event.target.value)">
-        <optgroup v-if="albumList.length" label="Листы проекта">
-          <option v-for="(s, i) in sheets" :key="s.id" :value="String(i)">{{ i + 1 }}. {{ s.title || 'без названия' }}</option>
-        </optgroup>
-        <template v-else><option v-for="(s, i) in sheets" :key="s.id" :value="String(i)">{{ i + 1 }}. {{ s.title || 'без названия' }}</option></template>
-        <optgroup v-if="albumList.length" label="Альбом ППТ КРТ">
-          <option v-for="a in albumList" :key="a.id" :value="'a' + a.i">{{ a.t }}</option>
-        </optgroup>
+      <select class="spn-sel" :value="acur >= 0 ? 'a' + acur : String(cur)" aria-label="Лист" @change="pick($event.target.value)">
+        <option v-for="a in albumList" :key="a.id" :value="'a' + a.i">{{ a.t }} · ППТ КРТ</option>
+        <option v-for="(s, i) in sheets" :key="s.id" :value="String(i)">{{ albumList.length + i + 1 }}. {{ s.title || 'без названия' }}</option>
       </select>
       <button class="spn-b" title="Новый пустой лист А3: карту и остальное ставите сами" @click="add()"><FilePlus2 :size="15" :stroke-width="1.7" />Новый</button>
       <button class="spn-b" :disabled="acur >= 0" title="Копия этого листа" @click="add(sheets[cur])"><Copy :size="15" :stroke-width="1.7" />Копия</button>
@@ -35,7 +30,7 @@
     </wa-dialog>
     <AlbumSheetView v-if="acur >= 0" :i="acur" class="spn-ed" />
     <SheetEditor v-else :key="sheets[cur].id" v-model="sheets[cur]" :maps="maps" :meta="meta()"
-      :page="{ page_no: cur + 1, page_total: sheets.length }" class="spn-ed" />
+      :page="{ page_no: albumList.length + cur + 1, page_total: albumList.length + sheets.length }" class="spn-ed" />
   </div>
 </template>
 
@@ -44,7 +39,7 @@ import { computed, ref, reactive, toRaw, watch, onMounted, onBeforeUnmount } fro
 import { FilePlus2, Copy, Trash2, FileDown } from "@lucide/vue";
 import SheetEditor from "../sheet/SheetEditor.vue";
 import AlbumSheetView from "../sheet/AlbumSheetView.vue";
-import { album } from "../albumhost.js";
+import { album, albumFile } from "../albumhost.js";
 import { newSheet, newId } from "../sheet/model.js";
 import { project, sheetNav } from "../store.js";
 import { mapImage, here, legendItems, printPdf, printAll, views, sync, frameTo, frameScale, ownView } from "./sheetmaps.js";
@@ -56,12 +51,12 @@ const sheets = ref([]), cur = ref(0), askDrop = ref(false);
 /* листы альбома ППТ КРТ — в том же списке (шаг 2 переноса альбома): открываются картинкой той же печати (AlbumSheetView.vue) */
 const acur = ref(-1);
 const albumList = computed(() => (album.rev, album.sheets, (project.raw?.album?.sheets || []).map((s, i) => {
-  const n = `Лист ${i + 1}`; return { id: s.id, i, t: s.title && s.title !== n ? `${n}. ${s.title}` : n };
+  const n = `Лист ${i + 1}`; return { id: s.id, i, t: `${i + 1}. ${s.title && s.title !== n ? s.title : n}` };
 })));
 function pick(v) { if (v.startsWith("a")) acur.value = +v.slice(1); else { acur.value = -1; cur.value = +v; } }
 // лист альбома открыли, а его уже нет (пересобрали, удалили) — к листам проекта
 watch(() => albumList.value.length, n => { if (acur.value >= n) acur.value = -1; });
-const HINT = "Те же листы — в окне «Листы и альбом». Карта листа — рамка вида на карте (окно «Виды»): перетащите вид на лист, встанет карта с местом и масштабом по рамке. Карту можно и нарисовать кнопкой «Карта» на ленте, вид ей выбирают в «Свойствах».";
+const HINT = "Те же листы — в окне «Листы»: сначала листы ППТ КРТ, за ними пустые, номера сквозные. Карта листа — рамка вида на карте (окно «Виды»): перетащите вид на лист, встанет карта с местом и масштабом по рамке. Карту можно и нарисовать кнопкой «Карта» на ленте, вид ей выбирают в «Свойствах».";
 const state = reactive({ kind: "", text: "" });
 const meta = () => project.raw?.album?.meta || {};
 let mine = null, base = "";             // mine — список листов, который панель сама положила в project.layouts
@@ -80,7 +75,9 @@ function drop() {
   sheets.value.splice(cur.value, 1); cur.value = Math.min(cur.value, sheets.value.length - 1);
 }
 
+/* все листы одним PDF: есть листы ППТ КРТ — через вкладку «Листы» (они первые, их «не всё готово», ход выгрузки), иначе здесь */
 async function all() {
+  if (albumList.value.length) { albumFile("pdf"); return; }
   state.kind = ""; state.text = "PDF собирается…";
   try { await printAll(clone(sheets.value), meta(), project.name || "листы"); state.text = "PDF готов"; }
   catch (e) { state.kind = "warn"; state.text = e.message; }
@@ -90,13 +87,13 @@ async function all() {
 function open() {
   const list = (project.layouts || []).map(s => ({ ...clone(s), id: s.id || newId("sheet") }));
   sheets.value = list.length ? list : [fresh("Новый лист")];
-  cur.value = Math.max(0, sheets.value.findIndex(s => s.id === sheetNav.id));   // открыли из «Листов и альбома» — на том листе
+  cur.value = Math.max(0, sheets.value.findIndex(s => s.id === sheetNav.id));   // открыли из окна «Листы» — на том листе
   acur.value = -1; navAlbum();
-  state.kind = ""; state.text = list.length ? `Листов в проекте: ${list.length}` : "";
+  state.kind = ""; state.text = list.length || albumList.value.length ? `Листов в проекте: ${list.length + albumList.value.length}` : "";
   base = JSON.stringify(sheets.value);                // то, что уже в проекте (или нетронутый новый лист): правкой не считать
 }
 watch(() => project.layouts, l => { if (toRaw(l) !== mine) open(); }, { immediate: true });
-// «Листы и альбом»: щелчок по листу или «Новый лист» — этот лист здесь
+// окно «Листы»: щелчок по листу или «Новый лист» — этот лист здесь
 watch(() => sheetNav.tick, () => { const i = sheets.value.findIndex(s => s.id === sheetNav.id); if (i >= 0) { cur.value = i; acur.value = -1; } else navAlbum(); });
 // лист альбома: sheetNav.id = «alb:<id листа>»
 function navAlbum() { const id = String(sheetNav.id); if (!id.startsWith(ALB)) return; const a = albumList.value.find(x => x.id === id.slice(ALB.length)); if (a) acur.value = a.i; }

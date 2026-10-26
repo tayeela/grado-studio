@@ -1,52 +1,39 @@
-<!-- ГРАДО 2 · вкладка «Листы и альбом» нового интерфейса. Сверху — листы проекта, те же, что в «Макете листа» (project.layouts):
-     «Новый лист» — пустой лист, как там (без заготовок по формату), щелчок по листу открывает его в «Макете листа»
-     (store.js sheetNav), «PDF» — все эти листы одним файлом (sheetmaps.js printAll). Карта листа — рамка вида на карте.
-     Ниже, в раскрывающемся разделе, — альбом ППТ КРТ (шаг 2 плана, #94) без отдельного окна браузера.
-     В нём строка альбома и действия («Собрать», PDF, PPTX), ход сборки и выгрузки («PDF: лист 3 из 9 · 12 с», «Остановить»),
-     вопросы «заменить или добавить» и «не всё готово»; ниже штамп, список листов и свойства выбранного листа с просмотром.
-     Сборку и печать делает прежний движок альбома, скрытый в странице (albumhost.js call, web/albumapi.js), поэтому PDF и
-     PPTX выходят лист в лист прежние. Простые правки (название, формат, масштаб, легенда, ТЭП, порядок, удаление, штамп)
-     пишутся прямо в раздел album проекта. Пока вкладка на виду, рамки листов видны на карте вместе с рамками видов (viewframesmap.js): щелчок выбирает
-     лист здесь, рамку тянут и меняют угол там же. «Слои листа» — роли выбранного листа с глазом (sheetlayers.js rows).
+<!-- ГРАДО 2 · вкладка «Листы» нового интерфейса: все листы проекта одним списком (владелец 26.10.2026 — альбом ППТ КРТ в обычные
+     листы; одно слово «лист» вместо «лист» и «альбом»). Сверху — листы по правилам ППТ КРТ (раздел album проекта), под ними
+     пустые листы «Макета листа» (project.layouts), номера сквозные. «Новый лист ▾» — пустой лист (как в «Макете листа», без
+     заготовок) или листы по правилам ППТ КРТ, ситуационный план, раздел 1, «Из файла…». Щелчок по листу открывает его в «Макете
+     листа» (store.js sheetNav; лист ППТ КРТ — картинкой той же печати, AlbumSheetView.vue), у листа ППТ КРТ ниже — его свойства.
+     «PDF» — все листы одним файлом: листы ППТ КРТ, за ними пустые с продолжением номеров (albumapi file(…, extra) →
+     /api/print/pdf с layouts), «PPTX» — листы ППТ КРТ презентацией. Ход сборки и выгрузки («PDF: лист 3 из 9 · 12 с»,
+     «Остановить»), вопросы «заменить или добавить» и «не всё готово», штамп и оформление карт — здесь же.
+     Листы ППТ КРТ собирает и печатает прежний движок альбома, скрытый в странице (albumhost.js call, web/albumapi.js), поэтому
+     PDF и PPTX выходят лист в лист прежние. Простые правки (название, формат, масштаб, легенда, ТЭП, порядок, удаление, штамп)
+     пишутся прямо в раздел album проекта. Пока вкладка на виду, рамки листов видны на карте вместе с рамками видов (viewframesmap.js):
+     щелчок выбирает лист здесь, рамку тянут и меняют угол там же. «Слои листа» — роли выбранного листа с глазом (sheetlayers.js rows).
      Перетаскивание роли или слоя проекта на лист, очередь источников, фото, спутник, импорт из файла, содержание листа,
-     масштаб схем и формат слайдов — здесь же (прежнего окна «Подробно» больше нет). -->
+     масштаб схем и формат слайдов — здесь же. -->
 <template>
   <div class="pane alb">
-    <!-- листы проекта — те же, что в «Макете листа»: одна логика везде (владелец 12.10.2026) -->
+    <!-- листы проекта одним списком (владелец 26.10.2026: «да» — альбом ППТ КРТ в обычные листы): сначала листы по правилам
+         ППТ КРТ, за ними пустые листы «Макета листа»; «Новый лист ▾» — пустой лист или набор листов по правилам -->
     <div class="ahead">
-      <p class="stat">{{ ownHead }}</p>
+      <p class="stat" :title="st?.stat">{{ allHead }}</p>
       <div class="acts">
-        <wa-button size="s" variant="brand" :disabled="viewer" data-act="new" title="Пустой лист, как в «Макете листа»: на нём ставите рамку карты и выбираете ей вид — рамку, нарисованную на карте в окне «Виды»" @click="addOwn"><FilePlus2 :size="14" /> Новый лист</wa-button>
-        <wa-button size="s" appearance="outlined" :disabled="!own.length || ownBusy" :loading="ownBusy" title="Все листы проекта по порядку одним PDF" @click="ownPdf"><FileDown :size="14" /> PDF</wa-button>
-      </div>
-    </div>
-    <p v-if="!own.length" class="empty">Листов пока нет: нажмите «Новый лист».<span class="gq" tabindex="0" role="note" title="Новый лист — пустой лист, как в «Макете листа»: на нём рисуют рамку карты и выбирают ей вид. Вид — это слои и рамка на карте, её рисуют в окне «Виды» и тянут на нужную территорию." aria-label="Новый лист — пустой лист, как в «Макете листа»: на нём рисуют рамку карты и выбирают ей вид. Вид — это слои и рамка на карте, её рисуют в окне «Виды» и тянут на нужную территорию.">?</span></p>
-    <ol v-else class="list" aria-label="Листы проекта">
-      <li v-for="(s, i) in own" :key="s.id" :title="'Открыть в «Макете листа»: ' + (s.title || 'без названия')" tabindex="0" @click="openOwn(s.id)" @keydown.enter="openOwn(s.id)">
-        <span class="n">{{ i + 1 }}</span>
-        <span class="t">{{ s.title || "без названия" }}</span>
-        <span class="f">{{ s.format || "A3" }}{{ s.orient === "P" ? " стоя" : "" }}<template v-if="mapsOn(s)"> · {{ mapsOn(s) }}</template></span>
-        <span></span>
-      </li>
-    </ol>
-
-    <!-- альбом ППТ КРТ: состав листов задан правилами ППТ КРТ (docs/wiki/album-rules.md), собирается и печатается прежним движком -->
-    <wa-details class="stamp albsec" :open="albOpen" @wa-show.self="albOpen = true" @wa-hide.self="albOpen = false">
-    <span slot="summary"><b>Альбом ППТ КРТ</b> <span class="sum" :title="st?.stat">{{ head }}</span></span>
-    <div class="ahead">
-      <div class="acts">
-        <wa-dropdown @wa-select="e => build(e.detail.item.value)">
-          <wa-button slot="trigger" size="s" appearance="outlined" with-caret :disabled="busy || viewer"><LayoutTemplate :size="14" /> Собрать</wa-button>
-          <wa-dropdown-item value="pptkrt">Альбом ППТ КРТ<span slot="details">А3, красная шапка</span></wa-dropdown-item>
-          <wa-dropdown-item value="sit">Ситуационный план A4<span slot="details">один лист</span></wa-dropdown-item>
-          <wa-dropdown-item value="sec1">Раздел 1: существующее положение<span slot="details">слайды</span></wa-dropdown-item>
+        <wa-dropdown @wa-select="e => addPick(e.detail.item.value)">
+          <wa-button slot="trigger" size="s" variant="brand" with-caret :disabled="viewer" data-act="new"><FilePlus2 :size="14" /> Новый лист</wa-button>
+          <wa-dropdown-item value="blank">Пустой лист<span slot="details">карту и остальное ставите сами</span></wa-dropdown-item>
           <wa-divider></wa-divider>
-          <wa-dropdown-item value="refresh" :disabled="!sheets.length">Обновить листы<span slot="details">по шаблону</span></wa-dropdown-item>
-          <wa-dropdown-item value="file">Из файла…<span slot="details">проект .grado2 или готовая вёрстка</span></wa-dropdown-item>
+          <h4 class="menu-h">По правилам ППТ КРТ</h4>
+          <wa-dropdown-item value="pptkrt" :disabled="busy">Листы ППТ КРТ<span slot="details">А3, красная шапка</span></wa-dropdown-item>
+          <wa-dropdown-item value="sit" :disabled="busy">Ситуационный план A4<span slot="details">один лист</span></wa-dropdown-item>
+          <wa-dropdown-item value="sec1" :disabled="busy">Раздел 1: существующее положение<span slot="details">слайды</span></wa-dropdown-item>
+          <wa-dropdown-item value="refresh" :disabled="busy || !sheets.length">Обновить листы ППТ КРТ<span slot="details">по новым данным</span></wa-dropdown-item>
+          <wa-divider></wa-divider>
+          <wa-dropdown-item value="file" :disabled="busy">Из файла…<span slot="details">проект .grado2 или готовая вёрстка</span></wa-dropdown-item>
         </wa-dropdown>
         <input ref="impFile" type="file" accept=".grado2,.json,application/json" hidden @change="importFile" />
-        <wa-button size="s" variant="brand" :disabled="busy || !sheets.length" title="Все листы одним PDF: рамка, штамп, масштаб, легенда" @click="file('pdf')"><FileDown :size="14" /> PDF</wa-button>
-        <wa-button size="s" appearance="outlined" :disabled="busy || !sheets.length" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям" @click="file('pptx')"><Presentation :size="14" /> PPTX</wa-button>
+        <wa-button size="s" appearance="outlined" data-act="pdf" :disabled="busy || ownBusy || !total" :loading="ownBusy" title="Все листы по порядку одним PDF: рамка, штамп, масштаб, легенда" @click="pdfAll"><FileDown :size="14" /> PDF</wa-button>
+        <wa-button size="s" appearance="outlined" data-act="pptx" :disabled="busy || !sheets.length" :title="sheets.length ? 'Листы ППТ КРТ редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям' : 'PowerPoint собирается из листов ППТ КРТ: «Новый лист» → «Листы ППТ КРТ»'" @click="file('pptx')"><Presentation :size="14" /> PPTX</wa-button>
       </div>
     </div>
 
@@ -55,13 +42,13 @@
       <wa-spinner></wa-spinner><span class="jt">{{ st.bp.text }}</span><span class="t">{{ st.bp.secs }} с</span>
       <wa-button v-if="st.bp.canStop" size="s" appearance="outlined" :disabled="st.bp.stop" title="Уже собранные листы останутся" @click="act(a => a.stop())">{{ st.bp.stop ? "Остановлю после листа…" : "Остановить" }}</wa-button>
     </div>
-    <div v-else-if="!engineReady" class="job quiet" role="status"><wa-spinner></wa-spinner><span class="jt">Готовлю сборку альбома…</span></div>
+    <div v-else-if="!engineReady" class="job quiet" role="status"><wa-spinner></wa-spinner><span class="jt">Готовлю листы ППТ КРТ…</span></div>
 
     <!-- вопрос движка: набор собирается поверх других листов -->
     <div v-if="st?.ask" class="ask" role="alertdialog" aria-label="Заменить или добавить листы">
-      <p>«{{ st.ask.name }}»: {{ st.ask.n }} л. В альбоме уже есть другие листы ({{ st.ask.have }}).</p>
+      <p>«{{ st.ask.name }}»: {{ st.ask.n }} л. Листы ППТ КРТ уже есть ({{ st.ask.have }}).</p>
       <div class="row">
-        <wa-button size="s" variant="brand" @click="act(a => a.answer('replace'))">Заменить листы альбома</wa-button>
+        <wa-button size="s" variant="brand" @click="act(a => a.answer('replace'))">Заменить листы ППТ КРТ</wa-button>
         <wa-button size="s" appearance="outlined" @click="act(a => a.answer('add'))">Добавить после текущих</wa-button>
         <wa-button size="s" appearance="plain" @click="act(a => a.answer('cancel'))">Отмена</wa-button>
       </div>
@@ -76,9 +63,9 @@
         </div>
       </template>
       <template v-else>
-        <p>«{{ st.imp.name }}»: {{ st.imp.n }} л. В альбоме уже есть листы ({{ st.imp.have }}).</p>
+        <p>«{{ st.imp.name }}»: {{ st.imp.n }} л. Листы ППТ КРТ уже есть ({{ st.imp.have }}).</p>
         <div class="row">
-          <wa-button size="s" variant="brand" @click="act(a => a.importAnswer('replace'))">Заменить листы альбома</wa-button>
+          <wa-button size="s" variant="brand" @click="act(a => a.importAnswer('replace'))">Заменить листы ППТ КРТ</wa-button>
           <wa-button size="s" appearance="outlined" @click="act(a => a.importAnswer('add'))">Добавить после текущих</wa-button>
           <wa-button size="s" appearance="plain" @click="act(a => a.importAnswer('cancel'))">Отмена</wa-button>
         </div>
@@ -126,7 +113,7 @@
       <p class="hint">Заголовки и надписи листа — всегда Montserrat. Новые цвет и шрифт попадут в просмотр, PDF и PPTX.</p>
       <div class="g2">
         <wa-select size="s" label="Масштаб схем 5–9" :value="String(st?.scheme ?? 0)" :disabled="viewer" data-look="scheme"
-                   title="Один масштаб для схем альбома ППТ КРТ — листов 5–9. «Авто» — по размеру территории; «по границам выгрузки» — рамка не меньше области загрузки данных и сит. плана. Масштаб, выбранный в свойствах листа, главнее"
+                   title="Один масштаб для схем ППТ КРТ — листов 5–9. «Авто» — по размеру территории; «по границам выгрузки» — рамка не меньше области загрузки данных и сит. плана. Масштаб, выбранный в свойствах листа, главнее"
                    @change="e => setScheme(e.target.value)">
           <wa-option value="0">авто по территории</wa-option>
           <wa-option value="cover">по границам выгрузки</wa-option>
@@ -139,22 +126,30 @@
       </div>
     </wa-details>
 
-    <p v-if="!sheets.length" class="empty">В альбоме листов нет: «Собрать» → «Альбом ППТ КРТ».<span class="gq" tabindex="0" role="note" title="Сборка ставит листы по правилам ППТ КРТ: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан." aria-label="Сборка ставит листы по правилам ППТ КРТ: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан.">?</span></p>
-    <ol v-else class="list" role="listbox" aria-label="Листы альбома" @keydown="keys">
+    <p v-if="!total" class="empty">Листов пока нет: «Новый лист» — пустой лист или листы по правилам ППТ КРТ.<span class="gq" tabindex="0" role="note" title="Пустой лист: на нём рисуют рамку карты и выбирают ей вид — область, выделенную на карте («Вид выделением»). Листы ППТ КРТ ставятся по правилам: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан." aria-label="Пустой лист: на нём рисуют рамку карты и выбирают ей вид — область, выделенную на карте. Листы ППТ КРТ ставятся по правилам: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан.">?</span></p>
+    <ol v-if="sheets.length" class="list" :class="{ 'lst-a': own.length }" role="listbox" aria-label="Листы по правилам ППТ КРТ" @keydown="keys">
       <li v-for="(s, i) in sheets" :key="s.id" role="option" :aria-selected="i === cur" :tabindex="i === cur ? 0 : -1"
-          :class="{ on: i === cur, bad: !!why(s), ['drop-' + (dnd.at === i ? dnd.tone || 'wait' : '')]: dnd.at === i }"
+          :class="{ on: i === cur && !ownOn, bad: !!why(s), ['drop-' + (dnd.at === i ? dnd.tone || 'wait' : '')]: dnd.at === i }"
           :title="(s.title || 'без названия') + (why(s) ? ' — не готов: ' + why(s) : '')" @click="pick(i)"
           @dragover="e => dragOver(e, i)" @dragleave="e => dragLeave(e, i)" @drop="e => dropOn(e, i)">
         <span class="n">{{ i + 1 }}</span>
-        <span class="t">{{ s.title || "без названия" }}</span>
+        <span class="t">{{ s.title || "без названия" }} <span class="tag" title="Лист по правилам ППТ КРТ">ППТ КРТ</span></span>
         <span class="f">{{ row(s).size }}<template v-if="row(s).scale"> · {{ row(s).scale }}</template></span>
         <CircleAlert v-if="why(s)" :size="14" class="nr" aria-label="не готов" />
         <span v-if="dnd.at === i && dnd.text" class="dcap" :class="dnd.tone">{{ dnd.text }}</span>
       </li>
     </ol>
+    <ol v-if="own.length" class="list" :class="{ 'lst-b': sheets.length }" aria-label="Пустые листы «Макета листа»">
+      <li v-for="(s, i) in own" :key="s.id" :class="{ on: ownOn === s.id }" :title="'Открыть в «Макете листа»: ' + (s.title || 'без названия')" tabindex="0" @click="openOwn(s.id)" @keydown.enter="openOwn(s.id)">
+        <span class="n">{{ sheets.length + i + 1 }}</span>
+        <span class="t">{{ s.title || "без названия" }}</span>
+        <span class="f">{{ s.format || "A3" }}{{ s.orient === "P" ? " стоя" : "" }}<template v-if="mapsOn(s)"> · {{ mapsOn(s) }}</template></span>
+        <span></span>
+      </li>
+    </ol>
     <p v-if="dnd.what" class="hint dfoot" aria-live="polite"><b>Перетаскивание:</b> {{ dnd.what.type === "role" ? `роль «${dnd.what.title}» — на другой лист: перенос, с Alt — копия` : `слой «${dnd.what.title}» — на лист или строку роли: включить там` }}</p>
 
-    <section v-if="sel" class="det" :aria-label="'Лист ' + (cur + 1)">
+    <section v-if="sel && !ownOn" class="det" :aria-label="'Лист ' + (cur + 1)">
       <wa-input size="s" label="Название" :value="sel.title || ''" :readonly="viewer" @change="e => setSheet('title', e.target.value)"></wa-input>
       <div class="g2">
         <wa-select size="s" label="Формат" :value="sel.size" :disabled="viewer || row(sel).frozen" @change="e => setSheet('size', e.target.value)">
@@ -289,24 +284,23 @@
       <wa-button slot="footer" size="s" variant="brand" :disabled="!sat.dir.trim()" @click="runSat">Скачать</wa-button>
     </wa-dialog>
     <wa-dialog label="Удалить лист" :open="askDrop" @wa-after-hide="askDrop = false">
-      <p>Удалить лист «{{ sel?.title || "без названия" }}» из альбома? Остальные листы останутся.</p>
+      <p>Удалить лист «{{ sel?.title || "без названия" }}»? Остальные листы останутся.</p>
       <wa-button slot="footer" size="s" appearance="plain" @click="askDrop = false">Отмена</wa-button>
       <wa-button slot="footer" size="s" variant="danger" @click="drop">Удалить</wa-button>
     </wa-dialog>
-    </wa-details>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { ArrowDown, ArrowUp, Camera, CircleAlert, Eye, EyeOff, FileDown, FilePlus2, LayoutTemplate, LocateFixed, MoveRight, PanelsTopLeft, Plus, Presentation, Satellite, Trash2, Type, WandSparkles, X } from "@lucide/vue";
+import { ArrowDown, ArrowUp, Camera, CircleAlert, Eye, EyeOff, FileDown, FilePlus2, LocateFixed, MoveRight, PanelsTopLeft, Plus, Presentation, Satellite, Trash2, Type, WandSparkles, X } from "@lucide/vue";
 import { ALB } from "../viewframesmap.js";
 import { album, call, engineState, startEngine, sync } from "../albumhost.js";
 import { C } from "../collab.js";
 import { markDirty, notice } from "../project.js";
 import { project, sheetNav, winApi } from "../store.js";
 import { newId, newSheet } from "../sheet/model.js";
-import { printAll } from "./sheetmaps.js";
+import { mapsOf, printAll } from "./sheetmaps.js";
 import FontPicker from "./FontPicker.vue";
 
 const WATER = "#bfe0f5";   // вода белых схем по умолчанию (albums.js C_WATER_VIS, print_io.WATER_VIS)
@@ -340,7 +334,6 @@ const lookSum = computed(() => {
   const f = FONTS.find(x => x[0] === meta.value.labelFont)?.[1] || (String(meta.value.labelFont || "").startsWith("f:") ? meta.value.labelFontName || "свой шрифт" : "");
   return [w, f].filter(Boolean).join(" · ") || "как сейчас";
 });
-const head = computed(() => st.value?.stat || (sheets.value.length ? `Альбом: ${sheets.value.length} ${word(sheets.value.length, "лист", "листа", "листов")}` : "Альбом: листов нет"));
 
 /* состояние движка (ход сборки, «не готов», строки листов) — раз в полсекунды, пока вкладка открыта */
 let poll = 0;
@@ -363,7 +356,7 @@ watch(() => sheets.value.length, n => { if (cur.value >= n) cur.value = Math.max
 
 /* действие движка: ошибки — в строку состояния */
 async function act(fn) {
-  try { return await call(fn); } catch (e) { notice.value = "Альбом: " + (e.message || e); } finally { readState(); }
+  try { return await call(fn); } catch (e) { notice.value = "Листы ППТ КРТ: " + (e.message || e); } finally { readState(); }
 }
 
 /* правка альбома здесь: как touch() движка — время правки, проект изменён; движок получит проект перед следующим действием */
@@ -449,7 +442,7 @@ async function reorder(r, from, to) {
 function setSheet(k, v) { if (!sel.value) return; sel.value[k] = v; edited(); }
 function up() { const i = cur.value, l = sheets.value; if (i < 1) return; [l[i - 1], l[i]] = [l[i], l[i - 1]]; cur.value = i - 1; edited(); }
 function drop() { askDrop.value = false; const l = sheets.value; if (!l.length) return; l.splice(cur.value, 1); cur.value = Math.min(cur.value, l.length - 1); edited(); }
-function pick(i) { cur.value = i; album.fit++; }   // карта приближается к рамке листа
+function pick(i) { cur.value = i; album.fit++; const s = sheets.value[i]; if (s) openOwn(ALB + s.id); }   // карта приближается к рамке листа, лист — в «Макете листа»
 function keys(e) {
   const n = sheets.value.length; if (!n) return;
   const k = { ArrowDown: cur.value + 1, ArrowUp: cur.value - 1, Home: 0, End: n - 1 }[e.key];
@@ -458,29 +451,35 @@ function keys(e) {
   e.currentTarget.querySelector(`li:nth-child(${cur.value + 1})`)?.focus();
 }
 
-/* листы проекта — те же, что в «Макете листа» (SheetPanel.vue): новый — пустой А3, как там; открываются там же */
+/* пустые листы «Макета листа» (SheetPanel.vue) — в том же списке после листов ППТ КРТ: новый — пустой А3, открывается там же */
 const own = computed(() => project.layouts || []);
-const ownBusy = ref(false);
-const ownHead = computed(() => own.value.length ? `Листы: ${own.value.length}` : "Листов нет");
+const total = computed(() => sheets.value.length + own.value.length);
+const ownBusy = ref(false), ownOn = ref("");          // ownOn — выбранный пустой лист (свойства листа ППТ КРТ тогда скрыты)
+const allHead = computed(() => {
+  const n = total.value; if (!n) return "Листов нет";
+  const a = sheets.value.length, t = `Листы: ${n}`;
+  return a && own.value.length ? `${t} (ППТ КРТ ${a}, пустых ${own.value.length})` : t;
+});
 const mapsOn = s => { const n = (s.blocks || []).filter(b => b.kind === "map").length; return n ? `${n} ${word(n, "карта", "карты", "карт")}` : ""; };
-function openOwn(id) { sheetNav.id = id; sheetNav.tick++; winApi.open("sheet"); }
+function openOwn(id) { ownOn.value = String(id).startsWith(ALB) ? "" : id; sheetNav.id = id; sheetNav.tick++; winApi.open("sheet"); }
 function addOwn() {
-  const s = { id: newId("sheet"), ...newSheet({ format: "A3", title: `Лист ${own.value.length + 1}`, blank: true }) };
+  const s = { id: newId("sheet"), ...newSheet({ format: "A3", title: `Лист ${total.value + 1}`, blank: true }) };
   project.layouts = [...JSON.parse(JSON.stringify(own.value)), s];
   openOwn(s.id);
 }
-async function ownPdf() {
+/* «Новый лист ▾»: пустой лист или листы по правилам ППТ КРТ (сборку ведёт движок альбома) */
+function addPick(v) { if (v === "blank") addOwn(); else build(v); }
+/* «PDF»: все листы одним файлом — листы ППТ КРТ (проверка «не всё готово» — их), за ними пустые листы с продолжением номеров */
+const ownSpec = () => ({ meta: meta.value, sheets: JSON.parse(JSON.stringify(own.value)).map(sheet => ({ sheet, maps: mapsOf(sheet) })) });
+async function pdfAll() {
+  if (sheets.value.length) return file("pdf");
   ownBusy.value = true;
   try { await printAll(JSON.parse(JSON.stringify(own.value)), meta.value, project.name || "листы"); } catch (e) { notice.value = "PDF листов: " + (e.message || e); } finally { ownBusy.value = false; }
 }
-/* раздел альбома раскрыт, если в альбоме есть листы; вопрос, ход сборки или «не всё готово» раскрывают его сами */
-const albOpen = ref(!!project.raw?.album?.sheets?.length);
-watch(() => !!(issues.value || legacy.value || st.value?.ask || st.value?.imp || st.value?.bp), v => { if (v) albOpen.value = true; });
-watch(() => project.raw, r => { albOpen.value = !!r?.album?.sheets?.length; });
 async function build(kind) {
   if (kind === "refresh") return refresh(null);
   if (kind === "file") { if (viewer.value) return; impFile.value?.click(); return; }
-  if (!project.territory) { notice.value = "Сначала задайте границу территории — окно «Данные»: листы альбома строятся вокруг неё"; return; }
+  if (!project.territory) { notice.value = "Сначала задайте границу территории — окно «Данные»: листы ППТ КРТ строятся вокруг неё"; return; }
   await act(a => a.build(kind));
 }
 async function refresh(old) {
@@ -498,9 +497,10 @@ async function file(kind, i) {
   issues.value = null;
   const lines = await act(a => a.issues(kind, i));
   if (lines?.length) { issues.value = { kind, i, lines: JSON.parse(JSON.stringify(lines)) }; return; }
-  act(a => a.file(kind, i));
+  out(kind, i);
 }
-function go() { const q = issues.value; issues.value = null; if (q) act(a => a.file(q.kind, q.i)); }
+const out = (kind, i) => { const more = kind === "pdf" && i == null && own.value.length ? ownSpec() : undefined; return act(a => a.file(kind, i, more)); };
+function go() { const q = issues.value; issues.value = null; if (q) out(q.kind, q.i); }
 function jump(l) {
   if (l.sheet != null) { cur.value = l.sheet; return; }
   if (l.stamp) stampOpen.value = true;
@@ -544,8 +544,8 @@ async function runSat() {
   try { await act(a => a.sat(cur.value, dir)); } finally { clearInterval(t); sat.busy = false; sat.text = ""; }
 }
 
-/* меню «Выгрузка» → PDF или PPTX альбома: вкладка открылась (или уже открыта), выгрузка идёт отсюда */
-watch(() => album.want, k => { if (k) { album.want = null; file(k); } }, { immediate: true });
+/* меню «Выгрузка» → «Все листы в PDF» или PPTX листов ППТ КРТ: вкладка открылась (или уже открыта), выгрузка идёт отсюда */
+watch(() => album.want, k => { if (k) { album.want = null; k === "pdf" ? pdfAll() : file(k); } }, { immediate: true });
 </script>
 
 <style>
@@ -626,8 +626,10 @@ watch(() => album.want, k => { if (k) { album.want = null; file(k); } }, { immed
 .alb .look .lbl small { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 .alb .look wa-select { margin-bottom: 6px; }
 .alb .look .hint { margin: 0; }
-.alb .albsec { margin-top: 4px; }
-.alb .albsec > .ahead { margin-top: 2px; }
+.alb .list.lst-a { border-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0; }   /* два списка — одним: листы ППТ КРТ, под ними пустые */
+.alb .list.lst-b { border-top-left-radius: 0; border-top-right-radius: 0; }
+.alb .list .tag { color: var(--g-muted); font-size: var(--wa-font-size-2xs); white-space: nowrap; }
+.alb .menu-h { margin: 6px 12px 2px; font-size: var(--wa-font-size-xs); color: var(--g-muted); font-weight: 600; }
 .alb .empty { color: var(--g-muted); font-size: var(--wa-font-size-s); line-height: 1.4; }
 .alb .list { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--g-line); border-radius: 8px; }
 .alb .list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 16px; align-items: baseline; line-height: 16px; gap: 6px; padding: 6px 8px;

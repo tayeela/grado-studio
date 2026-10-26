@@ -130,35 +130,34 @@ try {
     return `карточек ${await page.locator(".dv-content-container button.vc").count()}, выбран первый`;
   });
   await step("Альбом ППТ КРТ: собрать", async () => {
-    await page.locator("header.top wa-button", { hasText: "Листы и альбом" }).click(); await page.waitForTimeout(2500);
-    await page.locator(".alb wa-details.albsec").evaluate(d => { d.open = true; }); await page.waitForTimeout(500);   // раздел «Альбом ППТ КРТ» под листами проекта
-    await page.locator("wa-button[slot=trigger]", { hasText: "Собрать" }).first().click();
+    await page.locator("header.top wa-button", { hasText: "Листы" }).click(); await page.waitForTimeout(2500);
+    await page.locator(".alb wa-button[slot=trigger]", { hasText: "Новый лист" }).first().click();   // «Новый лист ▾» → «Листы ППТ КРТ»
     await page.locator("wa-dropdown-item[value=pptkrt]").first().click();
     // ход сборки — строка «Лист 3 из 11: … загрузка …» с кнопкой «Остановить»; листы сами докачивают данные порталов.
-    // Готово — заголовок «Альбом: 11 листов · собран …»; между этапами «Остановить» пропадает на миг, поэтому «листов нет»
+    // Готово — заголовок «Листы: 11»; между этапами «Остановить» пропадает на миг, поэтому «листов нет»
     // считается провалом только после минуты тишины
-    const albumText = () => winText("Листы и альбом");
+    const albumText = () => winText("Листы");
     let idle = 0, seen = false; const t0 = Date.now();
     for (;;) {
       const t = await albumText(), head = t.split("\n")[0];
       if (/Остановить/.test(t)) seen = true;
-      if (/Альбом: \d+ лист/.test(head) && !/Остановить/.test(t) && (seen || Date.now() - t0 > 30000)) return head;
+      if (/Листы: \d+/.test(head) && !/Остановить/.test(t) && (seen || Date.now() - t0 > 30000)) return head;
       idle = /Остановить/.test(t) ? 0 : idle + 1;
-      if (idle > 60 && /листов нет/.test(t)) throw new Error("листы не появились: " + t.split("\n").slice(0, 4).join(" · "));
+      if (idle > 60 && /Листов нет/.test(t)) throw new Error("листы не появились: " + t.split("\n").slice(0, 4).join(" · "));
       if (Date.now() - t0 > 90 * 60000) throw new Error("сборка дольше 90 мин: " + head);
       await page.waitForTimeout(1000);
     }
   });
   await step("Альбом в PDF", async () => {
-    const pane = page.locator(".dv-groupview", { has: page.locator(".dv-tab", { hasText: "Листы и альбом" }) }).locator(".dv-content-container");
-    if (!/Альбом: \d+ лист/.test(await pane.innerText())) throw new Error("альбом не собран, PDF не выгружается");
+    const pane = page.locator(".dv-groupview", { has: page.locator(".dv-tab", { hasText: /^\s*Листы\s*$/ }) }).locator(".dv-content-container");
+    if (!/Листы: \d+/.test(await pane.innerText())) throw new Error("альбом не собран, PDF не выгружается");
     const dlp = page.waitForEvent("download", { timeout: 30 * 60000 });
     await pane.locator("wa-button", { hasText: /^\s*PDF\s*$/ }).first().click();
     // «не всё готово» появляется после проверки листов — ждём либо его, либо ход выгрузки
     const go = pane.locator("wa-button", { hasText: "Выгрузить всё равно" });
     await go.waitFor({ timeout: 30000 }).then(() => go.click()).catch(() => {});
     // ход печати «PDF: лист 3 из 11 · 12 с» — в журнал раз в минуту, чтобы долгая выгрузка не выглядела зависшей
-    const tick = setInterval(() => winText("Листы и альбом").then(t => console.log("   " + t.split("\n").slice(0, 2).join(" · "))).catch(() => {}), 60000);
+    const tick = setInterval(() => winText("Листы").then(t => console.log("   " + t.split("\n").slice(0, 2).join(" · "))).catch(() => {}), 60000);
     const dl = await dlp.finally(() => clearInterval(tick));
     await dl.saveAs(join(OUT, "альбом.pdf")); return `альбом.pdf, ${Math.round(readFileSync(join(OUT, "альбом.pdf")).length / 1024)} КБ`;
   });

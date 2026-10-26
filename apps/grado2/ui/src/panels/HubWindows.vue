@@ -17,7 +17,7 @@
     <div class="bar">
       <input :value="hub.q" class="grow" type="search" placeholder="Поиск по названию или команде" aria-label="Поиск проекта" @input="e => setPref('q', e.target.value)">
       <select :value="hub.ord" aria-label="Порядок" @change="e => setPref('ord', e.target.value)"><option value="recent">Недавние</option><option value="name">По названию</option></select>
-      <wa-button size="s" :appearance="hub.album ? 'filled' : 'outlined'" :variant="hub.album ? 'brand' : 'neutral'" title="Только проекты, где собран альбом" @click="setPref('album', !hub.album)">С альбомом</wa-button>
+      <wa-button size="s" :appearance="hub.album ? 'filled' : 'outlined'" :variant="hub.album ? 'brand' : 'neutral'" title="Только проекты с листами ППТ КРТ" @click="setPref('album', !hub.album)">С альбомом</wa-button>
     </div>
     <p v-if="!hub.projects.length" class="empty">Совместных проектов пока нет. Введите название и нажмите «Создать пустой» или «Сделать общим текущую работу».</p>
     <p v-else-if="!groups.length" class="empty">Ничего не найдено</p>
@@ -29,7 +29,7 @@
                        :editing="ren === g.title + p.id" :renamable="isOwner(p.role)" empty-text="Пока без объектов"
                        @open="p.id !== hub.pid && openProject(p.id, p.name)" @star="starProject(p)" @edit="ren = g.title + p.id" @cancel="ren = null"
                        @rename="v => { ren = null; renameProject(p.id, v.slice(0, 60)); }" @act="a => act(a, p, g)">
-            <template #sub>{{ ROLE[p.role] || p.role }} · {{ p.updated_by ? uname(p.updated_by) + ", " : "" }}{{ p.updated ? when(p.updated) : "" }}<template v-if="+p.album_n"> · альбом {{ p.album_n }} л.</template><template v-if="+p.online"> · <b class="on">в проекте {{ p.online }}</b></template></template>
+            <template #sub>{{ ROLE[p.role] || p.role }} · {{ p.updated_by ? uname(p.updated_by) + ", " : "" }}{{ p.updated ? when(p.updated) : "" }}<template v-if="+p.album_n"> · ППТ КРТ {{ p.album_n }} л.</template><template v-if="+p.online"> · <b class="on">в проекте {{ p.online }}</b></template></template>
             <template #menu>
               <wa-dropdown-item value="open" :disabled="p.id === hub.pid">{{ p.id === hub.pid ? "Открыт" : "Открыть" }}</wa-dropdown-item>
               <wa-dropdown-item v-if="isOwner(p.role)" value="ren">Переименовать</wa-dropdown-item>

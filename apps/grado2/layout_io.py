@@ -351,12 +351,14 @@ def _page(doc, item, lib, lgr_dash, tiles, no, total):
 
 
 def build_pages(spec, lib, lgr_dash, tiles=None):
-    """spec = {meta, sheets: [{sheet, maps}]} — все листы макета одним документом, либо {meta, sheet, maps, page:
+    """spec = {meta, sheets: [{sheet, maps}], skip?} — все листы макета одним документом (skip — сколько листов идёт
+    перед ними в том же PDF), либо {meta, sheet, maps, page:
     {page_no, page_total}} — один лист с его номером в списке листов."""
     doc = _doc(spec)
     if isinstance(spec.get("sheets"), list):
         items = [x for x in spec["sheets"] if isinstance(x, dict)]
-        return [_page(doc, x, lib, lgr_dash, tiles, i, len(items)) for i, x in enumerate(items, start=1)]
+        skip = int(_num(spec.get("skip"), 0, 0, 9999))   # листы ППТ КРТ впереди в том же PDF: номера продолжают их
+        return [_page(doc, x, lib, lgr_dash, tiles, skip + i, skip + len(items)) for i, x in enumerate(items, start=1)]
     pg = spec.get("page") if isinstance(spec.get("page"), dict) else {}
     no, total = int(_num(pg.get("page_no"), 1, 1, 9999)), int(_num(pg.get("page_total"), 1, 1, 9999))
     return [_page(doc, spec, lib, lgr_dash, tiles, no, max(no, total))]

@@ -8,7 +8,7 @@ import { fullStyle } from "./symbology.js";
 /* Проект в том виде, как его хранит файл .grado2: группы и слои сверху вниз, данные слоёв отдельно.
    data не реактивна (markRaw): тысячи объектов GeoJSON рисует карта, Vue за ними не следит. */
 export const project = reactive({ name: "", file: null, source: "", groups: [], layers: [], views: [], data: markRaw({}), territory: null, view: null, raw: markRaw({}), layouts: [] });
-export const sheetNav = reactive({ id: "", tick: 0 });   // «Листы и альбом» → открыть «Макет листа» на листе id (SheetPanel.vue)
+export const sheetNav = reactive({ id: "", tick: 0 });   // «Листы» → открыть «Макет листа» на листе id (SheetPanel.vue)
 export const winApi = { open: () => {}, mapOnly: () => {}, focus: () => {} };   // App.vue подставляет: открыть окно по id или вывести его вперёд;
                                                                     // «только карта» (вкл/выкл) и переход клавиатурой в окно
 export const mapOnly = ref(false);     // окно «Карта» развёрнуто во всё рабочее поле, остальные окна спрятаны (#26)

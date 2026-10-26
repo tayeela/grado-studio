@@ -26,7 +26,7 @@
 | `test_insol.py` | Insolation | 1 |
 | `test_label_qa.py` | LabelQA | 6 |
 | `test_labelfmt_js.py` | LabelFmtJs | 1 |
-| `test_layout_io.py` | LayoutPrint, LayoutsInProject | 13 |
+| `test_layout_io.py` | LayoutPrint, LayoutsInProject | 14 |
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |

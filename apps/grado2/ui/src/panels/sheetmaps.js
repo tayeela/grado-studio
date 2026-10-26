@@ -119,7 +119,7 @@ export function here() {
   return Array.isArray(c) && c.length === 2 ? { center: c.map(Number), scale: 0 } : null;
 }
 
-const mapsOf = sheet => Object.fromEntries(sheet.blocks.filter(b => b.kind === "map" && !b.hidden).map(b => [b.id, { layers: mapLayers(b) }]));
+export const mapsOf = sheet => Object.fromEntries(sheet.blocks.filter(b => b.kind === "map" && !b.hidden).map(b => [b.id, { layers: mapLayers(b) }]));
 async function download(body, name) {
   const r = await fetch("/api/print/layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) throw new Error("PDF не собрался: " + r.status);

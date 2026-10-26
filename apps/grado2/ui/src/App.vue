@@ -1,4 +1,4 @@
-<!-- ГРАДО 2 · каркас нового интерфейса: шапка с меню и кнопкой «Листы и альбом» (вкладка AlbumPanel.vue, движок — albumhost.js), лента инструментов, окна dockview, строка состояния;
+<!-- ГРАДО 2 · каркас нового интерфейса: шапка с меню и кнопкой «Листы» (вкладка AlbumPanel.vue, движок — albumhost.js), лента инструментов, окна dockview, строка состояния;
      на общем сервере — вход, шапка и окна совместной работы (HubLogin, HubBar, HubWindows, окно «Комментарии»).
      Раскладку окон помнит браузер (localStorage «grado-next-layout»); панели — src/panels/*.vue. -->
 <template>
@@ -56,15 +56,12 @@
         <wa-dropdown-item value="xlsx">Excel: показатели ТЭП и листы<span slot="details">XLSX</span></wa-dropdown-item>
         <wa-divider></wa-divider>
         <h4 class="menu-h">Листы</h4>
-        <wa-dropdown-item value="sheets" :disabled="!project.layouts?.length">Все листы в PDF<span slot="details">{{ project.layouts?.length ? plural(project.layouts.length, ["лист", "листа", "листов"]) : "нет листов" }}</span></wa-dropdown-item>
+        <wa-dropdown-item value="pdf" :disabled="!allSheets">Все листы в PDF<span slot="details">{{ allSheets ? plural(allSheets, ["лист", "листа", "листов"]) : "нет листов" }}</span></wa-dropdown-item>
+        <wa-dropdown-item value="pptx" :disabled="!album.sheets">Листы ППТ КРТ в PowerPoint<span slot="details">{{ album.sheets ? "PPTX" : "нет листов ППТ КРТ" }}</span></wa-dropdown-item>
         <wa-dropdown-item value="ogd">Слои порталов в DXF — по области<span slot="details">МСК</span></wa-dropdown-item>
-        <wa-divider></wa-divider>
-        <h4 class="menu-h">Альбом ППТ КРТ — во вкладке «Листы и альбом»</h4>
-        <wa-dropdown-item value="pdf" :disabled="!album.sheets">PDF альбома<span slot="details">{{ album.sheets ? "все листы" : "альбом не собран" }}</span></wa-dropdown-item>
-        <wa-dropdown-item value="pptx" :disabled="!album.sheets">PPTX альбома<span slot="details">PowerPoint</span></wa-dropdown-item>
       </wa-dropdown>
-      <wa-button size="s" appearance="plain" title="Листы и альбом (Ctrl+P): сборка альбома ППТ КРТ, штамп, листы, PDF и PPTX — вкладкой справа от карты"
-                 @click="winApi.open('album')"><Printer slot="start" :size="16" />Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
+      <wa-button size="s" appearance="plain" title="Листы (Ctrl+P): все листы проекта — пустые и по правилам ППТ КРТ, штамп, PDF и PPTX — вкладкой справа от карты"
+                 @click="winApi.open('album')"><Printer slot="start" :size="16" />Листы<span v-if="allSheets" class="cnt">{{ allSheets }}</span></wa-button>
 
       <span class="grow"></span>
       <wa-button size="s" appearance="plain" :disabled="!history.undo" aria-label="Отменить" :title.attr="'Отменить (Ctrl+Z)'" @click="undo"><Undo2 :size="16" /></wa-button>
@@ -192,7 +189,6 @@ import { exportDxf, exportGeojson, exportShp, exportXlsx } from "./exports.js";
 import { album, albumFile, albumHooks, ogdDxf } from "./albumhost.js";
 import { ogdResume, terrTool } from "./data.js";
 import { NEW, newViewBySelection, vframes } from "./viewframesmap.js";
-import { printAll } from "./panels/sheetmaps.js";
 import { plural } from "./geom.js";
 import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
@@ -223,7 +219,7 @@ const PANELS = [
   { id: "help", title: "Справка" },
   { id: "comments", title: "Комментарии" },
   { id: "sheet", title: "Макет листа" },
-  { id: "album", title: "Листы и альбом" },
+  { id: "album", title: "Листы" },
   { id: "albumlay", title: "Макет надписей" },
 ];
 const sheetmode = ref(false);
@@ -243,6 +239,7 @@ const cmdHelp = id => (cad.ready && cadApi.HELP[id]) || "";
 const cmdTip = id => cad.ready ? `${cmdTitle(id)} — ${cadApi.CMDS[id].alias.join(", ")} и Enter: ${cmdHelp(id)}` : "Откройте окно «Карта»: команды работают на ней";
 function runCmd(id) { if (cad.cmd === id) cadApi.cancel(); else cadApi.start(id); }
 // идущая команда, её подсказка и сообщения — в командной строке над картой; здесь не повторяются (аудит 09.10.2026)
+const allSheets = computed(() => album.sheets + (project.layouts?.length || 0));   // листы ППТ КРТ и пустые — одним числом (кнопка «Листы», меню «Выгрузка»)
 const toolTitle = computed(() => cad.ready ? "" : "Черчение работает в окне «Карта»");
 
 /* Масштаб в строке состояния вводится: «1:2000», «2000», «1 : 2 000» и Enter (как в QGIS); карта меняет разрешение
@@ -345,7 +342,7 @@ function addOne(id) {
   const p = PANELS.find(x => x.id === id);
   const home = homeOf(id);
   if (home) { api.addPanel({ id, component: id, title: p.title, ...home }); return; }
-  // макет листа (аудит UX 12.10.2026, находки 1–3): окно «Листы и альбом» со списком листов и «Виды» остаются видны,
+  // макет листа (аудит UX 12.10.2026, находки 1–3): окно «Листы» со списком листов и «Виды» остаются видны,
   // как страницы в Figma и менеджер макетов QGIS. Хватает места — встаёт рядом с картой, иначе вкладкой над картой
   // (карта — соседняя вкладка); во всё окно — двойной щелчок по вкладке. Второй макет — вкладкой к первому.
   // Окно не уже SHEET_MIN: лист не сжимается в полоску
@@ -384,8 +381,7 @@ function showHelp() {
 function onExport(e) {
   const v = e.detail.item.value;
   if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "shp") exportShp(); else if (v === "xlsx") exportXlsx();
-  else if (v === "pdf" || v === "pptx") albumFile(v); else if (v === "ogd") ogdDxf();
-  else if (v === "sheets") printAll(JSON.parse(JSON.stringify(project.layouts)), project.raw?.album?.meta || {}, project.name || "листы").catch(e => { notice.value = "PDF не собран: " + e.message; });
+  else if (v === "pdf" || v === "pptx") albumFile(v); else if (v === "ogd") ogdDxf();   // все листы в PDF, PPTX — вкладка «Листы» (ход и «не всё готово» — там)
 }
 
 winApi.open = id => { const p = api?.getPanel(id); if (p) p.api.setActive(); else if (api) addOne(id); syncOpen(); };
@@ -486,9 +482,9 @@ async function onProject(e) {
 }
 async function openCatalog() { try { await listProjects(); } catch { /* список останется прежним */ } openDlg.value = true; }
 function choose(name) { openDlg.value = false; if (name !== project.file || dirty.value) guard(`Открыть «${name}»?`, () => openProject(name)); }
-albumHooks.save = () => shared.value ? hubFlush() : save();     // Ctrl+S в окне «Листы и альбом»
+albumHooks.save = () => shared.value ? hubFlush() : save();     // Ctrl+S в окне «Листы»
 albumHooks.open = choose;
-albumHooks.panel = () => winApi.open("album");       // меню «Выгрузка» → PDF или PPTX альбома
+albumHooks.panel = () => winApi.open("album");       // меню «Выгрузка» → «Все листы в PDF» или PPTX листов ППТ КРТ
 albumHooks.data = () => winApi.open("data");         // меню «Выгрузка» → «ГИС ОГД в DXF»: выбор слоёв портала в окне «Данные»
 ogdResume();                                          // выгрузка ГИС ОГД в DXF шла до перезагрузки — показать её ход и забрать файл
 function onFile(e) { const f = e.target.files[0]; e.target.value = ""; if (f) guard(`Открыть «${f.name}»?`, () => openFile(f)); }
