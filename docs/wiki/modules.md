@@ -83,7 +83,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `busy`, `ogd_age`, `egko_age`, `stale`, `late`, `run`, `main`
 
-### `apps/grado2/portalgate.py` — 71 стр.
+### `apps/grado2/portalgate.py` — 93 стр.
 
 ГРАДО 2 · очередь к порталам: к одному порталу ходит одно место программы за раз (владелец 10.10.2026, #51).
 
@@ -109,7 +109,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3173 стр.
+### `apps/grado2/server.py` — 3183 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -376,7 +376,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_windows_ogr2ogr_candidates`, `find_ogr2ogr`, `clean_msg`, `_safe_extract`, `_extract_recursive`, `GisogdZip`
 
-### `core/connectors/grado_connectors/gisogd_api.py` — 835 стр.
+### `core/connectors/grado_connectors/gisogd_api.py` — 840 стр.
 
 Коннектор ГИС ОГД Москвы — прямая выгрузка слоёв по открытому REST API.
 

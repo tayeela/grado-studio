@@ -21,20 +21,41 @@ class Gate:
     def __init__(self):
         self._cv = threading.Condition()
         self._own = {}                      # портал → [token, сколько раз взят]
+        self._wait = {}                     # портал → {token: сколько ждут} — для fair
+        self._last = {}                     # портал → token, державший его последним
 
-    def _free(self, portals, token):
-        return all(p not in self._own or self._own[p][0] is token for p in portals)
+    def _free(self, portals, token, fair=False):
+        # fair: свой же token не берёт портал снова, пока его ждёт чужая выгрузка (иначе потоки одной выгрузки
+        # передают портал друг другу и чужая не дожидается никогда, 26.10.2026)
+        def others(p):
+            return fair and any(t is not token for t in self._wait.get(p, {}))
+        return all((self._own[p][0] is token and not others(p)) if p in self._own
+                   else not (self._last.get(p) is token and others(p)) for p in portals)
 
-    def acquire(self, portals, token, timeout=None):
-        """Взять все порталы разом (без взаимной блокировки двух выгрузок). timeout истёк — Busy."""
+    def acquire(self, portals, token, timeout=None, fair=False):
+        """Взять все порталы разом (без взаимной блокировки двух выгрузок). timeout истёк — Busy.
+        fair=True — только для захвата не изнутри своего же захвата (одна загрузка с сети), иначе взаимная блокировка."""
         portals = {p for p in portals if p}
         end = None if timeout is None else time.monotonic() + timeout
         with self._cv:
-            while not self._free(portals, token):
-                left = None if end is None else end - time.monotonic()
-                if left is not None and left <= 0:
-                    raise Busy(", ".join(sorted(portals)))
-                self._cv.wait(left)
+            for p in portals:
+                w = self._wait.setdefault(p, {})
+                w[token] = w.get(token, 0) + 1
+            try:
+                while not self._free(portals, token, fair):
+                    left = None if end is None else end - time.monotonic()
+                    if left is not None and left <= 0:
+                        raise Busy(", ".join(sorted(portals)))
+                    self._cv.wait(left)
+            finally:
+                for p in portals:
+                    w = self._wait[p]
+                    w[token] -= 1
+                    if w[token] <= 0:
+                        del w[token]
+                    if not w:
+                        del self._wait[p]
+                self._cv.notify_all()
             for p in portals:
                 self._own.setdefault(p, [token, 0])[1] += 1
         return portals
@@ -47,12 +68,13 @@ class Gate:
                     own[1] -= 1
                     if own[1] <= 0:
                         del self._own[p]
+                        self._last[p] = token
             self._cv.notify_all()
 
     @contextlib.contextmanager
-    def use(self, portals, token=None, timeout=None):
+    def use(self, portals, token=None, timeout=None, fair=False):
         token = token if token is not None else object()
-        got = self.acquire(portals, token, timeout)
+        got = self.acquire(portals, token, timeout, fair)
         try:
             yield token
         finally:

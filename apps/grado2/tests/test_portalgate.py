@@ -31,6 +31,25 @@ class PortalGate(unittest.TestCase):
         self.assertEqual(len(got), 1)
         self.assertEqual(g.busy(), ["gisogd", "osm"])
 
+    def test_fair_owner_lets_a_waiting_job_in(self):
+        # 26.10.2026: четыре потока одной выгрузки передавали портал друг другу, чужая выгрузка ждала до «занят»
+        g, a, b = portalgate.Gate(), object(), object()
+        g.acquire({"gisogd"}, a, fair=True)                 # поток 1 выгрузки a качает
+        got = []
+        t = threading.Thread(target=lambda: (g.acquire({"gisogd"}, b, timeout=2), got.append("b")))
+        t.start()
+        time.sleep(0.05)
+        with self.assertRaises(portalgate.Busy):            # поток 2 выгрузки a не встаёт перед ждущей b
+            g.acquire({"gisogd"}, a, timeout=0.05, fair=True)
+        g.release({"gisogd"}, a)
+        t.join(1)
+        self.assertEqual(got, ["b"])
+        with self.assertRaises(portalgate.Busy):
+            g.acquire({"gisogd"}, a, timeout=0.05, fair=True)
+        g.release({"gisogd"}, b)
+        g.acquire({"gisogd"}, a, timeout=0.05, fair=True)  # b отпустила — a дальше
+        self.assertEqual(g.busy(), ["gisogd"])
+
     def test_portals_of_kinds(self):
         self.assertEqual(portalgate.portals_of(["gisogd", "gisogd_admin", "yandex_sit", "yandex", "nspd"]), {"gisogd", "yandex", "nspd"})
 
