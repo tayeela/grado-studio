@@ -1329,11 +1329,15 @@ function hatchUnion(out, bb) {
       const key = [ft.fill, ft.hp, ft.hs].join("|"); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(ft); });
     const add = [];
     groups.forEach(fs => {
-      const parts = fs.map(ft => safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, box))).filter(Boolean);
-      if (parts.length < 2) return;
-      const u = safe(() => turf.union(turf.featureCollection(parts))); if (!u?.geometry) return;
-      add.push({ g: u.geometry, fill: fs[0].fill, stroke: fs[0].fill, hatch: true, hp: fs[0].hp, hs: fs[0].hs, w: 0, a: 1, label: null });
-      fs.forEach(ft => { ft.hatch = false; ft.a = 0; });          // документ — только контуром, штриховка — общая
+      // только документы внахлёст: группы по пересечению; отдельный документ — своей штриховкой (лишнего объекта нет)
+      const parts = fs.map(ft => ({ ft, p: safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, box)) })).filter(x => x.p);
+      const grp = parts.map((_, i) => i), root = i => grp[i] === i ? i : (grp[i] = root(grp[i]));
+      parts.forEach((a, i) => parts.slice(i + 1).forEach((b, j) => { if (safe(() => turf.booleanIntersects(a.p, b.p))) grp[root(i + 1 + j)] = root(i); }));
+      const by = new Map(); parts.forEach((x, i) => { const r = root(i); if (!by.has(r)) by.set(r, []); by.get(r).push(x); });
+      by.forEach(cl => { if (cl.length < 2) return;
+        const u = safe(() => turf.union(turf.featureCollection(cl.map(x => x.p)))); if (!u?.geometry) return;
+        add.push({ g: u.geometry, fill: cl[0].ft.fill, stroke: cl[0].ft.fill, hatch: true, hp: cl[0].ft.hp, hs: cl[0].ft.hs, w: 0, a: 1, label: null });
+        cl.forEach(x => { x.ft.hatch = false; x.ft.a = 0; }); });  // документ — только контуром, штриховка — общая
     });
     if (add.length) l.features.unshift(...add);
   });
