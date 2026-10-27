@@ -156,3 +156,47 @@ def verify(cfg, id_token, key=None):
 
 def is_admin(cfg, person):
     return person["id"] in cfg[2] or (person["username"] or "\0").lower() in cfg[2]
+
+
+# ----- вход на сайт без совместного режима (владелец 27.10.2026): Telegram вместо системного окна пароля Caddy -----
+# Сайт grado.tailink.tech — две копии программы: владельца (8650) и гостевая (8652). Обе проверяют одну подписанную куку
+# SITE_COOKIE; её первая буква — роль (o — владелец, g — гость), по ней Caddy выбирает копию. Подделать букву можно, но копия
+# сама проверяет подпись и роль: гость с «o.» получит у копии владельца только экран входа.
+# GRADO2_TG_GUESTS — кто ещё входит гостем: «*» — любой человек с Telegram, или список id/@имён; пусто — никто.
+# GRADO2_SITE_ROLE=guest — копия для гостей (пускает и владельца, и гостя); по умолчанию копия пускает только владельца.
+SITE_COOKIE = "grado_site"
+SITE_TTL = 30 * 24 * 3600
+
+
+def site_role(cfg, person, env=None):
+    """Роль человека на сайте: "o" (владелец), "g" (гость) или TgError("unknown")."""
+    env = os.environ if env is None else env
+    if is_admin(cfg, person):
+        return "o"
+    guests = {a.strip().lstrip("@").lower() for a in (env.get("GRADO2_TG_GUESTS") or "").split(",") if a.strip()}
+    if "*" in guests or person["id"] in guests or (person["username"] or "\0").lower() in guests:
+        return "g"
+    raise TgError("unknown", f"Telegram {person['id']} нет среди допущенных")
+
+
+def site_cookie(cfg, person, role, now=None):
+    """Значение куки сайта: <роль>.<данные>.<подпись>, срок SITE_TTL."""
+    data = _b64(json.dumps({"u": person["id"], "n": person.get("username") or "", "e": int((now or time.time()) + SITE_TTL)},
+                           separators=(",", ":")).encode())
+    body = role + "." + data
+    return body + "." + _sign(cfg[1], "site:" + body)
+
+
+def site_check(cfg, value, accept, now=None):
+    """Кука сайта подлинна, не истекла и её роль из accept → {"u", "n", "r"}, иначе None."""
+    body, _, sig = (value or "").rpartition(".")
+    role, _, data = body.partition(".")
+    if role not in accept or not data or not hmac.compare_digest(sig, _sign(cfg[1], "site:" + body)):
+        return None
+    try:
+        p = json.loads(_unb64(data))
+    except ValueError:
+        return None
+    if not isinstance(p, dict) or p.get("e", 0) < (now or time.time()):
+        return None
+    return {"u": str(p.get("u")), "n": str(p.get("n") or ""), "r": role}

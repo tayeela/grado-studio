@@ -253,5 +253,88 @@ class TgHttp(unittest.TestCase):
             self.assertEqual(self.get("/api/hub/tg/start").getheader("Location"), "/next/#tg=off")
 
 
+class SiteCookie(unittest.TestCase):
+    P = {"id": "555", "username": "anna_tg", "name": "Анна"}
+
+    def test_roles(self):
+        self.assertEqual(T.site_role(CFG, {"id": "42", "username": ""}, {}), "o")
+        with self.assertRaises(T.TgError):
+            T.site_role(CFG, self.P, {})
+        self.assertEqual(T.site_role(CFG, self.P, {"GRADO2_TG_GUESTS": "*"}), "g")
+        self.assertEqual(T.site_role(CFG, self.P, {"GRADO2_TG_GUESTS": "@Anna_TG"}), "g")
+
+    def test_cookie_signed_role_bound_and_expires(self):
+        v = T.site_cookie(CFG, self.P, "g")
+        self.assertTrue(v.startswith("g.") and v.isascii() and ";" not in v)
+        self.assertEqual(T.site_check(CFG, v, ("o", "g"))["u"], "555")
+        self.assertIsNone(T.site_check(CFG, v, ("o",)))                 # гость в копию владельца не входит
+        self.assertIsNone(T.site_check(CFG, "o" + v[1:], ("o", "g")))   # роль в куке не подменить
+        self.assertIsNone(T.site_check((CFG[0], "other", set()), v, ("o", "g")))
+        self.assertIsNone(T.site_check(CFG, v, ("o", "g"), now=time.time() + T.SITE_TTL + 5))
+        for bad in ("", "o", "o..", "g.x.y"):
+            self.assertIsNone(T.site_check(CFG, bad, ("o", "g")))
+
+
+class SiteHttp(TgHttp):
+    """Сайт без хаба (как grado.tailink.tech): вход через Telegram закрывает всю программу, кука grado_site."""
+
+    def setUp(self):
+        self.patches = [mock.patch.object(S, "HUB", None), mock.patch.object(S, "SITE_ACCEPT", ("o",)),
+                        mock.patch.dict(os.environ, {**ENV, "GRADO2_TG_GUESTS": "*"}),
+                        mock.patch.object(T, "_post", lambda url, data, auth: (200, {"id_token": self.tok})),
+                        mock.patch.object(T, "_jwks_client", lambda: mock.Mock(get_signing_key_from_jwt=lambda t: mock.Mock(key=KEY.public_key())))]
+        for p in self.patches:
+            p.start()
+        self.tok = id_token(tid=42, username="boss_tg", name="Босс")
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+
+    def login(self):
+        state, st = self.start()
+        r = self.get(f"/api/hub/tg/callback?code=C&state={state}", f"{T.STATE_COOKIE}={st}")
+        return r, self.cookies(r)
+
+    def test_closed_without_cookie(self):
+        self.assertEqual(self.get("/next/").getheader("Location"), "/login.html")
+        self.assertEqual(self.get("/").getheader("Location"), "/login.html")
+        self.assertEqual(self.get("/api/projects").status, 401)
+        self.assertEqual(self.get("/login.html").status, 200)
+        self.assertEqual(self.get("/api/health").status, 200)
+        self.assertEqual(self.get("/api/site").status, 200)
+
+    def test_owner_gets_in(self):
+        r, ck = self.login()
+        self.assertEqual((r.status, r.getheader("Location")), (302, "/next/"))
+        v = ck[T.SITE_COOKIE]
+        self.assertTrue(v.startswith("o."))
+        self.assertEqual(self.get("/api/projects", f"{T.SITE_COOKIE}={v}").status, 200)
+        self.assertEqual(self.get("/next/", f"{T.SITE_COOKIE}={v}").status, 200)
+
+    def test_guest_gets_guest_cookie_not_owner_copy(self):
+        self.tok = id_token(tid=9, username="nobody")
+        r, ck = self.login()
+        v = ck[T.SITE_COOKIE]
+        self.assertTrue(v.startswith("g."))
+        self.assertEqual(self.get("/api/projects", f"{T.SITE_COOKIE}={v}").status, 401)
+        with mock.patch.object(S, "SITE_ACCEPT", ("o", "g")):           # гостевая копия его пускает
+            self.assertEqual(self.get("/api/projects", f"{T.SITE_COOKIE}={v}").status, 200)
+
+    def test_stranger_refused_when_no_guests(self):
+        self.tok = id_token(tid=9, username="nobody")
+        with mock.patch.dict(os.environ, {"GRADO2_TG_GUESTS": ""}):
+            r, ck = self.login()
+        self.assertEqual(r.getheader("Location"), "/login.html#tg=unknown")
+        self.assertNotIn(T.SITE_COOKIE, ck)
+
+    def test_cancel(self):
+        self.assertEqual(self.get("/api/hub/tg/callback?error=access_denied").getheader("Location"), "/login.html#tg=denied")
+
+    test_me_tells_page_that_telegram_is_on = test_full_login_sets_session = None
+    test_callback_without_state_cookie_refused = test_stranger_and_cancel = None
+    test_bind_from_logged_in_session = test_off_without_config = None
+
+
 if __name__ == "__main__":
     unittest.main()
