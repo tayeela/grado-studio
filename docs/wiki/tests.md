@@ -49,7 +49,7 @@
 | `test_t82_rail_icons.py` | RailIcons | 9 |
 | `test_t86_pptx_speed.py` | FakeEgko, EgkoCache, RasterFill, FontsEmbedded, Progress | 7 |
 | `test_t89_labels.py` | StreetGapFromDash, StreetAvoidsViewArrow | 3 |
-| `test_tglogin.py` | TgProtocol, HubTgLogin, TgHttp | 18 |
+| `test_tglogin.py` | TgProtocol, HubTgLogin, TgHttp, SiteCookie, SiteHttp | 25 |
 | `albumgeo_test.js` | JS | 16 |
 | `albummeta_test.js` | JS | 30 |
 | `blocks_test.js` | JS | 9 |
