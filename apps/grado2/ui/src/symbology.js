@@ -42,6 +42,7 @@ export function fullStyle(o = {}) {
   st.rules.list = (st.rules.list || []).map(r => ({ field: "", op: "=", val: "", ...r, fill: okc(r?.fill, "#9aa1a8") }));
   st.cat.colors = Object.fromEntries(Object.entries(st.cat.colors || {}).map(([k, c]) => [k, okc(c, "#9aa1a8")]));
   st.cat.off = Array.isArray(st.cat.off) ? st.cat.off : [];
+  if (st.lgrLine != null) { const n = Math.trunc(okn(st.lgrLine, 0)); if (n && Math.abs(n) < 100) st.lgrLine = n; else delete st.lgrLine; }
   return st;
 }
 
@@ -135,6 +136,8 @@ export function hatch(color, pat = "45", step = 8) {
 }
 
 const LGRC = {}, LGRD = {};
+/* Готовые знаки ЛГР для «Линии» в «Свойствах»: [{ code, title }] по Эталону (moscow_lgr.json), заполняет loadLibs. */
+export const LGR_LINES = [];
 let libs = null;
 /* Библиотеки знаков ЛГР: цвета и штрихи кодов, типы линий REDLN97 (те же файлы /styles/, что у рабочей страницы). */
 export function loadLibs() {
@@ -143,6 +146,9 @@ export function loadLibs() {
       await window.Linetypes.load();
       const lgr = await (await fetch("/styles/moscow_lgr.json")).json();
       Object.values(lgr.styles).forEach(s => { if (s.lgr_code != null) { LGRC[+s.lgr_code] = s.stroke; if (s.dash_mm) LGRD[+s.lgr_code] = s.dash_mm.map(v => v * 2); } });
+      const seen = new Set();
+      Object.values(lgr.styles).filter(s => s.lgr_code != null).sort((a, b) => a.lgr_code - b.lgr_code)
+        .forEach(s => { if (!seen.has(+s.lgr_code)) { seen.add(+s.lgr_code); LGR_LINES.push({ code: +s.lgr_code, title: s.title }); } });
     } catch { /* без библиотек линии ЛГР рисуются сплошными */ }
   })();
 }
@@ -156,6 +162,30 @@ const redLineStyle = (f, lat) => new Style({ renderer(coords, st) {
     if (!lt.length && !miss.length) { ctx.save(); ctx.strokeStyle = "#999"; ctx.lineWidth = pr; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.stroke(); ctx.restore(); }
   }
 } });
+
+/* Знак ЛГР, выбранный в «Свойствах» (st.lgrLine: код со стороной, «+» — объект справа по ходу линии), на все объекты слоя.
+   Контур полигона разворачивается: наружное кольцо — так, чтобы знаки смотрели внутрь при «+» (наружу при «−»), дыры — наоборот.
+   Кода нет в REDLN97 (3, 29…) — штрих Эталона его цветом. Тот же знак уходит в DXF (DataPanel → ogd_all line_lgr). */
+const lgrColor = code => LGRC[Math.abs(code)] || "#d7191c";
+const ringArea = r => { let a = 0; for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += r[j][0] * r[i][1] - r[i][0] * r[j][1]; return a; };
+function ownLgrStyle(code, width, lat, geometry) {
+  const c = Math.abs(code), sign = code < 0 ? -1 : 1;
+  return new Style({ geometry, renderer(coords, st) {
+    const ctx = st.context, pr = st.pixelRatio, mpp = st.resolution * Math.cos(lat() * Math.PI / 180), k = pr / mpp, plain = mpp / 0.000264583 > 10000;
+    const name = window.Linetypes.lib?.lgr[String(c)] ? window.Linetypes.forCode(c, sign) : null, w = Math.max(1, width) * 1.3 * pr;
+    const t = st.geometry.getType(), lines = [];
+    if (t === "Polygon" || t === "MultiPolygon") {
+      for (const poly of t === "Polygon" ? [coords] : coords) poly.forEach((r, i) => {   // экран: y вниз, площадь > 0 — по часовой на карте
+        const want = (i ? -1 : 1) * sign; lines.push(Math.sign(ringArea(r)) === want ? r : r.slice().reverse());
+      });
+    } else lines.push(...(typeof coords[0][0] === "number" ? [coords] : coords));
+    for (const pts of lines) {
+      if (name) { window.Linetypes.draw(ctx, pts, name, k, { color: lgrColor(c), width: w, plain }); continue; }
+      ctx.save(); ctx.strokeStyle = lgrColor(c); ctx.lineWidth = w; if (LGRD[c] && !plain) ctx.setLineDash(LGRD[c].map(v => v * k));
+      ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.stroke(); ctx.restore();
+    }
+  } });
+}
 
 /* Полигон, обрезанный по области выгрузки (ЕГКО): рёбра на рамке не обводятся (web/layers.js frameless). */
 function frameless(ft) {
@@ -192,9 +222,16 @@ export const edgeColor = (st, s) => s.hatch && !st.strokeOwn ? s.fill : st.strok
 /* Заливка: узор штриховки (своя светлая подложка, прозрачность заливки не действует) или цвет с прозрачностью заливки. */
 export const fillPaint = (st, s) => s.hatch ? hatch(s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity);
 
-/* Стиль OpenLayers знака s ({ fill, hatch }) для вида геометрии g: point, line, pline (линия в слое полигонов), poly. */
-export function symbolStyle(st, s, g, clip) {
-  const edge = edgeColor(st, s), dash = st.dash?.length ? st.dash : undefined, fill = () => new Fill({ color: fillPaint(st, s) });
+/* Стиль OpenLayers знака s ({ fill, hatch }) для вида геометрии g: point, line, pline (линия в слое полигонов), poly.
+   lat() — широта вида: с ней знак ЛГР слоя (st.lgrLine) рисуется знаками REDLN97, без неё (образец слоя) — линией цвета ЛГР. */
+export function symbolStyle(st, s, g, clip, lat) {
+  const fill = () => new Fill({ color: fillPaint(st, s) });
+  if (st.lgrLine && g !== "point") {
+    if (!lat) return new Style({ fill: g === "poly" ? fill() : undefined, stroke: new Stroke({ color: lgrColor(st.lgrLine), width: Math.max(1, st.width) * 1.3 }) });
+    const line = ownLgrStyle(st.lgrLine, st.width, lat, clip ? frameless : undefined);
+    return g === "poly" ? [new Style({ fill: fill() }), line] : line;
+  }
+  const edge = edgeColor(st, s), dash = st.dash?.length ? st.dash : undefined;
   if (g === "line") return new Style({ stroke: new Stroke({ color: s.fill, width: st.width, lineCap: dash ? "butt" : "round", lineJoin: "round", lineDash: dash }) });
   if (g === "pline") return new Style({ stroke: new Stroke({ color: edge, width: Math.max(st.width, 1), lineCap: "round", lineJoin: "round", lineDash: dash }) });
   if (g === "point" && st.marker === false) return [];
@@ -227,7 +264,7 @@ export function styleFunction(l, fc, lat) {
       const ft = f.getGeometry()?.getType() || "", g = /Point/.test(ft) ? "point" : /Line/.test(ft) && l.geom !== "line" ? (l.geom === "poly" ? "pline" : "line") : l.geom;
       const clip = g === "poly" && st.width > 0 && !!f.get("_clip");
       const key = `${s.fill}|${s.hatch}|${g}|${clip}`; let base = cache.get(key);
-      if (!base) { base = symbolStyle(st, s, g, clip); cache.set(key, base); }
+      if (!base) { base = symbolStyle(st, s, g, clip, lat); cache.set(key, base); }
       Array.isArray(base) ? out.push(...base) : out.push(base);
     }
     if (st.label && res < 4) {

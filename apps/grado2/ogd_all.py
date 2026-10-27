@@ -93,12 +93,13 @@ def catalog_tree(cat):
 def layer_list(cat, codes=None):
     """Слои каталога в порядке портала (обычные и «виртуальные») с именем слоя чертежа
     «ОГД <номер по дереву> <папка> - <слой>»: AutoCAD сортирует слои по имени, номер держит порядок ГИС ОГД.
-    codes — выгрузить только эти слои."""
+    codes — выгрузить только эти слои. Слой из INSTEAD заменяется своим полигональным слоем (см. там)."""
     out, used = [], set()
+    codes = None if codes is None else {INSTEAD.get(c, c) for c in codes}
 
     def walk(nodes, parent):
         for n in nodes:
-            if n.get("code") and (codes is None or n["code"] in codes):
+            if n.get("code") and n["code"] not in INSTEAD and (codes is None or n["code"] in codes):
                 num = n["num"].lstrip(".")
                 name = _BAD.sub("_", f"ОГД {num} {parent + ' - ' if parent else ''}{n['name']}").strip()
                 if len(name) > _NAME_MAX:                  # длинное — режется имя папки (или она уходит), номер и слой остаются
@@ -129,6 +130,19 @@ def _linetypes(props, redln):
     return names + [f"LGR_{c:02d}" for c, _ in acad_lin.missing_codes(pairs, redln["lib"]["linetypes"], redln["idx"]) if c in dash]
 
 
+def _first_sign(code):
+    from grado_render import acad_lin
+    pairs = acad_lin.parse_line_codes(code)
+    return pairs[0][1] if pairs else 1
+
+
+def _orient(geom, sign):
+    """Полигон (GeoJSON) с наружным кольцом по часовой стрелке при sign > 0 (объект справа по ходу), против — при sign < 0;
+    дыры — наоборот. Знаки REDLN97 на контуре тогда смотрят внутрь объекта."""
+    g = shapely.orient_polygons(shapely.geometry.shape(geom), exterior_cw=sign > 0)
+    return shapely.geometry.mapping(g)
+
+
 def _lgr_code(name):
     return int(name[4:]) if name.startswith("LGR_") else dxf_io._code_of(name)
 
@@ -136,6 +150,10 @@ def _lgr_code(name):
 # ---------- Линии границ: сторона полигона слева ----------
 # Слой границ → (слой полигонов той же папки ГИС ОГД, код линии, чья сторона смотрит на эти полигоны).
 _AREA_OF = {"l18": ("virtual138", 18), "l21": ("virtual139", 21)}
+# Слой линий → полигональный слой вместо него в DXF. Границы объектов ПК (l18) у портала с перепутанной стороной кода:
+# знаки REDLN97 местами смотрели наружу. Полигоны «Природные и озеленённые территории» (virtual138) — те же объекты,
+# контур рисуется по часовой стрелке, знаки кода 18 всегда внутрь (владелец 27.10.2026).
+INSTEAD = {"l18": "virtual138"}
 
 
 def _polys(features):
@@ -322,7 +340,7 @@ _ETALON_WORDS = [
     ("линий связи", 34), ("тепловых сет", 40), ("минимальных расстоян", 39), ("трубопровод", 35),
     ("пунктов наблюд", 37), ("геодезич", 38), ("метрополитен", 36), ("технические зоны", 29), ("технических зон", 29),
     ("памятник", 55), ("размещения окс на оопт", 57), ("резерв", 46), ("особо охраняемых зелен", 47),
-    ("режимы особой охраны", 7), ("режимами регулирования", 21), ("природного комплекса", 18), ("пк ", 18),
+    ("режимы особой охраны", 7), ("режимами регулирования", 21), ("природного комплекса", 18), ("природные и озелен", 18), ("пк ", 18),
     ("оопт", 8), ("особо охраняемые природные", 8), ("полос отвода", 6), ("полосы отвода", 6),
     ("внеуличных пешеход", 45), ("линии застройки", 26), ("линий застройки", 26), ("транспортных сооружен", 25),
     ("транспортных коммуникац", 58), ("лесопарков", 49), ("регулирования застройки", 23),
@@ -616,9 +634,14 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
                         ents.append(msp.add_point((x, y), dxfattribs=attrs))
             else:
                 lts = _linetypes(props, redln) if redln else []
-                if redln and not lts and layer.get("lgr") and geom["type"] in ("Polygon", "MultiPolygon") \
-                        and layer["lgr"] not in (1, 2, 3, 4):    # контур зоны — штрихом знака Эталона (у линий — свой код)
-                    lts = _linetypes({"linecode": str(layer["lgr"])}, redln)
+                poly = geom["type"] in ("Polygon", "MultiPolygon")
+                own = layer.get("line_lgr")                  # знак ЛГР, выбранный в «Свойствах» слоя проекта — на все объекты
+                if redln and own and not lts:
+                    lts = _linetypes({"linecode": str(own)}, redln)
+                elif redln and not lts and layer.get("lgr") and poly and layer["lgr"] not in (1, 2, 3, 4):
+                    lts = _linetypes({"linecode": str(layer["lgr"])}, redln)  # контур зоны — знаком Эталона (у линий — свой код)
+                if lts and poly:                             # знаки по коду «+» — справа по ходу: контур по часовой, знаки внутрь
+                    geom = _orient(geom, _first_sign(props.get("linelineco") or props.get("linecode") or own or 1))
                 for n in lts:
                     if n in doc.linetypes:
                         continue
@@ -775,7 +798,7 @@ class Job:
                  gate=None, extra=None):
         """bbox WGS84 или sheet — лист МСК (см. build_drawing); styles(code) → CartoCSS слоя портала или None;
         redln — типы линий REDLN97 (см. build_drawing); gate() — контекст очереди к порталу (portalgate.py), без него — сразу.
-        extra — слои проекта не из каталога портала (ЕГКО, OSM, ЕГРН…): [{"title", "features": [GeoJSON WGS84], "color"?}],
+        extra — слои проекта не из каталога портала (ЕГКО, OSM, ЕГРН…): [{"title", "features": [GeoJSON WGS84], "color"?, "lgr"?}],
         каждый своим слоем чертежа после слоёв портала (26.10.2026: отмеченные ЕГКО не попадали в DXF, кнопка была серой)."""
         self.gate, self.extra = gate, extra or []
         self.sheet, self.styles, self.codes, self.redln = sheet, styles, (set(codes) if codes is not None else None), redln
@@ -804,7 +827,12 @@ class Job:
             while name.lower() in used:
                 name = f"{name[:_NAME_MAX - 4].strip()} ({len(used)})"
             used.add(name.lower())
-            out.append({"code": "", "title": str(lay.get("title") or name), "dxf": name, "features": feats, "color": _rgb_hex(lay.get("color"))})
+            try:                                        # знак ЛГР слоя из «Свойств» («Линия» → знак ЛГР): код со стороной, «-18»
+                lgr = int(lay.get("lgr")) if lay.get("lgr") not in (None, "") and 0 < abs(int(lay.get("lgr"))) < 100 else None
+            except (TypeError, ValueError):
+                lgr = None
+            out.append({"code": "", "title": str(lay.get("title") or name), "dxf": name, "features": feats, "color": _rgb_hex(lay.get("color")),
+                        "line_lgr": lgr})
         return out
 
     def _portal(self, fn, *args):
