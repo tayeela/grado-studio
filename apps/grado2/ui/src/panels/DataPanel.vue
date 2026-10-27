@@ -323,7 +323,7 @@ async function runDxf() {
   const inBox = f => { try { const b = turf.bbox(f); return b[0] <= e && b[2] >= w && b[1] <= n && b[3] >= s; } catch { return false; } };
   const extra = rest.filter(k => project.data[k]?.fc?.features?.length).map(k => {
     const l = project.layers.find(x => x.key === k);
-    return { title: project.data[k].title || SOURCES[k]?.title || k, color: l?.style?.stroke || l?.style?.fill || null,
+    return { title: project.data[k].title || SOURCES[k]?.title || k, color: l?.style?.stroke || l?.style?.fill || null, lgr: l?.style?.lgrLine || null,
       features: project.data[k].fc.features.filter(f => f.geometry && inBox(f)).map(f => ({ geometry: f.geometry, properties: f.properties || {} })) };
   }).filter(x => x.features.length);
   if (!codes.length && !extra.length) { ogd.where = req.where; notice.value = `В DXF нечего класть: у отмеченных слоёв нет объектов по ${req.where}.`; return; }
