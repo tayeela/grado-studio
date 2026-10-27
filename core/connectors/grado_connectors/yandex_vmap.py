@@ -512,18 +512,26 @@ class YandexVmap(Connector):
 
     def _http_get(self, url, timeout=30):
         """Тайл по сети → байты; b"" — тайла нет (404). Капча или обрезанный ответ (decode не прочёл) — повтор
-        по общему правилу netutil, а не кэш на 30 дней."""
-        try:
-            return netutil.request(url, headers=HEADERS, timeout=timeout,
-                                   check=lambda data: data and decode(data)).content
-        except netutil.HttpError as e:
-            if e.code == 404:              # нет данных в тайле
-                return b""
-            # отказ Яндекса словами (<message> в XML) — в текст ошибки: «HTTP 400» без причины не разобрать с сайта
-            why = re.search(rb"<message>\s*(.*?)\s*</message>", e.body or b"", re.S)
-            if why:
-                raise ConnectorError(f"HTTP {e.code}: {why.group(1).decode('utf-8', 'replace')[:200]}") from None
-            raise
+        по общему правилу netutil, а не кэш на 30 дней. 400 — тоже до трёх попыток: 27.10.2026 сайт получил 400
+        на тайл, который через минуту отдавался (с msk, Mac и облака), и из-за одного тайла упали все слои Яндекса."""
+        for attempt in (1, 2, 3):
+            try:
+                return netutil.request(url, headers=HEADERS, timeout=timeout,
+                                       check=lambda data: data and decode(data)).content
+            except netutil.HttpError as e:
+                if e.code == 400 and attempt < 3:
+                    netutil.sleep(2.0 * attempt)
+                    continue
+                err = e
+                break
+        e = err
+        if e.code == 404:                  # нет данных в тайле
+            return b""
+        # отказ Яндекса словами (<message> в XML) — в текст ошибки: «HTTP 400» без причины не разобрать с сайта
+        why = re.search(rb"<message>\s*(.*?)\s*</message>", e.body or b"", re.S)
+        if why:
+            raise ConnectorError(f"HTTP {e.code}: {why.group(1).decode('utf-8', 'replace')[:200]}") from None
+        raise e
 
     def _tile(self, x, y):
         """(данные, скачан ли из сети). Повторы — в netutil (_http_get); после каждого скачанного тайла — пауза."""

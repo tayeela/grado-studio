@@ -262,8 +262,15 @@ class TestFetch(unittest.TestCase):
         self.assertEqual(len(net.requests), 1)
         bad = httpx.Response(400, content=b'<?xml version="1.0"?><error><status>400</status>'
                                           b'<message> Invalid tile coordinates</message></error>')
-        with FakeNet(bad) as net:                                                       # отказ — с причиной, без повтора
+        with FakeNet(bad, repeat_last=True) as net:                                     # отказ — три попытки, затем с причиной
             with self.assertRaisesRegex(ConnectorError, r"18/\d+/\d+ не скачан: HTTP 400: Invalid tile coordinates$"):
+                yv.YandexVmap(pause=0).fetch(box, ["building"])
+        self.assertEqual((len(net.requests), net.sleeps), (3, [2.0, 4.0]))
+        with FakeNet(400, tile) as net:                                                 # разовый 400 (27.10.2026) — повтор
+            self.assertTrue(yv.YandexVmap(pause=0).fetch(box, ["building"])["features"])
+        self.assertEqual(len(net.requests), 2)
+        with FakeNet(403) as net:                                                       # прочие 4xx — без повтора
+            with self.assertRaises(ConnectorError):
                 yv.YandexVmap(pause=0).fetch(box, ["building"])
         self.assertEqual(len(net.requests), 1)
 
