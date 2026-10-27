@@ -137,6 +137,35 @@ class OgdAll(unittest.TestCase):
         zone = doc.modelspace().query('LWPOLYLINE[layer=="ОГД Зоны"]')[0]
         self.assertFalse(zone.dxf.hasattr("linetype"))            # без кода линии — обычная линия слоя
 
+    def test_nature_borders_are_exported_as_green_area_polygons(self):
+        cat = [{"id": 1, "parent_id": 0, "name": "Слои", "type": "folder"},
+               {"id": 2, "parent_id": 1, "code": "l18", "type": "layer", "name": "Границы объектов природного комплекса"},
+               {"id": 3, "parent_id": 1, "code": "virtual138", "type": "virtual", "name": "Природные и озеленённые территории"}]
+        self.assertEqual([x["code"] for x in ogd_all.layer_list(cat)], ["virtual138"])        # «всё» — без линий l18
+        self.assertEqual([x["code"] for x in ogd_all.layer_list(cat, {"l18"})], ["virtual138"])
+        self.assertEqual([x["code"] for x in ogd_all.layer_list(cat, {"l18", "virtual138"})], ["virtual138"])
+        self.assertEqual(ogd_all.etalon_code("Природные и озеленённые территории"), 18)
+
+    def test_zone_contour_runs_clockwise_so_lgr_marks_face_inside(self):
+        redln = {"lib": S.REDLN, "idx": S.REDLN_IDX, "colors": S.LGR_COLORS, "dash": S.LGR_DASH}
+        ccw = {"type": "Polygon", "coordinates": [[[37.60, 55.70], [37.62, 55.70], [37.62, 55.72], [37.60, 55.72], [37.60, 55.70]]]}
+        line = {"type": "LineString", "coordinates": [[37.60, 55.70], [37.62, 55.72]]}
+        layers = [{"dxf": "ОГД ПК", "title": "Природные и озеленённые территории", "code": "virtual138", "lgr": 18,
+                   "features": [{"geometry": ccw, "properties": {}}]},
+                  {"dxf": "Мой слой", "title": "Мой слой", "code": "", "line_lgr": -18,
+                   "features": [{"geometry": line, "properties": {}}]}]
+        with mock.patch.object(ogd_all.dxf_io, "oda_converter", return_value=None):
+            body, _ = ogd_all.build_drawing(layers, None, (37.59, 55.69, 37.63, 55.73), redln=redln)
+        doc = ezdxf.read(io.StringIO(zipfile.ZipFile(io.BytesIO(body)).read("gisogd.dxf").decode("utf-8")))
+        pk = doc.modelspace().query('LWPOLYLINE[layer=="ОГД ПК"]')[0]
+        pts = [p[:2] for p in pk.get_points()]
+        area = sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]))
+        self.assertLess(area, 0)                                   # по часовой: «18» — объект справа, знаки внутрь
+        self.assertTrue(pk.dxf.linetype.upper().startswith("L"))
+        own = doc.modelspace().query('LWPOLYLINE[layer=="Мой слой"]')[0]
+        self.assertTrue(own.dxf.linetype.upper().startswith("L"))  # знак ЛГР из «Свойств» слоя проекта
+        self.assertTrue(own.dxf.hasattr("true_color"))
+
     def test_tech_zone_lines_get_lgr_dash_and_labels_become_text(self):
         redln = {"lib": S.REDLN, "idx": S.REDLN_IDX, "colors": S.LGR_COLORS, "dash": S.LGR_DASH}
         line = {"type": "LineString", "coordinates": [[37.60, 55.70], [37.62, 55.72]]}

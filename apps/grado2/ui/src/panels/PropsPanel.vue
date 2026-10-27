@@ -147,7 +147,8 @@
       <div class="f" v-if="l.geom !== 'line'">
         <span>Контур</span>
         <div class="fc">
-          <wa-color-picker size="s" aria-label="Цвет контура" label="Цвет контура" :value="edge" @change="e => { st.stroke = e.target.value; st.strokeOwn = true; }"></wa-color-picker>
+          <span v-if="st.lgrLine" class="u">цвет знака ЛГР</span>
+          <wa-color-picker v-else size="s" aria-label="Цвет контура" label="Цвет контура" :value="edge" @change="e => { st.stroke = e.target.value; st.strokeOwn = true; }"></wa-color-picker>
           <template v-if="l.geom === 'poly'">
             <wa-number-input size="s" class="num" aria-label="Толщина контура, пикс." :value="st.width" step="0.1" min="0" max="10" @change="e => (st.width = num(e, 1))"></wa-number-input>
             <span class="u">пикс.</span>
@@ -166,6 +167,17 @@
         <wa-select size="s" :value="dashKey" @change="e => setDash(e.target.value)">
           <wa-option v-for="(t, k) in DASHES" :key="k" :value="k">{{ t }}</wa-option>
           <wa-option v-if="dashKey === 'own'" value="own">своя ({{ st.dash.join(" ") }})</wa-option>
+          <template v-if="lgrList.length">
+            <wa-divider></wa-divider><small>Знаки ЛГР (Эталон, REDLN97)</small>
+            <wa-option v-for="x in lgrList" :key="x.code" :value="'lgr:' + x.code" :label="x.code + ' · ' + x.title">{{ x.code }} · {{ x.title }}</wa-option>
+          </template>
+        </wa-select>
+      </label>
+      <label class="f" v-if="st.lgrLine && l.geom !== 'point'">
+        <span>Знаки</span>
+        <wa-select size="s" :value="st.lgrLine > 0 ? '1' : '-1'" @change="e => (st.lgrLine = Math.abs(st.lgrLine) * +e.target.value)">
+          <wa-option value="1">{{ l.geom === 'poly' ? 'внутрь объекта' : 'справа по ходу линии' }}</wa-option>
+          <wa-option value="-1">{{ l.geom === 'poly' ? 'наружу' : 'слева по ходу линии' }}</wa-option>
         </wa-select>
       </label>
     </template>
@@ -218,7 +230,7 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { Eye, EyeOff, Plus, X } from "@lucide/vue";
 import "../../../web/roles.js";
 import { current, project, shown } from "../store.js";
@@ -226,7 +238,7 @@ import { dataRev } from "../edit.js";
 import { plural } from "../geom.js";
 import LayerSwatch from "./LayerSwatch.vue";
 import {
-  CAT, DASHES, DENS, HATCHES, OPS, OTHER, RAMPS, RAMP_TITLES, assignCats, breaks, catValues, edgeColor, fieldsOf, floorsDenOf, legendItems, numFields, okn, ruleCount,
+  CAT, DASHES, DENS, HATCHES, LGR_LINES, OPS, OTHER, RAMPS, RAMP_TITLES, assignCats, breaks, catValues, edgeColor, fieldsOf, floorsDenOf, legendItems, loadLibs, numFields, okn, ruleCount,
 } from "../symbology.js";
 
 window.Roles.load();                                // таблица кодов каталога ГИС ОГД → роль (GET /api/layer_roles)
@@ -248,7 +260,10 @@ const legend = computed(() => (st.value.grad.field, st.value.grad.n, st.value.gr
 const hatched = computed(() => st.value.mode === "rules" ? st.value.rules.list.some(r => r.hatch) : !!st.value.hatch);
 /* цвет контура как на карте: у штриховки без своего цвета контура — цвет штриховки (symbology.js edgeColor) */
 const edge = computed(() => edgeColor(st.value, { fill: st.value.fill, hatch: hatched.value }));
-const dashKey = computed(() => { const d = (st.value.dash || []).join(","); return !d ? "solid" : Object.hasOwn(DASHES, d) ? d : "own"; });
+const dashKey = computed(() => { if (st.value.lgrLine) return "lgr:" + Math.abs(st.value.lgrLine); const d = (st.value.dash || []).join(","); return !d ? "solid" : Object.hasOwn(DASHES, d) ? d : "own"; });
+/* готовые знаки ЛГР для «Линии»: библиотеки грузятся один раз (symbology.js loadLibs) */
+const lgrList = ref([]);
+loadLibs().then(() => (lgrList.value = LGR_LINES.slice()));
 const num = (e, d) => okn(e.target.value, d);
 
 function setMode(m) {
@@ -258,7 +273,11 @@ function setMode(m) {
   if (m === "grad") void breaks(s, fc.value);
 }
 function setHatch(v) { const s = st.value; if (v === "none") s.hatch = false; else { s.hatchPat = v; if (s.mode !== "rules") s.hatch = true; } }
-function setDash(v) { if (v === "own") return; if (v === "solid") delete st.value.dash; else st.value.dash = v.split(",").map(Number); }
+function setDash(v) {
+  const s = st.value; if (v === "own") return;
+  if (v.startsWith("lgr:")) { s.lgrLine = +v.slice(4) * (s.lgrLine < 0 ? -1 : 1); delete s.dash; return; }   // знак ЛГР: сторона знаков сохраняется
+  delete s.lgrLine; if (v === "solid") delete s.dash; else s.dash = v.split(",").map(Number);
+}
 function catOff(v, off) { const s = st.value; s.cat.off = off ? [...s.cat.off, v] : s.cat.off.filter(x => x !== v); }
 function setDen(d) { if (d) st.value.maxDen = d; else delete st.value.maxDen; }
 

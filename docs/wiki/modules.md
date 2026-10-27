@@ -69,13 +69,13 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_num`, `page_size`, `frame_rect`, `_rgb`, `_fade`, `_rect`, `_path`, `_baseline`, `_text`, `_fit`, `_wrap`, `fmt_m`, `fmt_scale`, `linked_scale`, `scalebar_step`, `_legend`, `_table`, `_textblock`, `_picture`, `_north`, `_scalebar`, `_ellipse`, `_line`, `_placeholder`, `map_sheet`, `_map`, `_local`, `_frame_ops`, `_place`, `_block`, `_Blocks`, `_PaperBorder`, `_doc`, `_page`, `build_pages`, `build_page`, `render_pdf`, `render_page_svg`, `map_svg`
 
-### `apps/grado2/ogd_all.py` — 912 стр.
+### `apps/grado2/ogd_all.py` — 940 стр.
 
 «Всё из ГИС ОГД в DWG»: все слои портала ИСОГД по области — одним чертежом, слой портала = слой чертежа.
 
 Разделы по порядку: Пределы AutoCAD и память о слоях, которые портал не отдаёт · Каталог портала: дерево слоёв и список слоёв выгрузки · Типы линий и коды линий ЛГР · Линии границ: сторона полигона слева · XDATA: атрибуты объекта в чертеже · Область выгрузки: рамка листа · Цвет, штриховка и линия слоя: стиль портала и оформление «по Эталону» · Подписи объектов: углы вдоль линий · Сборка чертежа DXF · Стили слоёв портала (CartoCSS, кэш на диске) · Просмотр области: сколько объектов каждого слоя есть в кэше · Фоновая выгрузка: одна за раз, состояние и отмена
 
-Функции: `_load_failed`, `_save_failed`, `catalog_tree`, `layer_list`, `_linetypes`, `_lgr_code`, `_polys`, `orient_lines`, `_cut_bytes`, `_xdata`, `sheet_box`, `sheet_bbox_wgs`, `portal_color`, `_decls`, `_hex`, `_num`, `etalon_code`, `lgr_entry`, `dxf_hatch`, `etalon_style`, `layer_style`, `portal_style`, `label_siblings`, `label_angles`, `set_label_angles`, `_zone_hatch`, `_label`, `build_drawing`, `portal_styles`, `_save_json`, `scan`, `_rgb_hex`, `Job`
+Функции: `_load_failed`, `_save_failed`, `catalog_tree`, `layer_list`, `_linetypes`, `_first_sign`, `_orient`, `_lgr_code`, `_polys`, `orient_lines`, `_cut_bytes`, `_xdata`, `sheet_box`, `sheet_bbox_wgs`, `portal_color`, `_decls`, `_hex`, `_num`, `etalon_code`, `lgr_entry`, `dxf_hatch`, `etalon_style`, `layer_style`, `portal_style`, `label_siblings`, `label_angles`, `set_label_angles`, `_zone_hatch`, `_label`, `build_drawing`, `portal_styles`, `_save_json`, `scan`, `_rgb_hex`, `Job`
 
 ### `apps/grado2/ogd_warm.py` — 172 стр.
 
