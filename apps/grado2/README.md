@@ -86,6 +86,8 @@
 - `GRADO2_GUEST` — `1` открывает совместный сайт без пароля под учётной записью «Гость».
 - `GRADO2_TG_CLIENT_ID`, `GRADO2_TG_CLIENT_SECRET` — вход через Telegram в совместном режиме (Client ID и Client Secret из @BotFather → бот → Login Widget); без них кнопки «Войти через Telegram» нет.
 - `GRADO2_TG_ADMINS` — через запятую id Telegram или @имена: такой человек входит через Telegram без приглашения, администратором.
+- Без совместного режима те же ключи закрывают всю программу страницей входа через Telegram (кука `grado_site`): `GRADO2_TG_ADMINS` —
+  владелец, `GRADO2_TG_GUESTS` (`*` — любой) — гости; `GRADO2_SITE_ROLE=guest` — копия для гостей (пускает и владельца).
 - `GRADO2_PUBLIC_HOST` — имя сайта за обратным прокси; без него запросы с этим именем считаются чужими (проверка Host и Origin).
 - `GRADO2_NO_BROWSER` — если задана и не пуста, сервер не открывает окно браузера.
 - `GRADO2_NO_DIALOG` — `1` отключает окно с ошибкой запуска на Windows (`packaging/grado2_entry.py`).
