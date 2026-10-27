@@ -1907,6 +1907,11 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 TOKEN = os.environ.get("GRADO2_TOKEN") or ""
 TOKEN_COOKIE, TOKEN_HEADER = "grado_token", "X-Grado-Token"
 LOGIN_OPEN = {"/login.html", "/login.js"}               # страница входа и её скрипт (CSP: inline-скриптов нет)
+# Вход на сайт через Telegram без совместного режима (владелец 27.10.2026; tglogin.py, раздел «вход на сайт»): заданы ключи
+# бота GRADO2_TG_* и хаб выключен — всё, кроме страницы входа, только с подписанной кукой grado_site. Копия для гостей —
+# GRADO2_SITE_ROLE=guest (пускает владельца и гостя), иначе копия пускает только владельца.
+SITE_ACCEPT = ("o", "g") if os.environ.get("GRADO2_SITE_ROLE") == "guest" else ("o",)
+SITE_OPEN = {"/api/health", "/api/site", "/api/hub/tg/start", tglogin.CALLBACK}
 LOGIN_TRIES, LOGIN_WINDOW = 10, 60                      # промахов с одного адреса за окно в секундах, дальше 429
 _LOGIN_FAILS, _LOGIN_LOCK = {}, threading.Lock()
 
@@ -1933,6 +1938,11 @@ def open_hub(root=None):
     """Хаб в каталоге GRADO2_HUB_DIR, по умолчанию <проекты>/.hub."""
     hubmod.QUOTA_BYTES = PROJECTS_CAP                                 # одна квота и для локальных проектов, и для хаба
     return hubmod.Hub(root or os.environ.get("GRADO2_HUB_DIR") or PROJECTS / ".hub")
+
+
+def site_cfg():
+    """Ключи бота, если сайт закрыт входом через Telegram (хаб выключен), иначе None."""
+    return None if HUB else tglogin.config()
 
 
 def same_token(a, b):
@@ -2112,6 +2122,9 @@ class Ctx:
         """Ключ доступа или сессия хаба: ответ-отказ (или переход на вход), если дальше идти нельзя, иначе None."""
         if HUB:
             return self.hub_gate()
+        cfg = site_cfg()
+        if cfg:
+            return self.site_gate(cfg)
         if not TOKEN:
             return None
         path, method = self.route, self.method
@@ -2124,6 +2137,24 @@ class Ctx:
         if method != "POST" and (path.endswith("/") or path.endswith(".html") or path == "/old"):   # страницы: /, /next/, /old
             return Response(b"", 302, headers={"Location": "/login.html"})
         return _json(401, {"error": "нужен вход"})
+
+    def site_gate(self, cfg):
+        """Сайт с входом через Telegram: открыты страница входа, здоровье и сам вход; остальное — с кукой grado_site."""
+        path, method = self.route, self.method
+        if method in ("GET", "HEAD") and (path in LOGIN_OPEN or path in SITE_OPEN) or self.local_probe():
+            return None
+        if method == "POST" and path == "/api/logout" or self.site_user(cfg):
+            return None
+        if method in ("GET", "HEAD") and (path.endswith("/") or path.endswith(".html") or path == "/old"):
+            return Response(b"", 302, headers={"Location": "/login.html"})
+        return _json(401, {"error": "нужен вход"})
+
+    def site_user(self, cfg):
+        return tglogin.site_check(cfg, self.cookie_value(tglogin.SITE_COOKIE), SITE_ACCEPT)
+
+    def site_cookie(self, value, max_age):
+        return (f"{tglogin.SITE_COOKIE}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}"
+                + ("; Secure" if self.tls() else ""))
 
     def hub_gate(self):
         """Совместный режим: открыты здоровье сервера, статика (в ней нет данных), вход, регистрация и «кто я»;
@@ -2828,6 +2859,44 @@ def tg_callback(c, u):
     return _tg_back(c, "bound" if bind else None, None if bind else token)
 
 
+# ----- вход на сайт без хаба: те же /api/hub/tg/start и callback (их адрес записан в BotFather), кука grado_site -----
+def site_call(c):
+    cfg = site_cfg()
+    if c.route == "/api/site":
+        u = c.site_user(cfg) if cfg else None
+        return _json(200, {"tg": bool(cfg), "key": bool(TOKEN) and not cfg, "user": u and {"id": u["u"], "username": u["n"]}})
+    if not cfg:
+        return _site_back(c, "off")
+    if c.route == "/api/hub/tg/start":
+        url, cookie = tglogin.start(cfg, _tg_host(c))
+        r = Response(b"", 302, headers={"Location": url})
+        r.headers.append("Set-Cookie", _tg_cookie(c, cookie, tglogin.STATE_TTL))
+        return r
+    if c.q("error"):                                   # «Отмена» в Telegram
+        return _site_back(c, "denied")
+    try:
+        st = tglogin.check_state(cfg, c.cookie_value(tglogin.STATE_COOKIE), c.q("state"))
+        person = tglogin.verify(cfg, tglogin.exchange(cfg, _tg_host(c), c.q("code")[:2000], st["v"]))
+        role = tglogin.site_role(cfg, person)
+    except tglogin.TgError as e:
+        c.log_fail(e)
+        return _site_back(c, e.code)
+    except Exception as e:                             # сеть до Telegram и прочее: причина в журнале
+        c.log_fail(e)
+        return _site_back(c, "net")
+    _log_line(f"вход через Telegram: {person['id']} @{person['username']} роль {role}")
+    r = Response(b"", 302, headers={"Location": "/next/"})
+    r.headers.append("Set-Cookie", _tg_cookie(c, "", 0))
+    r.headers.append("Set-Cookie", c.site_cookie(tglogin.site_cookie(cfg, person, role), tglogin.SITE_TTL))
+    return r
+
+
+def _site_back(c, code):
+    r = Response(b"", 302, headers={"Location": "/login.html#tg=" + code})
+    r.headers.append("Set-Cookie", _tg_cookie(c, "", 0))
+    return r
+
+
 def hub_post(c):
     path, req, u = c.route, c.obj(), c.who()
     ip, ua = c.client_ip(), c.headers.get("User-Agent") or ""
@@ -2975,6 +3044,8 @@ async def api_get(request):
         return await STATIC.get_response("index.html", request.scope)
     if HUB and c.route.startswith("/api/hub/"):
         return await run_in_threadpool(hub_call, c)
+    if not HUB and c.route in SITE_OPEN and c.route != "/api/health":
+        return await run_in_threadpool(site_call, c)
     fn = GET_ROUTES.get(c.route)
     if fn is None and c.route.startswith("/styles/"):
         fn = get_styles
@@ -3015,6 +3086,8 @@ async def api_post(request):
             # остальная запись тоже только JSON (кроме сырого DXF): форма с другого сайта так тело не отправит
             if c.route not in ("/api/import/dxf", "/api/project") and c.content_type() != "application/json":
                 return _json(415, {"error": "ожидается Content-Type: application/json"})
+        if c.route == "/api/logout" and site_cfg():
+            return _json(200, {"ok": True}, {"Set-Cookie": c.site_cookie("", 0)})
         if TOKEN and not HUB and c.route in ("/api/login", "/api/logout"):
             return await run_in_threadpool(_answer, c, post_login if c.route == "/api/login" else post_logout)
         fn = POST_ROUTES.get(c.route)

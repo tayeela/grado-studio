@@ -24,12 +24,22 @@ button{border:0;background:var(--accent);color:var(--accent-ink);cursor:pointer}
 button:disabled{opacity:.6;cursor:default}
 :focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 #msg{min-height:1.4em;color:var(--bad)}
+a.tg{display:flex;align-items:center;justify-content:center;height:34px;border-radius:3px;background:#2aabee;color:#fff;text-decoration:none;font-weight:600}
+a.tg:hover{background:#229ed9}
+.hint{color:var(--muted)}
+[hidden]{display:none!important}
 </style>
 <form id="f" autocomplete="off">
   <h1>ГРАДО 2</h1>
-  <label for="t">Ключ доступа</label>
-  <input id="t" type="password" autocomplete="current-password" autofocus required>
-  <button id="b" type="submit">Войти</button>
+  <div id="tgbox" hidden>
+    <a class="tg" id="tg" href="/api/hub/tg/start">Войти через Telegram</a>
+    <p class="hint">Вход запоминается на 30 дней.</p>
+  </div>
+  <div id="keybox" style="display:grid;gap:10px">
+    <label for="t">Ключ доступа</label>
+    <input id="t" type="password" autocomplete="current-password" autofocus required>
+    <button id="b" type="submit">Войти</button>
+  </div>
   <div id="msg" role="alert"></div>
 </form>
 <script src="login.js"></script>

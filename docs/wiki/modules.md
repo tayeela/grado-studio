@@ -109,19 +109,19 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3249 стр.
+### `apps/grado2/server.py` — 3322 стр.
 
 ГРАДО 2: локальный сервер.
 
-Разделы по порядку: Пути, папка проектов, настройки запуска · Источники данных: ключ слоя → (вид, параметр, название) · Пределы области выгрузки, разбиение на части, подписи полей · ЕГКО: пустые строковые поля портал отдаёт одним пробелом " " — _v считает их пустыми · Яндекс: все атрибуты слоя как есть, ключевые — по-русски; площадь и длина на местности даё · поиск участка по кадастровому номеру (НСПД) · Пределы тела запроса, ход выгрузки, понятные ошибки порталов · Подложки: тайлы Esri · OSM (Overpass): выгрузка и кэш по областям · ФГИС ТП: документы территориального планирования (Минэкономразвития) · ТЭП-нормы, район по территории, пешеходный маршрут до станции · Проекты на диске: запись, версии, размер папки · HTTP: заголовки безопасности, вход по ключу, совместный режим · HTTP: Starlette (BSD) под uvicorn (BSD); тела запросов проверяет pydantic (MIT) · GET · POST · совместный режим (hub.py): маршруты /api/hub · вход через Telegram (tglogin.py): /api/hub/tg/start → oauth.telegram.org → /api/hub/tg/cal · приём запроса · Запуск: версия кода, повторный запуск, сервер
+Разделы по порядку: Пути, папка проектов, настройки запуска · Источники данных: ключ слоя → (вид, параметр, название) · Пределы области выгрузки, разбиение на части, подписи полей · ЕГКО: пустые строковые поля портал отдаёт одним пробелом " " — _v считает их пустыми · Яндекс: все атрибуты слоя как есть, ключевые — по-русски; площадь и длина на местности даё · поиск участка по кадастровому номеру (НСПД) · Пределы тела запроса, ход выгрузки, понятные ошибки порталов · Подложки: тайлы Esri · OSM (Overpass): выгрузка и кэш по областям · ФГИС ТП: документы территориального планирования (Минэкономразвития) · ТЭП-нормы, район по территории, пешеходный маршрут до станции · Проекты на диске: запись, версии, размер папки · HTTP: заголовки безопасности, вход по ключу, совместный режим · HTTP: Starlette (BSD) под uvicorn (BSD); тела запросов проверяет pydantic (MIT) · GET · POST · совместный режим (hub.py): маршруты /api/hub · вход через Telegram (tglogin.py): /api/hub/tg/start → oauth.telegram.org → /api/hub/tg/cal · вход на сайт без хаба: те же /api/hub/tg/start и callback (их адрес записан в BotFather),  · приём запроса · Запуск: версия кода, повторный запуск, сервер
 
-Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `nspd_zouit_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project`, `Stale`, `save_project`, `album_info`, `catalog`, `list_projects`, `_existing`, `_clash`, `rename_project` и ещё 79
+Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `nspd_zouit_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project`, `Stale`, `save_project`, `album_info`, `catalog`, `list_projects`, `_existing`, `_clash`, `rename_project` и ещё 82
 
-### `apps/grado2/tglogin.py` — 158 стр.
+### `apps/grado2/tglogin.py` — 202 стр.
 
 ГРАДО 2 · вход на общий сайт через Telegram (OpenID Connect, код + PKCE; владелец 26.10.2026).
 
-Функции: `TgError`, `config`, `_b64`, `_unb64`, `_sign`, `start`, `redirect_uri`, `check_state`, `exchange`, `_ssl`, `_post`, `_jwks_client`, `verify`, `is_admin`
+Функции: `TgError`, `config`, `_b64`, `_unb64`, `_sign`, `start`, `redirect_uri`, `check_state`, `exchange`, `_ssl`, `_post`, `_jwks_client`, `verify`, `is_admin`, `site_role`, `site_cookie`, `site_check`
 
 ## Страница (apps/grado2/web/*.js)
 
@@ -251,10 +251,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.json, generated from REDLN97.LIN + RED_LNS.SHX by tools/gen_redln97.py. Pattern units are drawing units (metres); k = pixels per metre.
 
 
-### `apps/grado2/web/login.js` — 16 стр.
+### `apps/grado2/web/login.js` — 32 стр.
 
-Вход по ключу доступа (включается переменной GRADO2_TOKEN на сервере). Ключ уходит только в теле POST, не в адрес.
+Вход по ключу доступа (переменная GRADO2_TOKEN на сервере) или через Telegram (ключи бота GRADO2_TG_*: тогда видна только кнопка Telegram). Ключ уходит только в теле POST, не в адрес. Ошибка входа через Telegram приходит как #tg=код.
 
+Функции: `code`
 
 ### `apps/grado2/web/migrate.js` — 39 стр.
 

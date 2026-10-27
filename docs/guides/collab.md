@@ -66,6 +66,9 @@
 - Уже вошедший по паролю: меню учётной записи → «Привязать Telegram».
 - Настройка сервера: бот в @BotFather → Login Widget → Allowed URL `https://grado.tailink.tech/api/hub/tg/callback`;
   в службу `grado` — `GRADO2_TG_CLIENT_ID`, `GRADO2_TG_CLIENT_SECRET`, `GRADO2_TG_ADMINS`. Подробности — `apps/grado2/tglogin.py`.
+- Сайт без совместного режима (так сейчас на msk, v0.99.109): те же ключи закрывают всю программу страницей входа с одной
+  кнопкой Telegram. `GRADO2_TG_ADMINS` попадают в программу владельца, `GRADO2_TG_GUESTS` (`*` — любой) — в гостевую копию.
+  Настройка — `tools/server_pull/tg-login-on-msk.sh`.
 
 ## Гостевой вход без пароля (по желанию, владелец 06.10.2026)
 - Включение: в службу `grado` добавить `Environment=GRADO2_GUEST=1` и перезапустить её. Выключение — убрать строку и
