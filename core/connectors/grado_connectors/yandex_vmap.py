@@ -20,6 +20,7 @@
 
 import math
 import os
+import re
 import struct
 import tempfile
 import time
@@ -518,6 +519,10 @@ class YandexVmap(Connector):
         except netutil.HttpError as e:
             if e.code == 404:              # нет данных в тайле
                 return b""
+            # отказ Яндекса словами (<message> в XML) — в текст ошибки: «HTTP 400» без причины не разобрать с сайта
+            why = re.search(rb"<message>\s*(.*?)\s*</message>", e.body or b"", re.S)
+            if why:
+                raise ConnectorError(f"HTTP {e.code}: {why.group(1).decode('utf-8', 'replace')[:200]}") from None
             raise
 
     def _tile(self, x, y):
