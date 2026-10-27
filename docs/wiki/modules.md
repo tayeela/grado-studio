@@ -430,7 +430,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_lon2tilex`, `_lat2tiley`, `_gpix2lonlat`, `_pick_zoom`, `_nice_interval`, `_fetch_grid`, `_http_get`, `_cell_segments`, `_stitch`, `_contours`, `TerrainContours`
 
-### `core/connectors/grado_connectors/yandex_vmap.py` — 562 стр.
+### `core/connectors/grado_connectors/yandex_vmap.py` — 567 стр.
 
 Яндекс Карты: векторные тайлы vmap3 (обратная разработка, сверено 23.09.2026) — только стандартная библиотека.
 

@@ -260,6 +260,12 @@ class TestFetch(unittest.TestCase):
         with FakeNet(404) as net:                                                       # тайла нет — пусто, без повтора
             self.assertEqual(yv.YandexVmap(pause=0).fetch(box, ["building"])["features"], [])
         self.assertEqual(len(net.requests), 1)
+        bad = httpx.Response(400, content=b'<?xml version="1.0"?><error><status>400</status>'
+                                          b'<message> Invalid tile coordinates</message></error>')
+        with FakeNet(bad) as net:                                                       # отказ — с причиной, без повтора
+            with self.assertRaisesRegex(ConnectorError, r"18/\d+/\d+ не скачан: HTTP 400: Invalid tile coordinates$"):
+                yv.YandexVmap(pause=0).fetch(box, ["building"])
+        self.assertEqual(len(net.requests), 1)
 
     def test_progress_counts_tiles(self):
         seen = []
