@@ -10,7 +10,7 @@ VENV="$HOME/.grado2/venv"
 "$VENV/bin/python" -m pip install -q --disable-pip-version-check -r apps/grado2/requirements.txt -r apps/grado2/requirements-dev.txt
 # Playwright для браузерных сценариев и TypeScript для проверки типов (tools/package.json); без node — шаги пропускаются
 if command -v npm >/dev/null; then (cd tools && npm ci --silent) || true; fi
-CH=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 || true)
+CH=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux*/chrome 2>/dev/null | head -1 || true)
 if [ -n "$CH" ] && [ -n "${CLAUDE_ENV_FILE:-}" ]; then echo "export CHROME=\"$CH\"" >> "$CLAUDE_ENV_FILE"; fi
 # хуки git репозитория (tools/git-hooks): pre-commit пересобирает вики, как на Mac; сайт выкладывает сам сервер (tools/server_pull)
 git config core.hooksPath tools/git-hooks

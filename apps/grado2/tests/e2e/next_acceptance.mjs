@@ -117,6 +117,28 @@ try {
     check(after.indexOf("Улицы (OSM)") < before.indexOf("Улицы (OSM)"), "«Улицы (OSM)» перетащен выше в дереве", after.join(", "));
   });
 
+  // C2. Щелчок по карте выбирает объекты только текущего слоя (владелец 27.10.2026): здание под курсором при текущем слое улиц
+  // не выбирается, в строке состояния — подсказка, в каком слое объект; в слое зданий — выбирается
+  await scenario("C2 выбор только в текущем слое", page, async () => {
+    const layerRow = async t => { await showWin(page, "Слои"); await page.locator(".pane.layers .row[data-key]", { hasText: t }).first().click(); await page.waitForTimeout(300); };
+    const tblTitle = () => page.evaluate(() => document.querySelector(".pane.tbl .bar .t")?.textContent || "");
+    const mapClick = async () => { const b = await page.locator(".mapbox .map").first().boundingBox(); await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); await page.waitForTimeout(400); };
+    await layerRow("Здания (ЕГКО)");
+    await showWin(page, "Таблица атрибутов");
+    await page.locator(".pane.tbl .tabulator-row").first().click(); await page.waitForTimeout(700);   // выбор и приближение к зданию
+    check(/выбрано 1/.test(await tblTitle()), "строка таблицы выбрала здание", await tblTitle());
+    await layerRow("Улицы (OSM)");
+    await mapClick();
+    const note = await page.evaluate(() => document.querySelector("button.note")?.textContent || "");
+    check(/Здания \(ЕГКО\)/.test(note), "щелчок по зданию при текущем слое улиц: подсказка про слой зданий", note);
+    await layerRow("Здания (ЕГКО)"); await showWin(page, "Таблица атрибутов");
+    check(!/выбрано/.test(await tblTitle()), "здание не выбрано, пока текущий слой — улицы", await tblTitle());
+    await mapClick();
+    await showWin(page, "Таблица атрибутов");
+    check(/выбрано 1/.test(await tblTitle()), "щелчок по зданию в текущем слое зданий выбирает его", await tblTitle());
+    await closeWin(page, "Таблица атрибутов");
+  });
+
   // D. Анализ: эскиз внутри границы, ТЭП считается; изменение параметра эскиза («Ширина корпуса») меняет ТЭП
   const spp = async () => { const m = (await winText(page, "Показатели (ТЭП)")).match(/СПП новая\s*([\d\s\u00a0]+(?:,\d+)?)\s*тыс/); return m ? num(m[1]) : NaN; };
   await scenario("D анализ и ТЭП", page, async () => {

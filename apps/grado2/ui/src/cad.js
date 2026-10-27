@@ -127,10 +127,11 @@ const selNow = () => { const by = new Map(); return sel.map(s => {
 function setSel(list) {
   setSelUid(list.map(({ key, f }) => { if (!f.gj) return null; return { key, uid: f.gj.properties?._uid }; }).filter(Boolean));
 }
+// щелчок выбирает только объекты текущего слоя (владелец 27.10.2026); нет текущего слоя — любой видимый
 function hitAt(pixel) {
-  let hit = null;
+  let hit = null; const only = lyr(currentId.value) ? currentId.value : "";
   mMain.forEachFeatureAtPixel(pixel, (f, layer) => { const k = layer?.get("key"); if (!k || !lyr(k) || !f.gj) return; hit = { key: k, f }; return true; },
-    { hitTolerance: 4, layerFilter: la => !!la.get("key") && la.getVisible() });
+    { hitTolerance: 4, layerFilter: la => !!la.get("key") && la.getVisible() && (!only || la.get("key") === only) });
   return hit;
 }
 const mapReady = () => !!mMain.getSize()?.[0];

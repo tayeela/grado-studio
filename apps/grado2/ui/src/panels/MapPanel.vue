@@ -29,7 +29,7 @@ import DragBox from "ol/interaction/DragBox.js";
 import { shiftKeyOnly } from "ol/events/condition.js";
 import { Circle as CircleStyle, Fill, Stroke, Style } from "ol/style.js";
 import { fromLonLat, toLonLat } from "ol/proj.js";
-import { basemapId, cursor, mapOnly, project, scale, theme, viewNow, winApi } from "../store.js";
+import { basemapId, current, cursor, mapOnly, project, scale, shown, theme, viewNow, winApi } from "../store.js";
 import { Maximize2, Minimize2 } from "@lucide/vue";
 import { dataRev, mapApi } from "../edit.js";
 import { mskOf, sel, selected, setSel, toggleSel } from "../features.js";
@@ -98,23 +98,36 @@ function drawSel() {
   selSrc.clear(true);
   selSrc.addFeatures(selected().slice(0, 5000).map(s => readOne(s.f)).filter(Boolean));
 }
-function hitAt(pixel) {
+/* выбор только в текущем слое (окно «Слои»), как в QGIS (владелец 27.10.2026); нет текущего — во всех видимых */
+const curKey = () => current.value?.key || "";
+function hitAt(pixel, only = curKey()) {
   let hit = null;
   map.forEachFeatureAtPixel(pixel, (f, layer) => { const key = layer?.get("key"); if (!key || !f.gj) return; hit = { key, uid: f.gj.properties._uid }; return true; },
-    { hitTolerance: 4, layerFilter: la => !!la.get("key") && la.getVisible() });
+    { hitTolerance: 4, layerFilter: la => !!la.get("key") && la.getVisible() && (!only || la.get("key") === only) });
   return hit;
+}
+/* щелчок мимо текущего слоя: подсказка, в каком слое объект под курсором */
+let hint = "";                           // последняя такая подсказка: удачный выбор её убирает
+function missHint(pixel) {
+  const l = current.value; if (!l) return;
+  if (!shown(l)) { notice.value = hint = `Слой «${l.title || l.key}» выключен: включите его, чтобы выбирать объекты`; return; }
+  const other = hitAt(pixel, ""), ow = other && project.layers.find(x => x.key === other.key);
+  if (ow) notice.value = hint = `Объект из слоя «${ow.title || ow.key}»: выберите этот слой в окне «Слои», чтобы выбрать объект`;
 }
 function onClick(e) {
   if (terrTool.value) return;                       // рисуем или правим границу — щелчок не выбирает объекты
   if (cadApi.active?.() || performance.now() - (cadApi.lastEnd || 0) < 400) return;   // щелчок — ввод для команды черчения
   if (hubClick(e)) return;                          // метка комментария или комментарий на карте (совместная работа)
   const hit = hitAt(e.pixel), add = e.originalEvent.shiftKey || e.originalEvent.metaKey || e.originalEvent.ctrlKey;
+  if (!hit) missHint(e.pixel);
+  else if (hint && notice.value === hint) notice.value = hint = "";
   if (add) { if (hit) toggleSel(hit); }
   else setSel(hit ? [hit] : []);
 }
 function onBox(box) {
-  const ext = box.getGeometry().getExtent(), out = [];
+  const ext = box.getGeometry().getExtent(), out = [], only = curKey();
   project.layers.forEach(l => {
+    if (only && l.key !== only) return;
     const v = vec[l.key]; if (!v?.getVisible()) return;
     v.getSource().forEachFeatureIntersectingExtent(ext, f => { if (f.gj) out.push({ key: l.key, uid: f.gj.properties._uid }); });
   });
