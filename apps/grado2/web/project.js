@@ -54,7 +54,7 @@ function collectProject() {
     current: CUR,
     groups: GROUPS.map(g => ({ ...g })), views: VIEWS, album: ALBUM,
     layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style, ...(l.role ? { role: l.role } : {}) })),
-    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, shp: d.shp, bbox: d.bbox, fc: d.fc, original: d.original === d.fc ? "=fc" : d.original }])),   // нетронутая выгрузка не пишется дважды
+    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, shp: d.shp, bbox: d.bbox, acquisitionRefs: d.acquisitionRefs, osmSchema: d.osmSchema, fc: d.fc, original: d.original === d.fc ? "=fc" : d.original }])),   // нетронутая выгрузка не пишется дважды
     graph: graph.serialize(),
   };
 }
@@ -170,7 +170,7 @@ async function saveProject(name) {
   busy(true);
   try {
     const q = "/api/project?name=" + encodeURIComponent(name) + (base ? "&base=" + base : "") + (replace ? "&replace=1" : "");
-    const r = await fetch(q, { method: "POST", headers: { "Content-Type": "application/json" }, body }); const j = await r.json();
+    const r = await fetch(q, { method: "POST", headers: { "Content-Type": "application/json", "X-Grado-Project-Capabilities": "sushpol-v1" }, body }); const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.status);
     PROJ.base = j.modified ?? null;
     PROJ.savedTick = tick; PROJ.dirty = PROJ.tick !== tick; syncProjTitle(); autosave(true);
@@ -218,7 +218,7 @@ async function autosave() {
   if (window.HUB_MODE || window.EMBED) return;     // совместный режим и окно «Листы и альбом»: локального автосохранения нет, правки уходят через Collab
   if (autoBusy) { autoAgain = true; return; }      // идёт запись — следующая пойдёт сразу за ней (новый проект не должен потеряться)
   autoBusy = true; const tick = PROJ.tick;
-  try { const r = await fetch("/api/project?autosave=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: projectJSON() }); if (r.ok) PROJ.autoTick = tick; } catch { }
+  try { const r = await fetch("/api/project?autosave=1", { method: "POST", headers: { "Content-Type": "application/json", "X-Grado-Project-Capabilities": "sushpol-v1" }, body: projectJSON() }); if (r.ok) PROJ.autoTick = tick; } catch { }
   finally { autoBusy = false; if (autoAgain) { autoAgain = false; autosave(); } }
 }
 setInterval(() => {

@@ -24,8 +24,11 @@ HTTP — Starlette под uvicorn, тела запросов проверяет 
 Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 ```
 
-Все упомянутые в коде пути (63):
+Все упомянутые в коде пути (78):
 
+- `/api/agent/health`
+- `/api/agent/project`
+- `/api/agent/projects`
 - `/api/export/`
 - `/api/export/dxf`
 - `/api/export/geojson`
@@ -67,7 +70,19 @@ HTTP — Starlette под uvicorn, тела запросов проверяет 
 - `/api/ogd_all/status`
 - `/api/ogd_all/styles`
 - `/api/ogd_all/tree`
+- `/api/panorama/cancel`
+- `/api/panorama/frame`
 - `/api/place`
+- `/api/preparation/cancel`
+- `/api/preparation/checkpoint`
+- `/api/preparation/export`
+- `/api/preparation/field`
+- `/api/preparation/issues`
+- `/api/preparation/lease`
+- `/api/preparation/photo`
+- `/api/preparation/revision`
+- `/api/preparation/start`
+- `/api/preparation/status`
 - `/api/print/`
 - `/api/print/layout`
 - `/api/print/layout_svg`

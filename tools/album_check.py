@@ -146,12 +146,27 @@ def compare(a, b):
 EXPECT_DIR = Path(__file__).resolve().parent / "album_expect"
 
 
+def recipe_expect(spec=None,name=None):
+    """Слова владельца сохраняются; число страниц нового набора берётся с продолжениями."""
+    paths=[f for f in (EXPECT_DIR/"all.json",EXPECT_DIR/f"{name}.json") if name and f.exists()]
+    source=json.loads(Path(spec).read_bytes()) if spec else {}
+    sheets=source.get("sheets") or []
+    recipe=bool(sheets) and all(v.get("recipeId")=="sushpol-mytishchi" for v in sheets)
+    if recipe:paths.append(EXPECT_DIR/"mytishchi.json")
+    expected=album_lint.load_expect(paths) if paths else None
+    if recipe:
+        expected["pages"]=len(sheets)
+        for n,sheet in enumerate(sheets,1):
+            if sheet.get("mytishchiKind")=="healthcare" and any(layer.get("key")=="accessibility" and layer.get("features") for mp in sheet.get("maps",[]) for layer in mp["sheet"].get("layers",[])):
+                expected["require"].append({"text":"Транспортно-пешеходная доступность","pages":[n],"each":True,"why":"владелец 29.10.2026, #167"})
+    return expected
+
+
 def design_lint(pdf, spec=None, pptx=None, name=None):
     """Проверка оформления альбома (album_lint): ([строки отчёта], число ошибок). Контрольные строки — album_expect/all.json и <name>.json,
     рамки карт — из спецификации печати. Без poppler — пометка в отчёте, не падение; любая другая поломка линта считается ошибкой."""
-    files = [f for f in (EXPECT_DIR / "all.json", EXPECT_DIR / f"{name}.json") if name and f.exists()]
     try:
-        findings, n_pages = album_lint.lint(str(pdf), expect=album_lint.load_expect(files) if files else None, pptx=str(pptx) if pptx else None,
+        findings, n_pages = album_lint.lint(str(pdf), expect=recipe_expect(spec,name), pptx=str(pptx) if pptx else None,
                                             frames=album_lint.frames_from_spec(spec) if spec else None)
     except (OSError, subprocess.CalledProcessError) as e:
         return [f"album_lint: не запущен ({e.__class__.__name__}), оформление не проверено"], 0

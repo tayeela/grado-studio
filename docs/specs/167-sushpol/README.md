@@ -13,3 +13,4 @@
 | [sheet-contracts.md](sheet-contracts.md) | Все 14 видов: поля, формулы, источники и исключения |
 | [layout-contract.md](layout-contract.md) | Роли блоков, шрифты и крайние случаи переполнения |
 | [layout-v1.json](layout-v1.json) | Канонические измеренные блоки всех 14 видов |
+| [mcp-contract.md](mcp-contract.md) | MCP-доступ агента и единый путь серверной сборки/UI |

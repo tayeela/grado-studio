@@ -49,7 +49,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_system_dirs`, `font_id`, `_names`, `_faces`, `_scan`, `families`, `listing`, `_to_ttf`, `_has_cmap4`, `_add_cmap4`, `_cff_to_glyf`, `resolve`, `add_file`, `face_file`, `install`
 
-### `apps/grado2/hub.py` — 1924 стр.
+### `apps/grado2/hub.py` — 1942 стр.
 
 Хаб совместной работы ГРАДО 2 (режим GRADO2_HUB=1): аккаунты, проекты с ролями, ревизии разделов, живые события (presence, комментарии), история версий.
 
@@ -69,6 +69,12 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_num`, `page_size`, `frame_rect`, `_rgb`, `_fade`, `_rect`, `_path`, `_baseline`, `_text`, `_fit`, `_wrap`, `fmt_m`, `fmt_scale`, `linked_scale`, `scalebar_step`, `_legend`, `_table`, `_textblock`, `_picture`, `_north`, `_scalebar`, `_ellipse`, `_line`, `_placeholder`, `map_sheet`, `_map`, `_local`, `_frame_ops`, `_place`, `_block`, `_Blocks`, `_PaperBorder`, `_doc`, `_page`, `build_pages`, `build_page`, `render_pdf`, `render_page_svg`, `map_svg`
 
+### `apps/grado2/mytishchi_io.py` — 203 стр.
+
+ГРАДО 2 · компоновки мытищинского набора на действующем печатном ядре.
+
+Функции: `wrap`, `text_pages`, `table_pages`, `TextBlock`, `TableBlock`, `Decoration`, `PhotoBlock`, `build_frames`
+
 ### `apps/grado2/ogd_all.py` — 940 стр.
 
 «Всё из ГИС ОГД в DWG»: все слои портала ИСОГД по области — одним чертежом, слой портала = слой чертежа.
@@ -83,13 +89,31 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `busy`, `ogd_age`, `egko_age`, `stale`, `late`, `run`, `main`
 
-### `apps/grado2/portalgate.py` — 93 стр.
+### `apps/grado2/panorama_io.py` — 225 стр.
+
+ГРАДО 2 · собирает кадр панорамы из скачанных JPEG-тайлов без интерфейса.
+
+Функции: `_alive`, `azimuth`, `distance`, `plan`, `project_frame`, `_trim`
+
+### `apps/grado2/portalgate.py` — 185 стр.
 
 ГРАДО 2 · очередь к порталам: к одному порталу ходит одно место программы за раз (владелец 10.10.2026, #51).
 
-Функции: `Busy`, `Gate`, `portals_of`
+Функции: `Busy`, `Cooling`, `Gate`, `portals_of`, `install_network_policy`
 
-### `apps/grado2/print_io.py` — 2595 стр.
+### `apps/grado2/preparation.py` — 347 стр.
+
+ГРАДО 2 · подтверждения получения, ревизии и безопасная публикация подготовки.
+
+Функции: `PreparationError`, `utcnow`, `_numbers`, `dump`, `digest`, `body_hash`, `polygon`, `project_territory`, `to_msk`, `to_wgs`, `coverage`, `revisions`, `new_state`, `check_profile`, `atomic_write`, `Transaction`, `receipt`
+
+### `apps/grado2/preparation_api.py` — 199 стр.
+
+ГРАДО 2 · серверные команды общей подготовки и доступа агента.
+
+Функции: `local_transaction`, `access`, `require_capabilities`, `summary`, `create_project`, `_actor`, `_uuid`, `get`, `post`, `answer`
+
+### `apps/grado2/print_io.py` — 2607 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
@@ -109,13 +133,43 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3322 стр.
+### `apps/grado2/server.py` — 3433 стр.
 
 ГРАДО 2: локальный сервер.
 
 Разделы по порядку: Пути, папка проектов, настройки запуска · Источники данных: ключ слоя → (вид, параметр, название) · Пределы области выгрузки, разбиение на части, подписи полей · ЕГКО: пустые строковые поля портал отдаёт одним пробелом " " — _v считает их пустыми · Яндекс: все атрибуты слоя как есть, ключевые — по-русски; площадь и длина на местности даё · поиск участка по кадастровому номеру (НСПД) · Пределы тела запроса, ход выгрузки, понятные ошибки порталов · Подложки: тайлы Esri · OSM (Overpass): выгрузка и кэш по областям · ФГИС ТП: документы территориального планирования (Минэкономразвития) · ТЭП-нормы, район по территории, пешеходный маршрут до станции · Проекты на диске: запись, версии, размер папки · HTTP: заголовки безопасности, вход по ключу, совместный режим · HTTP: Starlette (BSD) под uvicorn (BSD); тела запросов проверяет pydantic (MIT) · GET · POST · совместный режим (hub.py): маршруты /api/hub · вход через Telegram (tglogin.py): /api/hub/tg/start → oauth.telegram.org → /api/hub/tg/cal · вход на сайт без хаба: те же /api/hub/tg/start и callback (их адрес записан в BotFather),  · приём запроса · Запуск: версия кода, повторный запуск, сервер
 
-Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `nspd_zouit_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project`, `Stale`, `save_project`, `album_info`, `catalog`, `list_projects`, `_existing`, `_clash`, `rename_project` и ещё 82
+Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `nspd_zouit_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project`, `Stale`, `save_project`, `album_info`, `catalog`, `list_projects`, `_existing`, `_clash`, `rename_project` и ещё 84
+
+### `apps/grado2/sushpol_accessibility.py` — 52 стр.
+
+ГРАДО 2 · круги доступности нового набора в МСК без подмены маршрутом.
+
+Функции: `clinic_zones`, `education_zones`
+
+### `apps/grado2/sushpol_io.py` — 514 стр.
+
+ГРАДО 2 · единое содержание презентации сущпола для интерфейса и MCP.
+
+Функции: `feature_key`, `features`, `_value`, `_sort_key`, `frame_geometry`, `fund_share`, `latest_coverage`, `Content`, `build_spec`
+
+### `apps/grado2/sushpol_jobs.py` — 664 стр.
+
+ГРАДО 2 · ограниченный серверный запуск подготовки для UI и MCP.
+
+Функции: `service`, `_run_state`, `_expected`, `_source_bounds`, `_merged`, `_issue_summary`, `Runs`
+
+### `apps/grado2/sushpol_photos.py` — 87 стр.
+
+ГРАДО 2 · воспроизводимые позиции автоматической фотофиксации по границе и OSM.
+
+Функции: `allowed_road`, `_ring`, `photo_plan`
+
+### `apps/grado2/sushpol_rules.py` — 46 стр.
+
+ГРАДО 2 · использует извлечённые правила ВРИ прежнего альбома в серверной сборке.
+
+Функции: `_matches`, `land_class`, `osm_class`
 
 ### `apps/grado2/tglogin.py` — 202 стр.
 
@@ -315,7 +369,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · состав слоёв листа по ролям: sheet.layout (T86a, 06.10.2026, слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание»). Чистые функции без карты: слои проекта и шаблон передаёт sheets.js / albums.js. layout = { groups: [{ id, title, role, items: [{ key, on, style?, only?, src? }] }] }. Порядок групп и элементов — порядок рисования (как у sheet.keys). style — оформление слоя на этом листе поверх стиля слоя проекта; only — отбор объектов { field, values }; src — очередь источников (только у дорог: кто первый, кто запасной). Переходный релиз: keys, …
 
 
-### `apps/grado2/web/sheets.js` — 1195 стр.
+### `apps/grado2/web/sheets.js` — 1196 стр.
 
 ГРАДО 2 · листы и альбом (этап Э6). Лист = вид карты (или текущая карта) в рамке А3/А1 с масштабом, легендой вида, таблицей ТЭП, стрелкой севера, масштабной линейкой и основной надписью по ГОСТ Р 21.101. Оформление объектов считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте.
 
@@ -347,11 +401,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_bbox_of`, `_lists`, `_parts`, `clip_geometry`
 
-### `core/connectors/grado_connectors/contract.py` — 31 стр.
+### `core/connectors/grado_connectors/contract.py` — 51 стр.
 
 Контракт коннектора (архитектура, п. «Сервис данных»).
 
-Функции: `ConnectorError`, `Connector`, `make_result`
+Функции: `ConnectorError`, `Connector`, `make_result`, `with_acquisition`
 
 ### `core/connectors/grado_connectors/crs.py` — 239 стр.
 
@@ -383,7 +437,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_windows_ogr2ogr_candidates`, `find_ogr2ogr`, `clean_msg`, `_safe_extract`, `_extract_recursive`, `GisogdZip`
 
-### `core/connectors/grado_connectors/gisogd_api.py` — 840 стр.
+### `core/connectors/grado_connectors/gisogd_api.py` — 842 стр.
 
 Коннектор ГИС ОГД Москвы — прямая выгрузка слоёв по открытому REST API.
 
@@ -395,19 +449,19 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_coerce`, `import_snapshot`
 
-### `core/connectors/grado_connectors/netutil.py` — 191 стр.
+### `core/connectors/grado_connectors/netutil.py` — 289 стр.
 
 Запросы к порталам одним правилом: httpx (клиент) и tenacity (повторы), потолок размера, редиректы только на https.
 
-Функции: `HttpError`, `NetError`, `BadBody`, `is_cert_error`, `ssl_context`, `_https_only`, `_client`, `_retryable`, `_wait`, `_retrying`, `_check`, `Response`, `request`, `stream`
+Функции: `HttpError`, `NetError`, `BadBody`, `is_cert_error`, `ssl_context`, `_https_only`, `_client`, `RateLimited`, `_retryable`, `_wait`, `_retrying`, `_check`, `Response`, `request`, `stream`
 
-### `core/connectors/grado_connectors/nspd.py` — 370 стр.
+### `core/connectors/grado_connectors/nspd.py` — 372 стр.
 
 Коннектор НСПД (Росреестр): захват моста + прямая выгрузка по экстенту.
 
 Функции: `_flatten_options`, `_geom_sig`, `NspdCapture`, `_base_url`, `_relay_headers`, `_intersects_url`, `_extra_ca_files`, `_extra_ca_pem`, `_ssl_context`, `_short`, `NspdDirect`, `_request`, `_http_get`, `normalize_cadastral`, `_search_features`, `search_cadastral`
 
-### `core/connectors/grado_connectors/osm.py` — 390 стр.
+### `core/connectors/grado_connectors/osm.py` — 394 стр.
 
 Коннектор OSM (Overpass API) — прямая выгрузка векторов по экстенту.
 
@@ -430,6 +484,12 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 Коннектор рельефа: горизонтали (изолинии высот) по видимому экстенту.
 
 Функции: `_lon2tilex`, `_lat2tiley`, `_gpix2lonlat`, `_pick_zoom`, `_nice_interval`, `_fetch_grid`, `_http_get`, `_cell_segments`, `_stitch`, `_contours`, `TerrainContours`
+
+### `core/connectors/grado_connectors/yandex_panorama.py` — 122 стр.
+
+Скачивает метаданные и JPEG-тайлы панорам Яндекса напрямую, без плеера и интерфейса.
+
+Функции: `PanoramaError`, `_number`, `parse_metadata`, `tile_url`, `check_jpeg`
 
 ### `core/connectors/grado_connectors/yandex_vmap.py` — 575 стр.
 
@@ -621,11 +681,11 @@ PPTX-бэкенд: тот же список операций, что у PDF и S
 
 ## Инструменты (tools/)
 
-### `tools/album_check.py` — 266 стр.
+### `tools/album_check.py` — 281 стр.
 
 Визуальная проверка альбома «до / после» (06.10.2026): печать PDF по спецификации на тестовом сервере, страницы в PNG, постраничное сравнение с эталоном, вырезки изменённых мест и свод одной картинкой.
 
-Функции: `_font`, `render`, `layout_qa`, `pages`, `page_text`, `text_diff`, `compare`, `design_lint`, `gh`, `fetch_baseline`, `publish_baseline`, `main`
+Функции: `_font`, `render`, `layout_qa`, `pages`, `page_text`, `text_diff`, `compare`, `recipe_expect`, `design_lint`, `gh`, `fetch_baseline`, `publish_baseline`, `main`
 
 ### `tools/album_lint.py` — 437 стр.
 
@@ -667,6 +727,18 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `build`
 
+### `tools/grado_agent_server.py` — 45 стр.
+
+Отдельный локальный сервер ГРАДО для MCP, без рабочего каталога владельца.
+
+Функции: `main`
+
+### `tools/grado_mcp.py` — 186 стр.
+
+MCP-доступ к ГРАДО 2: инструменты подготовки презентации через проверяемый HTTP API.
+
+Функции: `GradoClient`, `create_mcp`
+
 ### `tools/wiki.py` — 391 стр.
 
 Вики проекта ГРАДО 2 (docs/wiki/) — собирается из файлов репозитория, без сети и без кэша данных.
@@ -701,6 +773,12 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 ГРАДО 2 · приёмочный прогон на настоящей территории (Хорошёво, участок в Новой Москве) с настоящими порталами и замером времени каждого шага: граница из проекта или GeoJSON → выгрузка наборов «Существующее положение», «Ограничения», «Градостроительная документация» → «Рассчитать ограничения» → эскиз под цель плотности → варианты → альбом ППТ КРТ в PDF → DXF, GeoJSON, Excel. Всё — в новом интерфейсе (/next/), мышью, как у владельца; отдельный сервер на порту 8652 и временная папка проектов, проект владельца только читается (из него берётся граница). По умолчанию кэш пустой (временная домашняя п…
 
 Функции: `arg`, `flag`, `home`, `boundary`, `step`, `tab`, `showWin`, `winText`, `winButton`, `wait`, `save`
+
+### `tools/extract_sushpol_rules.mjs` — 46 стр.
+
+Извлекает правила ВРИ действующего альбома для серверного сборщика; проверка: node tools/extract_sushpol_rules.mjs --check.
+
+Функции: `clean`
 
 ### `tools/panorama_shot.mjs` — 24 стр.
 

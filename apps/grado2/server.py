@@ -65,13 +65,14 @@ from grado_connectors.osm import OsmOverpass                       # noqa: E402
 from grado_connectors.terrain import TerrainContours               # noqa: E402
 from grado_connectors.yandex_vmap import YandexVmap                # noqa: E402
 from grado_render import acad_lin                                  # noqa: E402
+from preparation import PreparationError
 import hub as hubmod                                               # noqa: E402  совместный режим (GRADO2_HUB=1)
 import catalog as catmod                                           # noqa: E402  каталог проектов: превью, избранное, корзина (SQLite)
 import tglogin                                                     # noqa: E402  вход на сайт через Telegram (OIDC)
 import portalgate                                                  # noqa: E402  очередь к порталам: одно место за раз (#51)
 
 WEB = ROOT / "web" if FROZEN else Path(__file__).resolve().parent / "web"
-CACHE = Path.home() / ".grado2" / "cache"
+CACHE = Path(os.environ.get("GRADO2_CACHE") or Path.home() / ".grado2" / "cache")
 PRESET = ROOT / "core/compute/grado_compute/presets/moscow_calc2.json"      # методика «Калькулятора 2.0» (docs/standards/moscow-ngp)
 DISTRICTS = json.loads((ROOT / "core/compute/grado_compute/regulations/moscow_districts.json").read_text("utf-8"))
 STYLES = ROOT / "core/render/grado_render/styles"
@@ -271,7 +272,12 @@ def merge_layers(parts):
                 seen.add(sig)
                 feats.append(f)
     notes = list(dict.fromkeys(n for p in parts for n in p.get("notes") or []))
-    return {**parts[0], "notes": notes, "features": {"type": "FeatureCollection", "features": feats}}
+    proofs = [p.get("acquisition") or {} for p in parts]
+    proof = {"checkedParts": [a for p in proofs for a in p.get("checkedParts") or []],
+             "state": "partial" if any(p.get("state") == "partial" for p in proofs) else "received" if feats else "empty",
+             "reasonCode": next((p["reasonCode"] for p in proofs if p.get("reasonCode")), None), "dataDate": None}
+    return {**parts[0], "notes": notes, "features": {"type": "FeatureCollection", "features": feats},
+            **({"acquisition": proof} if any(proofs) else {})}
 
 
 def clean_props(props, extra=None, only_labeled=False):
@@ -333,7 +339,7 @@ def pzz_zone_props(p):
     info = str(_v(p.get("info")) or "")
     names = [ln.strip() for ln in info.splitlines() if re.match(r"^\d+(\.\d+)+\s", ln.strip())]
     return {"Номер зоны": _v(p.get("zone_num")), "ВРИ (коды)": _v(p.get("vri_540")) or _v(p.get("vri")),
-            "ВРИ": "; ".join(names)[:600] or None, "Индекс": _v(str(p.get("zone_index_literal_f") or "").strip()),
+            "ВРИ": "; ".join(names) or None, "Индекс": _v(str(p.get("zone_index_literal_f") or "").strip()),
             "Учётный номер": _v(p.get("cad_num")), "Документ": _doc(p), "Регламент (PDF)": _v(p.get("red_url")),
             "Примечание": _v(p.get("other"))}
 
@@ -474,6 +480,8 @@ def _layer(key, result):
     return {"title": SOURCES[key][2], "source": result.get("source_doc"),
             **({"shp": True} if SOURCES[key][0] in ("gisogd", "egko", "gisogd_admin") else {}),   # с v0.32 ОГД и ЕГКО — из SHP, в родных координатах
             "fetched_at": result.get("fetched_at") or date.today().isoformat(), "notes": result.get("notes", []),
+            **({"acquisition": result["acquisition"]} if result.get("acquisition") is not None else {}),
+            **({"osmSchema": result["osmSchema"]} if result.get("osmSchema") else {}),
             "features": {"type": "FeatureCollection", "features": feats}}
 
 
@@ -680,7 +688,7 @@ HUB_TID_RE = re.compile(r"[0-9a-f]{16}")     # id команды в адресе
 def body_limit(path):
     """Предел тела POST по пути запроса (байты)."""
     p = path.split("?")[0]
-    if p == "/api/project":
+    if p in ("/api/project", "/api/preparation/start"):
         return MAX_PROJECT_BODY
     if p == "/api/hub/projects" or HUB_PUSH_RE.fullmatch(p):      # создание с готовым файлом и запись проекта — как проект
         return MAX_PROJECT_BODY
@@ -976,7 +984,7 @@ def osm_fetch(bbox, sets, cache_dir=None):
     """Выгрузка OSM: сначала всё из кэша; если наборы лежат в кэше порознь (листы просили их по отдельности), они
     собираются из него — Overpass по той же области повторно не спрашивается (T62: на копии «Безобразово» из 33 с сборки
     30 с ушло на такой повторный запрос); иначе один запрос по всем наборам."""
-    cache_dir = cache_dir or CACHE / "osm"
+    cache_dir = cache_dir or CACHE / "osm-v2"
     sets = list(sets)
     try:
         return OsmOverpass(transport=_osm_no_live, cache_dir=cache_dir).fetch(bbox, sets)
@@ -990,6 +998,10 @@ def osm_fetch(bbox, sets, cache_dir=None):
             for r in parts[1:]:
                 res["features"] += r["features"]
                 res["notes"] += [n for n in r.get("notes", []) if n not in res["notes"]]
+                if r.get("acquisition") and res.get("acquisition"):
+                    res["acquisition"]["checkedParts"] += r["acquisition"]["checkedParts"]
+                    if r["acquisition"]["state"] == "partial":
+                        res["acquisition"]["state"] = "partial"
             res["params"]["sets"] = sorted(sets)
             return res
         except _OsmCacheMiss:
@@ -1092,6 +1104,7 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
         tell(None, 0, None, "wait")          # имя слоя в строке состояния — сразу, не после первого мегабайта
         api = GisogdApi(cache_dir=CACHE / "gisogd", progress=tell, gate=ogd_gate)
         missed = []
+        acquired = []
         for code, zone in SOURCES[k][1].items():
             try:
                 res = api.fetch(bbox, code)
@@ -1100,6 +1113,7 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
                     raise
                 missed.append(f"{zone or code}: {e}")
                 continue
+            acquired.append(res.get("acquisition") or {})
             doc, notes = res["source_doc"], notes + res["notes"]
             for f in res["features"]:
                 if zone:
@@ -1111,7 +1125,10 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
         notes += [f"портал не отдал — {m}" for m in missed]
         if k.startswith("ogd.") and any(str((f.get("properties") or {}).get("text") or "").strip() for f in feats[:20]):
             feats = ogd_label_angles(k[4:], feats, bbox, api)     # надписи — вдоль границ своей папки
-        layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})
+        layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes,
+            "acquisition": {"checkedParts": [p for a in acquired for p in a.get("checkedParts", [])],
+                            "state": "partial" if missed or any(a.get("state")=="partial" for a in acquired) else "received" if feats else "empty",
+                            "reasonCode": "partial_coverage" if missed else next((a.get("reasonCode") for a in acquired if a.get("reasonCode")), None)}})
 
     def run_ogd(ks):
         """Слои портала, выбранные в окне «Исходные данные», — по OGD_PARALLEL сразу: параллельные слои одной выгрузки
@@ -1129,6 +1146,7 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
         """ЕГКО — по очереди, один слой за другим: первая выгрузка газонов — 1,3 ГБ, портал не долбим параллельно."""
         for i, k in enumerate(ks, 1):
             feats, notes, doc = [], [], None
+            acquired = []
             def tell(code, got, total, stage, k=k, i=i):
                 PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage, "nth": i, "of": len(ks)}
             tell(None, 0, None, "wait")
@@ -1136,14 +1154,21 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
             try:
                 for code, val in SOURCES[k][1].items():
                     res = api.fetch(bbox, code)
+                    acquired.append(res.get("acquisition") or {})
                     doc, notes = res["source_doc"], notes + res["notes"]
                     for f in res["features"]:
                         if val:
                             f["_extra"] = {EGKO_EXTRA.get(k, "Вид"): val}
                         feats.append(f)
-                layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})
+                layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes,
+                    "acquisition": {"checkedParts":[p for a in acquired for p in a.get("checkedParts",[])],
+                                    "state":"received" if feats else "empty","reasonCode":None}})
             except ConnectorError as e:
                 errors[k] = str(e)
+                if acquired:
+                    layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes,
+                        "acquisition": {"checkedParts":[p for a in acquired for p in a.get("checkedParts",[])],
+                                        "state":"partial","reasonCode":"source_unavailable"}})
             finally:
                 PROGRESS.pop(k, None)
 
@@ -1182,8 +1207,9 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
                 if home is None and _point_in(f["geometry"], cx, cy):
                     home = props["Округ"]
             feats.append({"geometry": f["geometry"], "properties": {}, "_extra": props})
-        layers[k] = _layer(k, {"features": feats, "source_doc": "Административные округа и районы Москвы (эталон 27.09.2026)",
-                               "notes": [] if home else ["область вне административных округов Москвы"]})
+        from grado_connectors.contract import with_acquisition
+        layers[k] = _layer(k, with_acquisition({"features": feats, "source_doc": "Административные округа и районы Москвы (эталон 27.09.2026)",
+                               "notes": [] if home else ["область вне административных округов Москвы"]}, bbox, [k], provenance="cache"))
 
     def run_terrain(k):
         layers[k] = _layer(k, TerrainContours().fetch(bbox))
@@ -1664,7 +1690,7 @@ def project_path(name):
     return PROJECTS / f"{name}.grado2"
 
 
-_SAVE_LOCK = threading.Lock()
+_SAVE_LOCK = threading.RLock()
 
 
 # ---------- Проекты на диске: запись, версии, размер папки ----------
@@ -1764,13 +1790,23 @@ class Stale(Exception):
         self.modified = modified
 
 
-def save_project(name, body, base=None, replace=False):
+def save_project(name, body, base=None, replace=False, capabilities=None):
     """Запись проекта под названием. base — время файла (modified), которое видело окно: файл с тех пор изменён — Stale (409),
     чужие правки молча не затираются. Другой проект с тем же названием без учёта регистра — FileExistsError (409),
     replace=True — он заменяется (файл сначала переименовывается в новое название, как rename_project: Mac регистр не различает)."""
     obj = json.loads(body)                            # в файл идёт только целый JSON
     path = project_path(name)
     with _SAVE_LOCK:                                  # два сохранения подряд — по очереди
+        import preparation as prep
+        import preparation_api as prep_api
+        tx = prep_api.local_transaction(sys.modules[__name__], name)
+        metadata = tx.read()[1] if path.exists() else {}
+        prior = json.loads(tx.read()[0]) if path.exists() else {}
+        prior_state = ((prior.get("album") or {}).get("meta") or {}).get("sushpolPreparation")
+        state = ((obj.get("album") or {}).get("meta") or {}).get("sushpolPreparation")
+        if state or prior_state:
+            metadata["requiredCapabilities"] = [prep.CAPABILITY]
+        prep_api.require_capabilities(capabilities or {}, metadata, obj)
         if name != AUTOSAVE:
             other = _clash(name, path)
             if other and not replace:
@@ -1781,7 +1817,17 @@ def save_project(name, body, base=None, replace=False):
                 raise Stale(path.stat().st_mtime)
         if isinstance(obj, dict) and "layouts" not in obj and path.exists():
             body = with_layouts(body, split_layouts(path.read_bytes())[1])   # листы макета, о которых страница не знает, остаются
-        _write_project(path, name, body)
+        if metadata.get("requiredCapabilities"):
+            prep.check_profile(obj)
+            if path.exists():
+                import uuid
+                old = tx.read()[0]
+                tx.publish(body, metadata, str(uuid.uuid4()), prep.body_hash(old))
+            else:
+                _write_project(path, name, body)
+                prep.atomic_write(tx.meta, prep.dump(metadata))
+        else:
+            _write_project(path, name, body)
     return path
 
 
@@ -1977,6 +2023,8 @@ class FetchBody(_Body):
     territory: Bbox | None = None
     margin_m: float = DATA_MARGIN_M
     sources: list | None = None
+    runId: str | None = None
+    requestId: str | None = None
 
     @field_validator("margin_m")
     @classmethod
@@ -2308,7 +2356,10 @@ def get_project(c):
         return _json(403, {"error": LOCAL_PROJECTS_OFF})
     try:
         path = project_path(c.project_name())
-        body, mtime = path.read_bytes(), path.stat().st_mtime
+        import preparation_api
+        with _SAVE_LOCK:
+            body = preparation_api.local_transaction(sys.modules[__name__], c.project_name()).read()[0]
+            mtime = path.stat().st_mtime
     except (ValueError, OSError):
         return _json(404, {"error": "Проект не найден"})
     if c.project_name() != AUTOSAVE:
@@ -2375,7 +2426,14 @@ def post_font(c):
     return _json(200, {"ids": ids, **fonts.listing()})
 
 
+def preparation_endpoint(c):
+    import preparation_api
+    return preparation_api.answer(c, sys.modules[__name__])
+
+
 GET_ROUTES = {
+    **{route: preparation_endpoint for route in ("/api/agent/health", "/api/agent/projects",
+        "/api/preparation/status", "/api/preparation/revision", "/api/preparation/commit-status", "/api/preparation/issues", "/api/preparation/export")},
     "/api/search/cadastral": get_search_cadastral,
     "/api/search/address": get_search,
     "/api/search": get_search,
@@ -2443,7 +2501,9 @@ def post_project(c):
         return _json(403, {"error": LOCAL_PROJECTS_OFF})
     base = c.q("base")
     try:
-        path = save_project(c.project_name(), c.body, float(base) if base else None, c.q("replace") == "1")
+        path = save_project(c.project_name(), c.body, float(base) if base else None, c.q("replace") == "1", capabilities=c.headers)
+    except PreparationError as e:
+        return _json(e.status, {"error": str(e), "reasonCode": e.code})
     except Stale as e:
         return _json(409, {"error": "Проект изменён в другом окне или вкладке после открытия. Откройте его заново "
                                     "или сохраните под другим названием", "stale": True, "modified": e.modified})
@@ -2455,7 +2515,7 @@ def post_project(c):
     return _json(200, {"saved": path.stem, "modified": path.stat().st_mtime})   # имя, не путь на диске
 
 
-def post_catalog(c):
+def _post_catalog(c):
     """POST /api/project/{rename,copy,delete,restore,star} — действия каталога над файлами папки проектов."""
     if HUB:
         return _json(403, {"error": LOCAL_PROJECTS_OFF})
@@ -2482,10 +2542,54 @@ def post_catalog(c):
     return _json(200, {"name": path.stem, "modified": path.stat().st_mtime})
 
 
+def post_catalog(c):
+    if HUB:return _json(403,{"error":LOCAL_PROJECTS_OFF})
+    import preparation as prep
+    import preparation_api as prep_api
+    import uuid
+    import shutil
+    req=c.obj();name=str(req.get("name") or "");act=c.route.rsplit("/",1)[1]
+    with _SAVE_LOCK:
+        tx=prep_api.local_transaction(sys.modules[__name__],name) if name else None
+        metadata={}
+        if tx and tx.project.exists():
+            raw,metadata=tx.read()
+            if ((json.loads(raw).get("album") or {}).get("meta") or {}).get("sushpolPreparation"):
+                metadata["requiredCapabilities"]=[prep.CAPABILITY]
+            try:
+                prep_api.require_capabilities(c.headers,metadata)
+                lease=metadata.get("preparationLease") or {}
+                if act in ("rename","copy","delete") and lease.get("expiresAt",0)>time.time():
+                    raise prep.PreparationError("busy","Сначала остановите подготовку проекта",409)
+            except prep.PreparationError as e:return _json(e.status,{"error":str(e),"reasonCode":e.code})
+        response=_post_catalog(c)
+        if response.status_code==200 and metadata.get("requiredCapabilities") and act in ("copy","rename"):
+            result=json.loads(response.body);target=prep_api.local_transaction(sys.modules[__name__],result["name"])
+            if act=="copy":metadata={"requiredCapabilities":[prep.CAPABILITY],"preparationProjectId":str(uuid.uuid4())}
+            prep.atomic_write(target.meta,prep.dump(metadata))
+            if act=="rename" and tx.meta!=target.meta:
+                if tx.root.exists() and not target.root.exists():shutil.move(str(tx.root),str(target.root))
+                tx.meta.unlink(missing_ok=True)
+        return response
+
+
 def post_fetch(c):
     b = c.model(FetchBody)
+    if b.runId is not None or b.requestId is not None:
+        import uuid
+        uuid.UUID(b.runId or "")
+        uuid.UUID(b.requestId or "")
     layers, errors = fetch(b.bbox, list(b.sources or []), b.territory, b.margin_m)
-    return _json(200, {"layers": layers, "errors": errors})
+    result = {"layers": layers, "errors": errors}
+    if b.runId is not None or b.requestId is not None:
+        import uuid
+        import preparation
+        run_id, request_id = str(uuid.UUID(b.runId or "")), str(uuid.UUID(b.requestId or ""))
+        result["acquisition"] = {k: preparation.receipt(k, b.bbox, layers.get(k), errors.get(k),
+            list(SOURCES[k][1]) if k in SOURCES and isinstance(SOURCES[k][1], (dict,list,tuple)) else
+            [SOURCES[k][1]] if k in SOURCES and isinstance(SOURCES[k][1], str) else [k], run_id,
+            str(uuid.uuid5(uuid.UUID(request_id), k))) for k in list(b.sources or [])}
+    return _json(200, result)
 
 
 def _album(kind, render, ctype):
@@ -2685,6 +2789,9 @@ def post_rail_route(c):
 
 
 POST_ROUTES = {
+    **{route: preparation_endpoint for route in ("/api/agent/project", "/api/preparation/revision",
+        "/api/preparation/lease", "/api/preparation/checkpoint", "/api/preparation/start",
+        "/api/preparation/cancel", "/api/preparation/field", "/api/preparation/photo", "/api/panorama/frame", "/api/panorama/cancel")},
     "/api/import/files": post_import_files,
     "/api/import/dxf": post_import_dxf,
     "/api/project": post_project,
@@ -2850,6 +2957,8 @@ def tg_callback(c, u):
     except tglogin.TgError as e:
         c.log_fail(e)
         return _tg_back(c, e.code)
+    except PreparationError as e:
+        return _json(e.status,{"error":str(e),"reasonCode":e.code})
     except hubmod.HubError as e:
         c.log_fail(e)
         return _tg_back(c, e.code or ("busy" if e.status == 429 else "fail"))
@@ -2953,7 +3062,7 @@ def hub_post(c):
         HUB.delete_project(u, pid)
         return _json(200, {"ok": True})
     if rest == "push":
-        return _json(200, HUB.push(u, pid, req.get("base_rev"), req.get("sections"), req.get("client")))
+        return _json(200, HUB.push(u, pid, req.get("base_rev"), req.get("sections"), req.get("client"), capabilities=c.headers))
     if rest == "members":
         if "role" not in req:                  # без роли «убрать» не выводим: пропуск поля не должен удалять человека
             raise hubmod.HubError(400, "укажите role: owner, editor, viewer или null")
@@ -3006,6 +3115,8 @@ def hub_call(c):
         return hub_get(c)
     except hubmod.Conflict as e:
         return _json(409, {**e.payload, "error": e.message})
+    except PreparationError as e:
+        return _json(e.status,{"error":str(e),"reasonCode":e.code})
     except hubmod.HubError as e:
         if e.status >= 500 and e.status != 507:         # 507 — «хранилище заполнено»: текст написан для человека
             c.log_fail(e)

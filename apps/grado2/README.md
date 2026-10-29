@@ -97,3 +97,5 @@
 - [CLAUDE.md](CLAUDE.md) — правила для этой папки: порты, заголовки файлов, альбом.
 - [../../CLAUDE.md](../../CLAUDE.md) — память проекта и железные правила.
 - [../../docs/INDEX.md](../../docs/INDEX.md) — оглавление документов; вики: [../../docs/wiki/INDEX.md](../../docs/wiki/INDEX.md), [../../docs/wiki/modules.md](../../docs/wiki/modules.md).
+
+Серверная подготовка мытищинского набора: `preparation.py`, `preparation_api.py`, `sushpol_jobs.py`, `sushpol_io.py`; печать — `mytishchi_io.py`; фото — `panorama_io.py` и `sushpol_photos.py`. Инструкция агента: [MCP](../../docs/guides/grado-mcp.md).

@@ -76,6 +76,7 @@ function tepRows(all) {
 
 /* ---------- описание листа для печати: sheetSpec и шапка альбома ---------- */
 function sheetSpec(sheet) {
+  if (sheet.recipeId === "sushpol-mytishchi" && sheet.style === "mytishchi") return JSON.parse(JSON.stringify(sheet));
   if (sheet.frozen) { const { id, frozen, view, ...ready } = sheet; return ready; }   // готовая вёрстка из файла: слои уже внутри листа (импорт «Из файла…»)
   if (sheet.adm) return admPanelSpec(sheet);                               // схемы административного деления альбомов (albums.js)
   if (sheet.kind === "tep") return { title: sheet.title, size: sheet.size, kind: "tep", tep: tepRows(true) };

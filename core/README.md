@@ -97,3 +97,5 @@ env PYTHONPATH="$PP" ~/.grado2/venv/bin/python -m pytest -q core/geom/tests
   (CLAUDE.md, правило 3).
 - HTTPS: проверку сертификатов не отключать. Для НСПД нужны корни Минцифры:
   `core/connectors/grado_connectors/certs/README.txt` (CLAUDE.md, правило 4).
+
+Коннектор оригинальных JPEG панорам: `connectors/grado_connectors/yandex_panorama.py`; проверка: `connectors/tests/test_yandex_panorama.py`.

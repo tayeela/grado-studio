@@ -19,11 +19,12 @@ datas = [(str(APP / "web"), "web"),
          (str(ROOT / "docs/standards/redln97"), "docs/standards/redln97"),
          (str(ROOT / "docs/standards/admin"), "docs/standards/admin"),           # районы для долей площади (server.district_shares)
          (str(ROOT / "docs/standards/albums/pptkrt-header.jpg"), "docs/standards/albums")]   # шапка слайдов альбома (album_io)
+datas += [(str(ROOT / "docs/standards/albums" / name), "docs/standards/albums") for name in ("mytishchi-layout-v1.json", "sushpol-rules-v1.json")]
 datas += collect_data_files("certifi") + collect_data_files("ezdxf") + collect_data_files("grado_compute") + collect_data_files("grado_render")
 
-hiddenimports = ["server", "catalog", "portalgate", "dxf_io", "file_io", "print_io", "export_io", "fonts", "shapefile"]
+hiddenimports = ["preparation", "preparation_api", "panorama_io", "sushpol_io", "sushpol_jobs", "sushpol_photos", "sushpol_accessibility", "sushpol_rules", "mytishchi_io", "regex", "server", "catalog", "portalgate", "dxf_io", "file_io", "print_io", "export_io", "fonts", "shapefile"]
 for package in ("grado_connectors", "grado_compute", "grado_render", "grado_layout", "grado_geom", "ezdxf", "PIL", "shapely", "httpx", "httpcore", "h11", "anyio", "tenacity", "reportlab", "pptx", "fontTools", "lxml", "xlsxwriter",
-                "starlette", "uvicorn", "pydantic", "pydantic_core", "annotated_types", "typing_inspection", "click"):
+                "regex", "starlette", "uvicorn", "pydantic", "pydantic_core", "annotated_types", "typing_inspection", "click"):
     hiddenimports += collect_submodules(package)
 
 a = Analysis([str(ROOT / "packaging/grado2_entry.py")], pathex=PATHEX, binaries=collect_dynamic_libs("shapely"), datas=datas, hiddenimports=hiddenimports,

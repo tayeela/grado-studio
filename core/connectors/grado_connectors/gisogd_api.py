@@ -43,7 +43,7 @@ import zlib
 from pathlib import Path
 
 from .clip import clip_geometry
-from .contract import Connector, ConnectorError, make_result
+from .contract import Connector, ConnectorError, make_result, with_acquisition
 from .crs import msk50_to_wgs84, transform_geom
 from .gisogd import clean_msg
 from . import netutil
@@ -537,6 +537,7 @@ class GisogdApi(Connector):
 
     def _fetch_stream(self, code, query):
         notes = []
+        cache_hit = bool(self.cache_dir and self._grid_fresh(code))
         lock = _layer_lock(str(self._grid_dir(code) or code))
         with lock:                                  # одну и ту же выгрузку не качают две вкладки сразу
             if self.cache_dir and self._grid_fresh(code):
@@ -544,6 +545,7 @@ class GisogdApi(Connector):
                     feats = self._grid_read(code, query)
                 except (OSError, EOFError, zlib.error, ValueError):
                     shutil.rmtree(self._grid_dir(code), ignore_errors=True)    # битая сетка — собрать заново
+                    cache_hit = False
                     feats, count = self._stream_build(code, query)
                     notes.append(f"слой {code} ЕГКО загружен заново целиком ({count} об.)")
             else:
@@ -559,8 +561,8 @@ class GisogdApi(Connector):
                     clipped = g is not f["geometry"] and "Polygon" in g["type"]
                     cut.append({**f, "geometry": g, **({"grado_clip": list(query)} if clipped else {})})
             feats = cut
-        return make_result(feats, {"code": code, "map": self.map_name, "bbox": ",".join(f"{v:.5f}" for v in query)},
-                           source_doc=self.source_doc, notes=notes)
+        return with_acquisition(make_result(feats, {"code": code, "map": self.map_name, "bbox": ",".join(f"{v:.5f}" for v in query)},
+                           source_doc=self.source_doc, notes=notes), query, [code], provenance="cache" if cache_hit else "network")
 
     def _cache_path(self, code):
         return self._cache_child(code, f"{code}.shp.gz")
@@ -756,8 +758,8 @@ class GisogdApi(Connector):
             return self._fetch_stream(code, query)
         fast = self._from_lines(code, query)
         if fast is not None:
-            return make_result(fast, {"code": code, "bbox": ",".join(f"{v:.5f}" for v in query)},
-                               source_doc="ГИС ОГД Москвы (gisogd.mos.ru), выгрузка по экстенту", notes=[])
+            return with_acquisition(make_result(fast, {"code": code, "bbox": ",".join(f"{v:.5f}" for v in query)},
+                               source_doc="ГИС ОГД Москвы (gisogd.mos.ru), выгрузка по экстенту", notes=[]), query, [code], provenance="cache", fields_complete=not any(self._cut(v) for f in fast for v in f["properties"].values()))
         raw, cached = self._layer_bytes(code)
         # слой идёт двумя проходами по SHP, без списка всех объектов в памяти: 1) какие объекты с обрезанным текстом;
         # 2) объекты по одному → строка построчного кэша (сразу на диск) и, если в области, в ответ
@@ -833,8 +835,8 @@ class GisogdApi(Connector):
             notes.append(f"слой {code} загружен целиком ({count} об., "
                          f"{len(raw)/1e6:.0f} МБ) — портал не фильтрует по области; "
                          f"дальше берётся из кэша")
-        return make_result(
+        return with_acquisition(make_result(
             out,
             {"code": code, "bbox": ",".join(f"{v:.5f}" for v in query)},
             source_doc="ГИС ОГД Москвы (gisogd.mos.ru), выгрузка по экстенту",
-            notes=notes)
+            notes=notes), query, [code], provenance="cache" if cached else "network", fields_complete=not any(self._cut(v) for f in out for v in f["properties"].values()))

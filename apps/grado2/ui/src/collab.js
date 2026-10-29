@@ -32,7 +32,7 @@ const safeObj = v => isObj(v) ? v : {};
 const okn = (v, d) => Number.isFinite(+v) && v !== null && v !== "" ? +v : d;
 
 async function http(method, path, body) {
-  const o = { method, credentials: "same-origin", headers: {} };
+  const o = { method, credentials: "same-origin", headers: { "X-Grado-Project-Capabilities": "sushpol-v1" } };
   if (method !== "GET") { o.headers["Content-Type"] = "application/json"; o.body = typeof body === "string" ? body : JSON.stringify(body ?? {}); }
   const r = await fetch(path, o); let json = null; try { json = await r.json(); } catch { /* ответ без тела */ }
   return { ok: r.ok, status: r.status, json };
@@ -40,7 +40,7 @@ async function http(method, path, body) {
 const P = tail => `/api/hub/project/${C.pid}${tail || ""}`;
 
 /* ---- проект нового интерфейса → форма collectProject() рабочей страницы (те же поля слоя и данных: разделы совпадают) ---- */
-const DATA_F = ["title", "source", "fetched_at", "notes", "history", "shp", "bbox"];
+const DATA_F = ["title", "source", "fetched_at", "notes", "history", "shp", "bbox", "acquisitionRefs", "osmSchema"];
 /* схема — как её пишет рабочая страница: litegraph не хранит пустой widgets_values у узлов без полей (пересчёт здесь его
    добавляет), иначе две страницы перебрасывались бы одной и той же схемой */
 function canonGraph(g) {

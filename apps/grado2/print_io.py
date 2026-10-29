@@ -160,7 +160,7 @@ EGKO_BASE = (("forest", "#c5dcb0", None), ("gazons", "#c5dcb0", None), ("hidrogr
              ("dorogi_pol", "#ffffff", "#d7d7d7"), ("virtual6", "#cdcdcd", None))
 
 
-PRINT_OPS_CACHE = Path.home() / ".grado2" / "cache" / "print_ops"      # готовые операции тяжёлых рамок: PDF и PPTX берут одни и те же
+PRINT_OPS_CACHE = Path(os.environ.get("GRADO2_CACHE") or Path.home() / ".grado2" / "cache") / "print_ops"      # готовые операции тяжёлых рамок: PDF и PPTX берут одни и те же
 PRINT_OPS_TTL = 12 * 3600                                                # картооснова обновляется редко; дольше суток держать нельзя
 PRINT_OPS_KEEP = 6
 
@@ -680,7 +680,7 @@ def linetype_ops(pts, name, k, color, width, lib, shape_k=None):
 
 
 # ---------- Подложка: плитки и защита от неполной выгрузки (TileGuard) ----------
-TILE_FAIL_DIR = Path.home() / ".grado2" / "cache" / "tiles" / "_fail"     # метки неудачных тайлов: живут и после перезапуска сервера
+TILE_FAIL_DIR = Path(os.environ.get("GRADO2_CACHE") or Path.home() / ".grado2" / "cache") / "tiles" / "_fail"     # метки неудачных тайлов: живут и после перезапуска сервера
 TILE_FAIL_TTL = 3600                                                       # час: тайл, который не скачался, до истечения не запрашивается
 TILE_FAIL_NOTE = "часть плиток подложки не загрузилась ({n}) — повторите через час"
 TILE_COARSE_NOTE = "снимок грубее обычного: лист слишком большой для подробных плиток"
@@ -1568,6 +1568,10 @@ class SketchMapFrame(Frame):
                             "color": hex_to_rgb(f["lcol"]) if f.get("lcol") else ink, **extra, **fam, **ul})
         if callout:
             out.extend(callout[1])
+        if sh.get("basemap") in ("sat", "light"):
+            sh["_rasterAcquisition"] = {"complete": bool(guard is not None and not guard.missed and not tinfo.get("coarse")),
+                                        "missingCount": len(guard.missed) if guard else None,
+                                        "coarse": bool(tinfo.get("coarse")), "checkedAt": time.time()}
         notes = ([TILE_COARSE_NOTE] if tinfo.get("coarse") else []) + ([TILE_FAIL_NOTE.format(n=len(guard.missed))] if guard and guard.missed else [])
         if notes:                                                       # одна строка на лист, не по числу тайлов
             out.append({"op": "text", "x": rect[0] + 2, "y": rect[1] + rect[3] - 2, "size": 2.3, "color": (0.3, 0.3, 0.3),
@@ -2046,6 +2050,14 @@ def build_document(spec, lib, lgr_dash, tiles=None):
     for sh in spec["sheets"]:
         size = sh.get("size") if sh.get("size") in SIZES else "A3"
         page = Page(page_size(size, sh.get("orient")))
+        if sh.get("style") == "mytishchi":
+            import mytishchi_io
+            page = Page(tuple(mytishchi_io.LAYOUT["paper"]))
+            page.frames = mytishchi_io.build_frames(page, sh, {**meta, **(spec.get("meta") or {})}, lib, lgr_dash, tiles,
+                lambda rect, s: SketchMapFrame(rect, s, lib, lgr_dash, tiles, memo))
+            doc.pages.append(page)
+            doc.sheet_titles.append(sh.get("title", ""))
+            continue
         if sh.get("style") == "pptkrt":                     # альбом по шаблону ППТ КРТ владельца (album_io.py)
             import album_io
             meta_p = {**meta, **(spec.get("meta") or {})}
@@ -2201,7 +2213,7 @@ def not_ready(spec):
 
 
 # рамки листа → группы фигур в PPTX
-PPTX_GROUPS = {"SketchMapFrame": "Карта", "PanelFrame": "Карта", "ColumnFrame": "Легенда", "PhotoGridFrame": "Фотографии",
+PPTX_GROUPS = {"TextBlock": "Текст", "TableBlock": "Таблица", "PhotoBlock": "Фотографии", "Decoration": "Оформление", "SketchMapFrame": "Карта", "PanelFrame": "Карта", "ColumnFrame": "Легенда", "PhotoGridFrame": "Фотографии",
                "CalloutFrame": "Выноска", "OkrugTitleFrame": "Название округа", "MapNoteFrame": "Округ и район", "ConceptColumnFrame": "Легенда", "OrthoLegendFrame": "Легенда", "ConceptPhotoFrame": "Фотографии", "StampFrame": "Штамп", "PageBorder": "Рамка листа",
                "TepSheetFrame": "ТЭП", "LegendFrame": "Легенда", "TableFrame": "Таблица"}
 
