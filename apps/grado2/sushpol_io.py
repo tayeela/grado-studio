@@ -253,6 +253,15 @@ class Content:
                     if title and title not in legend:legend.append(title)
                 elif key=="gisogd.pzz_zones":out["label"]=str(p.get("Номер зоны") or p.get("Индекс") or "")
                 elif key=="gisogd.pzz_sub":out["label"]=str(p.get("Номер подзоны") or "")
+                elif key=="gisogd.red_lines":
+                    # Типы линий СПРИТ несут собственный цвет; общий чёрный цвет искажает водоохранные/прибрежные линии.
+                    for lt in p.get("_lt") or [None]:
+                        match=re.search(r"s(\d+)",str(lt or ""))
+                        style=LGR.get(int(match[1])) if match else None
+                        item=copy.deepcopy(out)
+                        item.update(stroke=(style or {}).get("stroke") or "#ff0000",fill=None,a=0,label=None,lt=[lt] if lt else None,miss=p.get("_miss"))
+                        rows.append(item)
+                    continue
                 elif key in RESTRICTIONS:
                     title=str(p.get("Вид зоны") or p.get("Наименование") or p.get("Наименование зоны") or key)
                     code=R.RULES["ZOUIT_LGR"].get(title)

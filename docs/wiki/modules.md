@@ -147,7 +147,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `clinic_zones`, `education_zones`
 
-### `apps/grado2/sushpol_io.py` — 514 стр.
+### `apps/grado2/sushpol_io.py` — 523 стр.
 
 ГРАДО 2 · единое содержание презентации сущпола для интерфейса и MCP.
 

@@ -70,3 +70,18 @@ class AdministrativeUseClass(unittest.TestCase):
                 self.assertEqual(ZONES[27][1],"#b8a47f")
         content.okrugs=[{"geometry":mapping(box(37,55,38,56)),"properties":{"Наименование":"ЦАО"}}]
         self.assertFalse(content.tinao(parcel))
+
+
+class SourceLineColors(unittest.TestCase):
+    def test_water_and_coastal_types_keep_their_source_palette(self):
+        import sushpol_io as C
+        from shapely.geometry import mapping,LineString
+        from unittest.mock import patch
+        region=P.to_wgs(box(0,0,100,100))
+        feature={"geometry":mapping(LineString(list(region.exterior.coords)[:2])),"properties":{"_lt":["L00s16b","L00s17b","L00s41b"]}}
+        content=object.__new__(C.Content);content.msk=box(0,0,100,100);content.project={"data":{"gisogd.red_lines":{"fc":{"features":[feature]}}}}
+        content.state={};content.territory=region;content.require=lambda *args:None
+        with patch.object(C.M,"BLOCKS",{"restrictions":{"map":{"rect":[0,0,100,100]}}}):
+            rows=content.map("restrictions","map",["gisogd.red_lines"])["sheet"]["layers"][0]["features"]
+        self.assertEqual([r["stroke"] for r in rows],["#ff0000","#ff0000","#0018b8"])
+        self.assertEqual([r["lt"] for r in rows],[["L00s16b"],["L00s17b"],["L00s41b"]])
