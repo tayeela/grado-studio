@@ -1,0 +1,21 @@
+{
+  "mode": "uninterrupted",
+  "target": "/Users/tayeela/grado-saas-readiness/docs/specs/167-sushpol-mytishchi.md",
+  "sha256": "133c2e072e96462c6c7d7353bb818eca724aed093bc44f1af807eadcad82436f",
+  "feature_range": [
+    1,
+    428
+  ],
+  "implementation_range": [
+    429,
+    833
+  ],
+  "stages": [
+    "initial_zoom_out",
+    "comprehension",
+    "design_structural_style",
+    "intermediate_zoom_out",
+    "implementation_codebase_style"
+  ],
+  "reviewers": "fresh context, read-only, sequential"
+}

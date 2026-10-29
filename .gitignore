@@ -25,3 +25,5 @@ credentials*
 .claude/launch.json
 .claude/worktrees/
 node_modules/
+# Временные материалы EGM; согласованные ТЗ хранятся в docs/specs/.
+/work/egm/
