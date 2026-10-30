@@ -44,6 +44,7 @@ CLAUDE.md просит запускать сессии из `~/grado-studio`: р
 - `permissions.deny` — запрещает Read, Edit и Write для папки `~/Documents/ГРАДО 2` на Mac владельца и Bash-команды, в которых есть эта папка или порт 8650 (сервер владельца). CLAUDE.md: там не тестировать.
 - `claudeMdExcludes` — исключает из загрузки CLAUDE.md по пути `/Users/tayeela/CLAUDE.md`.
 - `hooks` — проводка пяти хуков из таблицы выше. Таймауты: `session-start.sh` 300 с, `grado2_test_gate.py` 900 с.
+- `extraKnownMarketplaces` + `enabledPlugins` — плагин TokenEconomizer (`microsoft/TokenEconomizer`, Apache-2.0, владелец 30.10.2026): экономит токены — запоминает факты о репозитории из прошлых сессий, убирает неиспользуемые инструменты, ловит зацикливание хода. Claude Code при первом запуске в `~/grado-studio` предлагает поставить плагин; память плагина — `~/.tokeneconomizer` на машине. В облачных сессиях контейнер одноразовый, память не копится. Проверка: `/tokeneconomizer:status`; вернуть убранный инструмент: `/tokeneconomizer:untool`.
 
 ## Локальные файлы (не в git)
 
