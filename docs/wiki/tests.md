@@ -37,7 +37,7 @@
 | `test_ogd_warm.py` | Warm, WarmStart | 5 |
 | `test_panorama_io.py` | ProjectionTest | 5 |
 | `test_portalgate.py` | PortalGate | 3 |
-| `test_preparation.py` | CoverageTest, RevisionTest, TransactionTest | 12 |
+| `test_preparation.py` | CoverageTest, RevisionTest, TransactionTest | 13 |
 | `test_preparation_api.py` | PreparationAPI | 3 |
 | `test_preparation_hub.py` | HubPreparation | 2 |
 | `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 56 |

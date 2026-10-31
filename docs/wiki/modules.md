@@ -101,7 +101,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `Busy`, `Cooling`, `Gate`, `portals_of`, `install_network_policy`
 
-### `apps/grado2/preparation.py` — 347 стр.
+### `apps/grado2/preparation.py` — 355 стр.
 
 ГРАДО 2 · подтверждения получения, ревизии и безопасная публикация подготовки.
 

@@ -100,19 +100,27 @@ def to_wgs(geometry):
 
 
 def coverage(area, checked_parts, sublayers):
-    """Пересечение реально проверенных частей каждого подслоя, без подмены bbox объектов."""
-    requested = to_msk(polygon(area))
-    covered = requested
+    """Пересечение реально проверенных частей каждого подслоя, без подмены bbox объектов.
+
+    Топология и вывод «полное/неполное» — в WGS84: части конвейера режут одну и ту же
+    рамку WGS84 и стыкуются там точно. Проецировать части по отдельности нельзя — стык
+    расходится на ширину проекционной кривизны (прогон Безобразово 31.10: 2049 м² ложных
+    «дыр» на рамке 24,5 км² при полном покрытии — источник помечался недоступным).
+    Площади (ratio, missingAreaM2) — в МСК, по разово спроецированным целым геометриям."""
+    requested_w = polygon(area)
+    covered_w = requested_w
     for sub in sublayers:
-        pieces = [to_msk(polygon(p["area"])) for p in checked_parts
+        pieces = [polygon(p["area"]) for p in checked_parts
                   if p.get("sublayer") == sub and p.get("outcome") in ("received", "empty")]
-        covered = covered.intersection(union_all(pieces)) if pieces else requested.difference(requested)
+        covered_w = covered_w.intersection(union_all(pieces)) if pieces else requested_w.difference(requested_w)
     if not sublayers:
-        covered = requested.difference(requested)
-    missing = requested.difference(covered)
-    ratio = min(1., max(0., covered.area / requested.area)) if requested.area else 0.
-    return {"ratio": ratio, "complete": missing.area <= max(1e-6, requested.area * 1e-10),
-            "missingAreaM2": missing.area, "missingArea": mapping(to_wgs(missing))}
+        covered_w = requested_w.difference(requested_w)
+    missing_w = requested_w.difference(covered_w)
+    covered_m, requested_m = to_msk(covered_w), to_msk(requested_w)
+    ratio = min(1., max(0., covered_m.area / requested_m.area)) if requested_m.area else 0.
+    return {"ratio": ratio, "complete": missing_w.area <= max(1e-18, requested_w.area * 1e-12),
+            "missingAreaM2": to_msk(missing_w).area if not missing_w.is_empty else 0.,
+            "missingArea": mapping(missing_w)}
 
 
 def revisions(project, photos=None):

@@ -22,7 +22,7 @@ class CoverageTest(unittest.TestCase):
         parts = [{"sublayer": "a", "outcome": "empty", "area": area(0, 0, 400, 1000)},
                  {"sublayer": "a", "outcome": "received", "area": area(600, 0, 1000, 1000)}]
         c = P.coverage(area(0, 0, 1000, 1000), parts, ["a"])
-        self.assertAlmostEqual(c["ratio"], .8, places=5)
+        self.assertAlmostEqual(c["ratio"], .8, places=4)   # нелинейность проекции на нескольких кусках ~1e-5
         self.assertFalse(c["complete"])
         self.assertAlmostEqual(c["missingAreaM2"], 200000, delta=5)
 
@@ -37,6 +37,22 @@ class CoverageTest(unittest.TestCase):
         p = [{"sublayer": "a", "outcome": "received", "area": area(0, 0, 750, 1000)},
              {"sublayer": "a", "outcome": "empty", "area": area(250, 0, 1000, 1000)}]
         self.assertAlmostEqual(P.coverage(area(0, 0, 1000, 1000), p, ["a"])["ratio"], 1., places=6)
+
+    def test_adjacent_cells_tile_the_box_without_false_seams(self):
+        # Части конвейера режут одну рамку WGS84 и стыкуются точно; проецировать их по
+        # отдельности нельзя (прогон Безобразово 31.10: 2049 м² ложных «дыр» на рамке
+        # 24,5 км² — источник помечался недоступным при полном покрытии).
+        requested = P.polygon(area(0, 0, 5300, 4700))
+        w, s, e, n = requested.bounds
+        mx, my = (w + e) / 2, (s + n) / 2
+        parts = [{"sublayer": "a", "outcome": "received",
+                  "area": mapping(box(x0, y0, x1, y1))}
+                 for (x0, y0, x1, y1) in ((w, s, mx, my), (mx, s, e, my),
+                                          (w, my, mx, n), (mx, my, e, n))]
+        c = P.coverage(mapping(requested), parts, ["a"])
+        self.assertTrue(c["complete"])
+        self.assertAlmostEqual(c["ratio"], 1., places=9)
+        self.assertEqual(c["missingAreaM2"], 0)
 
     def test_invalid_polygon_is_not_silently_repaired(self):
         with self.assertRaises(P.PreparationError):
