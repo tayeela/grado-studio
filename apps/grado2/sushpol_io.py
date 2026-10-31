@@ -91,11 +91,17 @@ def fund_share(value,fraction):
     return result
 
 
-def latest_coverage(state,key,region):
+def latest_receipt(state,key):
+    """Последняя по времени попытка источника. Порядок ключей в файле не хронологический:
+    финальная запись прогона собирается из снимка состояния, и «последний элемент словаря»
+    оказывался провальной квитанцией недельной давности (Безобразово 31.10: yandex.water)."""
     receipts=[v for v in (state.get("requests") or {}).values() if v.get("sourceKey")==key]
-    if not receipts:return False
-    receipt=receipts[-1]
-    return receipt.get("state") in ("received","empty") and P.coverage(mapping(region),receipt.get("checkedParts") or [],receipt.get("expectedSublayers") or [key])["complete"]
+    return max(receipts,key=lambda v:str(v.get("checkedAt") or "")) if receipts else None
+
+
+def latest_coverage(state,key,region):
+    receipt=latest_receipt(state,key)
+    return bool(receipt) and receipt.get("state") in ("received","empty") and P.coverage(mapping(region),receipt.get("checkedParts") or [],receipt.get("expectedSublayers") or [key])["complete"]
 
 
 ISSUE_TEXT={"unknown_outcome":"Получение источника ещё не подтверждено","partial_coverage":"Источник получен не для всей рамки карты",
@@ -313,8 +319,8 @@ class Content:
                 if confirmed:linked.append(obj)
                 else:candidates.append(obj)
             if candidates:self.issue("parcels_oks","manual_conflict","nspd.buildings",key,"oks.parcelKey","Подтвердить связь ОКС и ЗУ; пересечения недостаточно")
-            building_receipts=[r for r in (self.state.get("requests") or {}).values() if r.get("sourceKey")=="nspd.buildings"]
-            confirmed_source=bool(building_receipts and building_receipts[-1].get("state") in ("received","empty"))
+            building_receipt=latest_receipt(self.state,"nspd.buildings")
+            confirmed_source=bool(building_receipt and building_receipt.get("state") in ("received","empty"))
             count=str(len(linked)) if not candidates and confirmed_source else "Требует подтверждения"
             areas=[(o.get("properties") or {}).get("Площадь, м²") for o in linked]
             total=sum(areas) if all(isinstance(a,(int,float)) and math.isfinite(a) and a>=0 for a in areas) and not candidates and confirmed_source else None

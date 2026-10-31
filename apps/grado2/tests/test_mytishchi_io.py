@@ -6,7 +6,7 @@ import unittest
 from shapely.geometry import box,shape
 import preparation as P
 import mytishchi_io as M
-from sushpol_io import frame_geometry,latest_coverage,fund_share
+from sushpol_io import frame_geometry,latest_coverage,latest_receipt,fund_share
 
 
 class MytishchiLayout(unittest.TestCase):
@@ -24,12 +24,24 @@ class MytishchiLayout(unittest.TestCase):
 
     def test_empty_confirmed_source_is_valid_and_new_failure_invalidates_old_receipt(self):
         region=P.to_wgs(box(0,0,100,100));geometry=__import__('shapely').geometry.mapping(region)
-        valid={'sourceKey':'source','state':'empty','expectedSublayers':['actual-code'],
+        valid={'sourceKey':'source','state':'empty','expectedSublayers':['actual-code'],'checkedAt':'2026-10-31T10:00:00Z',
                'checkedParts':[{'sublayer':'actual-code','outcome':'empty','area':geometry}]}
         state={'requests':{'first':valid}}
         self.assertTrue(latest_coverage(state,'source',region))
-        state['requests']['second']={**valid,'state':'failed','checkedParts':[]}
+        state['requests']['second']={**valid,'state':'failed','checkedParts':[],'checkedAt':'2026-10-31T11:00:00Z'}
         self.assertFalse(latest_coverage(state,'source',region))
+
+    def test_latest_receipt_is_chosen_by_time_not_file_order(self):
+        # Порядок ключей в файле проекта не хронологический (финальная запись прогона — из
+        # снимка состояния): у Безобразово 31.10 «последней» квитанцией yandex.water в словаре
+        # была провальная от 29.10, и полная свежая выгрузка помечалась «Источник недоступен».
+        region=P.to_wgs(box(0,0,100,100));geometry=__import__('shapely').geometry.mapping(region)
+        fresh={'sourceKey':'source','state':'received','expectedSublayers':['actual-code'],'checkedAt':'2026-10-31T16:40:00Z',
+               'checkedParts':[{'sublayer':'actual-code','outcome':'received','area':geometry}]}
+        old_failed={'sourceKey':'source','state':'failed','checkedParts':[],'checkedAt':'2026-10-29T18:14:24Z'}
+        state={'requests':{'fresh':fresh,'old_stale':old_failed}}
+        self.assertTrue(latest_coverage(state,'source',region))
+        self.assertIs(latest_receipt(state,'source'),fresh)
 
 
 class FundShare(unittest.TestCase):

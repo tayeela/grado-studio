@@ -251,9 +251,9 @@ class Runs:
                 if planned!=state.get("deferredSources",[]):
                     state["deferredSources"]=planned
                     self._write(rec,project,rec["meta"])
-                previous=[v for v in (state.get("requests") or {}).values() if v.get("sourceKey")==key]
-                if not job["args"]["refresh"] and previous and previous[-1].get("state") in ("received","empty") and (key!="osm.roads" or ((project.get("data") or {}).get(key) or {}).get("osmSchema")==2):
-                    proof=previous[-1]
+                previous=C.latest_receipt(state,key)
+                if not job["args"]["refresh"] and previous and previous.get("state") in ("received","empty") and (key!="osm.roads" or ((project.get("data") or {}).get(key) or {}).get("osmSchema")==2):
+                    proof=previous
                     if P.coverage(mapping(box(*bounds)),proof.get("checkedParts") or [],_expected(s,key))["complete"]:
                         continue
                 # После реального отказа ЕГКО продолжение сначала проверяет запасную основу.
