@@ -158,6 +158,15 @@ class Content:
               "message":message or ISSUE_TEXT.get(code,"Нужна проверка исходных сведений")}
         if item not in self.issues:self.issues.append(item)
 
+    def decided(self,f,name):
+        """Решение владельца по полю объекта («нет сведений»/«не применимо»), принятое при текущей версии объекта."""
+        key=feature_key(f);rev=P.digest(f)
+        for d in self.state.get("decisions",[]):
+            scope=d.get("scope") or {}
+            if scope.get("objectKey")==key and scope.get("field")==name and d.get("dependencyRevision")==rev and d.get("basis"):
+                return d.get("code")
+        return None
+
     def field(self,kind,f,name,source,raw,optional=False):
         key=feature_key(f);rev=P.digest(f)
         for override in self.state.get("overrides",[]):
@@ -240,7 +249,10 @@ class Content:
                                     if shape(osm["geometry"]).covers(pt):cls=R.osm_class(osm.get("properties") or {},self.tinao(f))
                                 except (ValueError,KeyError):continue
                                 if cls is not None:break
-                        if cls is None:self.issue(kind,"missing_field",key,feature_key(f),"useClass")
+                        if cls is None:
+                            # Владелец мог принять «нет сведений» для этого участка: без заливки класса, без замечания.
+                            if self.decided(f,"useClass") not in ("allow_missing","not_applicable"):
+                                self.issue(kind,"missing_field",key,feature_key(f),"useClass")
                         else:
                             title,color=R.ZONES[cls];out.update(fill=color,a=1)
                             if title not in legend:legend.append(title)

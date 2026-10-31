@@ -545,11 +545,13 @@ class Runs:
         basis=str(req.get("basis") or "").strip()
         source=str(req.get("sourceKey") or "");key=str(req.get("objectKey") or "");field=str(req.get("field") or "")
         action=req.get("action","value")
-        if not basis or len(basis)>2000 or not field or len(field)>200 or action not in ("value","allow_missing","not_applicable"):
-            raise P.PreparationError("invalid_input","Укажите поле, основание и действие value/allow_missing/not_applicable",400)
+        if not basis or len(basis)>2000 or not field or len(field)>200 or action not in ("value","allow_missing","not_applicable","confirm_relation"):
+            raise P.PreparationError("invalid_input","Укажите поле, основание и действие value/allow_missing/not_applicable/confirm_relation",400)
         value=req.get("value")
         if action=="value" and (not isinstance(value,(str,int,float)) or isinstance(value,bool) or isinstance(value,float) and not math.isfinite(value) or len(str(value))>10000):
             raise P.PreparationError("invalid_input","Укажите текстовое или числовое значение",400)
+        if action=="confirm_relation" and (not isinstance(value,str) or not value.strip() or len(value)>200):
+            raise P.PreparationError("invalid_input","Для confirm_relation укажите ключ связанного объекта строкой",400)
         with A.access(server,A._actor(server,c),pid,True) as rec:
             if req.get("expectedProjectRevision")!=rec["revision"]:
                 raise P.PreparationError("version_conflict","Проект изменён; перечитайте статус")
@@ -563,6 +565,7 @@ class Runs:
             for name in ("overrides","decisions"):
                 state[name]=[v for v in state.get(name,[]) if v.get("scope")!=scope]
             if action=="value":state["overrides"].append({**common,"state":"accepted","value":value})
+            elif action=="confirm_relation":state["decisions"].append({**common,"code":"confirm_relation","value":str(value).strip()})
             else:state["decisions"].append({**common,"code":action})
             state["lastExport"]=None
             for sheet in state["sheets"].values():sheet.update(state="stale",reasonCodes=["stale_dependency"])

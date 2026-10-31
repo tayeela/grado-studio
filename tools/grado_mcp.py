@@ -169,7 +169,7 @@ def create_mcp(client=None):
     async def grado_resolve_field(project_id: str, expected_project_revision: str, source_key: str,
                                    object_key: str, field: str, basis: str, action: str="value",
                                    value: str|float|None=None) -> dict:
-        """Уточнить поле объекта либо принять отсутствие/неприменимость по явному основанию. Не выдумывать сведения. После изменения повторить подготовку refresh=false."""
+        """Уточнить поле объекта, принять отсутствие/неприменимость либо подтвердить связь объектов (confirm_relation, value — ключ связанного) по явному основанию. Не выдумывать сведения. После изменения повторить подготовку refresh=false."""
         return await api().request("POST","/api/preparation/field",{"projectId":project_id,
             "expectedProjectRevision":expected_project_revision,"sourceKey":source_key,"objectKey":object_key,
             "field":field,"basis":basis,"action":action,"value":value})
