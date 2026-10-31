@@ -40,7 +40,7 @@
 | `test_preparation.py` | CoverageTest, RevisionTest, TransactionTest | 13 |
 | `test_preparation_api.py` | PreparationAPI | 3 |
 | `test_preparation_hub.py` | HubPreparation | 2 |
-| `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 56 |
+| `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 57 |
 | `test_railstations_js.py` | RailStationsJs | 1 |
 | `test_recipe_expect.py` | RecipeExpect | 1 |
 | `test_roadsrc_js.py` | RoadSrcJs | 2 |

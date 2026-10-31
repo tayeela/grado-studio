@@ -113,7 +113,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `local_transaction`, `access`, `require_capabilities`, `summary`, `create_project`, `_actor`, `_uuid`, `get`, `post`, `answer`
 
-### `apps/grado2/print_io.py` — 2607 стр.
+### `apps/grado2/print_io.py` — 2620 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
@@ -147,7 +147,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `clinic_zones`, `education_zones`
 
-### `apps/grado2/sushpol_io.py` — 529 стр.
+### `apps/grado2/sushpol_io.py` — 528 стр.
 
 ГРАДО 2 · единое содержание презентации сущпола для интерфейса и MCP.
 

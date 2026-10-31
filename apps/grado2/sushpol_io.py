@@ -181,17 +181,16 @@ class Content:
         return "Требует уточнения"
 
     def require(self,kind,keys,region=None):
-        receipts=list((self.state.get("requests") or {}).values())
         for key in keys:
-            found=[r for r in receipts if r.get("sourceKey")==key]
-            if not found:
+            receipt=latest_receipt(self.state,key)   # по времени попытки: порядок квитанций в файле не хронологический
+            if receipt is None:
                 self.issue(kind,"unknown_outcome",key,message="Нет подтверждения получения источника")
             elif region is not None and not latest_coverage(self.state,key,region):
                 deferred=next((v for v in self.state.get("deferredSources",[]) if v.get("kind")==kind and v.get("sourceKey")==key),None)
-                self.issue(kind,"budget_exceeded" if deferred else found[-1].get("reasonCode") or "partial_coverage",key,
+                self.issue(kind,"budget_exceeded" if deferred else receipt.get("reasonCode") or "partial_coverage",key,
                            message="Рамка района превышает предел загрузки источника; крупные листы получены отдельно" if deferred else None)
-            elif found[-1].get("state") not in ("received","empty"):
-                self.issue(kind,found[-1].get("reasonCode") or "partial_coverage",key)
+            elif receipt.get("state") not in ("received","empty"):
+                self.issue(kind,receipt.get("reasonCode") or "partial_coverage",key)
 
     def tinao(self,f):
         try:p=shape(f["geometry"]).representative_point()

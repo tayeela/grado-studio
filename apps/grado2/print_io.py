@@ -808,6 +808,18 @@ class SketchMapFrame(Frame):
         tr = MapTransform(rect, sh["center"], sh["scale"])
         k = tr.k
         out, labels, along, placed, runs = [{"op": "clip", "rect": tuple(rect)}], [], {}, [], {}
+        named = set()                                                  # одно имя — одна подпись на карте (детектор label_qa
+        #                                                                   иначе честно сигнализирует «подписан 2 раза»)
+        def name_once(text):
+            """Подпись картоосновы ставится один раз: ЕГКО повторяет имена («Жилой дом», «ROAD»).
+            Чисто латинические буквы в имени — служебное значение ЕГКО (ROAD), в русский альбом
+            не идёт; коды зон и числовые подписи (3.5.1, 12.0.2) остаются."""
+            t = str(text)
+            letters = [c for c in t if c.isalpha()]
+            if t in named or (letters and all("A" <= c <= "Z" or "a" <= c <= "z" for c in letters)):
+                return False
+            named.add(t)
+            return True
         roadsegs = []                                                   # оси дорог OSM (мм) с названием: подписи их не пересекают
         guard, tinfo = None, {}
         late = []                                                       # знаки поверх границы территории (точки съёмки)
@@ -941,7 +953,8 @@ class SketchMapFrame(Frame):
                             if best is None or c[2] > best[2]:
                                 best = (*c, rings[0])
                     if f.get("label") and best:
-                        labels.append((best[0], best[1], f["label"], f.get("ls"), f, best[3], abs(best[2])))
+                        if name_once(f["label"]):
+                            labels.append((best[0], best[1], f["label"], f.get("ls"), f, best[3], abs(best[2])))
                 elif kind == "line":
                     color = hex_to_rgb(f.get("lc") or f.get("stroke") or f.get("fill") or "#333333")
                     for line in parts:
@@ -990,7 +1003,7 @@ class SketchMapFrame(Frame):
                     for p in parts:
                         x, y = tr.mm(*p[:2])
                         if f.get("nm"):                                 # слой надписей: подпись на самой точке, без значка
-                            if f.get("label"):
+                            if f.get("label") and name_once(f["label"]):
                                 placed.append((x, y, str(f["label"]), f.get("ls"), f.get("la"), f.get("lcol"), f))
                             continue
                         if f.get("nodot"):                               # подпись-плашка без значка (кадастровый номер)

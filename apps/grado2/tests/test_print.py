@@ -246,6 +246,20 @@ class SlidePanelsAndPhotos(unittest.TestCase):
         self.assertEqual(len(clips), 2)
         self.assertLess(clips[0][0] + clips[0][2], clips[1][0])                  # карты рядом, не наезжают
 
+    def test_duplicate_and_tech_names_are_placed_once_or_not_at_all(self):
+        # ЕГКО повторяет имена объектов («Жилой дом» у каждого дома) и держит служебные латинские
+        # значения («ROAD») — на карте одно имя ставится один раз, служебное не ставится вовсе.
+        pt = lambda x, y, name: {"g": {"type": "Point", "coordinates": [x, y]}, "nm": 1, "label": name}
+        panel = {"scale": 5000, "center": [37.65, 55.80], "layers": [{"title": "Надписи", "features": [
+            pt(37.649, 55.7995, "Жилой дом"), pt(37.651, 55.8005, "Жилой дом"), pt(37.650, 55.7995, "ROAD"),
+            pt(37.650, 55.8005, "3.5.1")]}], "territory": None, "caption": None}
+        spec = {"meta": {}, "sheets": [{"size": "P", "title": "Сущпол", "panels": [panel], "legend": [], "note": ""}]}
+        ops = print_io.document_pages_ops(print_io.build_document(spec, {}, {}), None)[0][2]
+        texts = [o.get("text") for o in ops if o["op"] == "text"]
+        self.assertEqual(texts.count("Жилой дом"), 1)
+        self.assertNotIn("ROAD", texts)
+        self.assertIn("3.5.1", texts)                                            # числовые коды — не служебные имена
+
     def test_photo_slide_places_pictures_and_numbers(self):
         ph = {"data": self.JPEG, "w": 8, "h": 6}
         spec = {"meta": {}, "sheets": [{"size": "P", "kind": "photos", "title": "Материалы фотофиксации", "scale": 2000, "center": [37.65, 55.80],
