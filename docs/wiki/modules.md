@@ -133,7 +133,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3436 стр.
+### `apps/grado2/server.py` — 3437 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -153,7 +153,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `feature_key`, `features`, `_value`, `_sort_key`, `frame_geometry`, `fund_share`, `latest_coverage`, `Content`, `build_spec`
 
-### `apps/grado2/sushpol_jobs.py` — 664 стр.
+### `apps/grado2/sushpol_jobs.py` — 669 стр.
 
 ГРАДО 2 · ограниченный серверный запуск подготовки для UI и MCP.
 
@@ -733,7 +733,7 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `main`
 
-### `tools/grado_mcp.py` — 186 стр.
+### `tools/grado_mcp.py` — 188 стр.
 
 MCP-доступ к ГРАДО 2: инструменты подготовки презентации через проверяемый HTTP API.
 

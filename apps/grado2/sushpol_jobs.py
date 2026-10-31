@@ -92,12 +92,17 @@ def _merged(previous,incoming,bounds,preserve_absent=False):
     return list(new.values()),source
 
 
+_OWNER_CODES={"missing_field","manual_conflict"}   # решается внутри ГРАДО владельцем: значение или основание (/api/preparation/field)
+
+
 def _issue_summary(issues):
-    codes={};sheets={}
+    codes={};sheets={};owner=0
     for x in issues:
         code=x.get("reasonCode","unknown");kind=x.get("kind","project")
         codes[code]=codes.get(code,0)+1;sheets[kind]=sheets.get(kind,0)+1
-    return {"total":len(issues),"byCode":codes,"bySheet":sheets,"examples":issues[:8]}
+        if code in _OWNER_CODES:owner+=1
+    return {"total":len(issues),"byCode":codes,"bySheet":sheets,
+            "ownerInput":owner,"pipeline":len(issues)-owner,"examples":issues[:8]}
 
 
 class Runs:

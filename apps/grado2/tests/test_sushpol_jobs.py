@@ -40,6 +40,34 @@ class SourceFootprints(unittest.TestCase):
         self.assertLess(P.to_msk(box(*bounds)).area/1e6,40)
         self.assertTrue(P.to_msk(box(*bounds)).buffer(.01).covers(box(0,0,200,100)))
 
+    def test_yandex_district_context_is_deferred_at_tile_budget(self):
+        # Яндекс режется на 16 частей по 30 км² (TILE_KM2×MAX_TILES = 480): контекст района 3624 км² откладывается явно,
+        # а не валит весь источник (прогон Безобразово 29.10).
+        from shapely.geometry import box,mapping
+        import preparation as P
+        from sushpol_jobs import _source_bounds
+        project={"territory":mapping(P.to_wgs(box(0,0,200,100))),"album":{"meta":{},"sheets":[]},
+                 "data":{"gisogd.admin":{"fc":{"features":[{"geometry":mapping(P.to_wgs(box(-40000,-40000,40000,40000))),"properties":{"Уровень":"район"}}]}}}}
+        deferred=[]
+        bounds=_source_bounds(project,"yandex.green",480.0,deferred)
+        self.assertEqual(len(deferred),1)
+        self.assertEqual(deferred[0]["reasonCode"],"budget_exceeded")
+        self.assertGreater(deferred[0]["actualAreaKm2"],480)
+        self.assertLess(P.to_msk(box(*bounds)).area/1e6,40)
+
+
+class IssueSummary(unittest.TestCase):
+    def test_owner_input_is_counted_separately_from_pipeline_problems(self):
+        from sushpol_jobs import _issue_summary
+        s=_issue_summary([{"reasonCode":"missing_field","kind":"land_rights"},
+                          {"reasonCode":"manual_conflict","kind":"parcels_oks"},
+                          {"reasonCode":"source_unavailable","kind":"territory_ortho"},
+                          {"reasonCode":"budget_exceeded","kind":"project"}])
+        self.assertEqual(s["ownerInput"],2)          # ЕГРН-поля и связь ОКС–ЗУ — владелец, не сборка
+        self.assertEqual(s["pipeline"],2)
+        self.assertEqual(s["total"],4)
+        self.assertEqual(s["byCode"]["missing_field"],1)
+
 
 class PartialImportMerge(unittest.TestCase):
     def test_unreceived_objects_are_not_deleted_by_partial_response(self):

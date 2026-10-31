@@ -133,7 +133,9 @@ def create_mcp(client=None):
     @mcp.tool()
     async def grado_prepare_presentation(project_id: str, command_id: str, refresh: bool=True, photos: bool=True,
                                           resume_run_id: str|None=None) -> dict:
-        """Начать сборку презентации по мытищинскому образцу. command_id — UUID, сохранять для безопасного повтора."""
+        """Начать сборку презентации по мытищинскому образцу. command_id — UUID, сохранять для безопасного повтора.
+        После budget_exceeded или обрыва повторяйте с refresh=false: полученные источники берутся из квитанций,
+        докачивается только недостающее; полученные слои заново не скачиваются."""
         UUID(command_id)
         return await api().request("POST","/api/preparation/start",{"projectId":project_id,
                   "commandId":command_id,"refresh":refresh,"photos":photos,"resumeRunId":resume_run_id})

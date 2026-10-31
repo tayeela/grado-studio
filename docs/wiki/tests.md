@@ -47,11 +47,11 @@
 | `test_roles_js.py` | RolesJs, LayerRolesApi | 5 |
 | `test_rowsgeom_js.py` | RowsGeomJs | 1 |
 | `test_sat.py` | FakeTiles, SatExport | 8 |
-| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 163 |
+| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 165 |
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |
 | `test_sheetmodel_js.py` | SheetModelJs | 1 |
 | `test_snap_js.py` | SnapJs | 1 |
-| `test_sushpol_jobs.py` | ManualImportMerge, SourceFootprints, PartialImportMerge, FrozenRasters | 4 |
+| `test_sushpol_jobs.py` | ManualImportMerge, SourceFootprints, IssueSummary, PartialImportMerge, FrozenRasters | 6 |
 | `test_sushpol_photos.py` | PhotoPlan | 3 |
 | `test_sushpol_rules.py` | RulesTest | 2 |
 | `test_t78_labels.py` | StationNotOnRail, StationNotOnDiagonalRail, StationBestSpot, DistrictBoundaryObstacle, Quotes, LeadersAndCaptions, NestedQuotes | 11 |
