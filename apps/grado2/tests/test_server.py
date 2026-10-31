@@ -231,6 +231,66 @@ class Egko(unittest.TestCase):
         self.assertEqual(sorted(p["Состояние"] for p in props), sorted(["действующее", "строящееся", "разрушенное", "нулевой цикл (фундамент)"]))
         self.assertTrue(all(p["_key"].startswith("base2:") for p in props))
 
+    def test_roads_fetch_bridge_polygons_without_replacing_geometry_or_provenance(self):
+        from shapely.geometry import box, mapping, shape, MultiPolygon
+        from shapely.ops import unary_union
+        from grado_connectors.contract import make_result, with_acquisition
+        calls = []
+        bbox = [37.600, 55.760, 37.612, 55.766]
+        road = MultiPolygon([box(37.603, 55.761, 37.605, 55.762),
+                             box(37.606, 55.761, 37.608, 55.762)])
+        bridge = box(37.605, 55.761, 37.606, 55.762)
+        geometries = {"dorogi_pol": mapping(road), "bridge": mapping(bridge)}
+        properties = {"dorogi_pol": {"ext_name": "Дорога", "vid_road": "Проезжая часть"},
+                      "bridge": {"ext_name": " ", "name_br": "Мост через реку", "vid_brid": "Транспортный мост"}}
+
+        class Fake:
+            def __init__(self, **kw):
+                calls.append(("init", kw["map_name"], kw["clip"]))
+
+            def fetch(self, bbox, code):
+                calls.append(("fetch", code))
+                return with_acquisition(make_result([{"type": "Feature", "geometry": geometries[code],
+                    "properties": properties[code], "grado_key": f"base2:{code}:1"}], {}, source_doc="ЕГКО"), bbox, [code])
+
+        with mock.patch.object(S, "GisogdApi", Fake):
+            layers, errors = S.fetch(bbox, ["egko.roads"])
+        self.assertEqual(errors, {})
+        self.assertEqual(calls, [("init", "base2", True), ("fetch", "dorogi_pol"), ("fetch", "bridge")])
+        layer = layers["egko.roads"]
+        features = layer["features"]["features"]
+        self.assertEqual([f["geometry"] for f in features], [geometries["dorogi_pol"], geometries["bridge"]])
+        self.assertEqual([f["properties"]["_key"] for f in features], ["base2:dorogi_pol:1", "base2:bridge:1"])
+        self.assertEqual(features[1]["properties"]["Наименование"], "Мост через реку")
+        self.assertEqual(features[1]["properties"]["Вид"], "Транспортный мост")
+        self.assertEqual(layer["source"], "ЕГКО")
+        self.assertEqual([p["sublayer"] for p in layer["acquisition"]["checkedParts"]], ["dorogi_pol", "bridge"])
+        self.assertEqual(layer["acquisition"]["state"], "received")
+        self.assertTrue(unary_union([shape(f["geometry"]) for f in features]).equals(box(37.603, 55.761, 37.608, 55.762)))
+
+    def test_roads_are_partial_if_official_bridge_layer_fails(self):
+        from grado_connectors.contract import ConnectorError, make_result, with_acquisition
+        from shapely.geometry import box, mapping
+
+        class Fake:
+            def __init__(self, **kw):
+                pass
+
+            def fetch(self, bbox, code):
+                if code == "bridge":
+                    raise ConnectorError("bridge unavailable")
+                return with_acquisition(make_result([{"type": "Feature", "geometry": mapping(box(37.603, 55.761, 37.605, 55.762)),
+                    "properties": {}, "grado_key": "base2:dorogi_pol:1"}], {}, source_doc="ЕГКО"), bbox, [code])
+
+        with mock.patch.object(S, "GisogdApi", Fake):
+            layers, errors = S.fetch([37.600, 55.760, 37.612, 55.766], ["egko.roads"])
+        self.assertEqual(errors, {"egko.roads": "bridge unavailable"})
+        layer = layers["egko.roads"]
+        self.assertEqual(layer["acquisition"]["state"], "partial")
+        self.assertEqual(layer["acquisition"]["reasonCode"], "source_unavailable")
+        self.assertEqual([p["sublayer"] for p in layer["acquisition"]["checkedParts"]], ["dorogi_pol"])
+        self.assertEqual([f["properties"]["_key"] for f in layer["features"]["features"]], ["base2:dorogi_pol:1"])
+
 
 class DataBboxT70(unittest.TestCase):
     """T70: рамка листа не уходит в OSM и ЕГКО; большая область режется на части по очереди, с паузой."""

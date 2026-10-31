@@ -32,6 +32,7 @@ import { fromLonLat, toLonLat } from "ol/proj.js";
 import { basemapId, current, cursor, mapOnly, project, scale, shown, theme, viewNow, winApi } from "../store.js";
 import { Maximize2, Minimize2 } from "@lucide/vue";
 import { dataRev, mapApi } from "../edit.js";
+import { showInspector } from "../inspector.js";
 import { mskOf, sel, selected, setSel, toggleSel } from "../features.js";
 import { loadLibs, scaleDen } from "../symbology.js";
 import Draw from "ol/interaction/Draw.js";
@@ -123,6 +124,7 @@ function onClick(e) {
   else if (hint && notice.value === hint) notice.value = hint = "";
   if (add) { if (hit) toggleSel(hit); }
   else setSel(hit ? [hit] : []);
+  if (hit) showInspector("object");
 }
 function onBox(box) {
   const ext = box.getGeometry().getExtent(), out = [], only = curKey();
@@ -132,6 +134,7 @@ function onBox(box) {
     v.getSource().forEachFeatureIntersectingExtent(ext, f => { if (f.gj) out.push({ key: l.key, uid: f.gj.properties._uid }); });
   });
   setSel([...sel, ...out]);
+  if (out.length) showInspector("object");
 }
 
 /* Другой проект: слои заново и его вид карты (или все объекты в кадре). Пока окно карты не получило размер

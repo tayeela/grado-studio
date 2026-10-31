@@ -147,7 +147,8 @@ ADMIN_FILE, ADMIN_REV = ROOT / "docs" / "standards" / "admin" / "moscow-adm.geoj
 # здания: оно идёт в поле «Состояние», как тип зоны в «Вид зоны» у функциональных зон ТиНАО.
 SOURCES["egko.buildings"] = ("egko", {"virtual6": "действующее", "virtual15": "строящееся", "virtual16": "разрушенное",
                                       "virtual17": "нулевой цикл (фундамент)"}, "Здания (ЕГКО)")
-SOURCES["egko.roads"] = ("egko", {"dorogi_pol": None}, "Дороги (ЕГКО)")
+# В проезжей части на мостах оставлены разрывы: их закрывают исходные полигоны bridge (#167).
+SOURCES["egko.roads"] = ("egko", {"dorogi_pol": None, "bridge": None}, "Дороги (ЕГКО)")
 SOURCES["egko.paths"] = ("egko", {"tropinki": None}, "Пешеходные дороги (ЕГКО)")
 SOURCES["egko.green"] = ("egko", {"gazons": "газон", "forest": "растительность"}, "Газоны и растительность (ЕГКО)")
 # тонкие реки и ручьи — линиями: по ним ставятся подписи узких рек (подпись на русле, владелец 30.09.2026)
@@ -408,7 +409,9 @@ def egko_building_props(p):
 
 
 def egko_road_props(p):
-    return {"Наименование": _v(p.get("ext_name")), "Улица или район": _v(p.get("name_str")), "Вид": _v(p.get("vid_road")) or _v(p.get("vid_str"))}
+    return {"Наименование": _v(p.get("ext_name")) or _v(p.get("name_br")) or _v(p.get("name_obj")),
+            "Улица или район": _v(p.get("name_str")),
+            "Вид": _v(p.get("vid_road")) or _v(p.get("vid_str")) or _v(p.get("vid_brid"))}
 
 
 def egko_path_props(p):
