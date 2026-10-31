@@ -15,7 +15,7 @@ import urllib.parse
 import shapely
 
 from . import netutil
-from .contract import Connector, ConnectorError, make_result
+from .contract import Connector, ConnectorError, make_result, with_acquisition
 
 # Основной инстанс + публичные зеркала: при 429/504 (перегрузка) пробуем
 # следующее — прозрачно для пользователя.
@@ -97,7 +97,7 @@ def _assemble_rings(segments):
 # Теги, уходящие в атрибуты холста (шум вроде source=* отбрасывается).
 _KEEP_TAGS = ("highway", "name", "building", "building:levels", "landuse",
               "leisure", "natural", "water", "waterway", "surface", "lanes",
-              "boundary", "admin_level", "amenity", "railway")
+              "boundary", "admin_level", "amenity", "railway", "access", "foot", "tunnel", "bridge", "layer")
 
 
 def _which_set(tags):
@@ -291,6 +291,8 @@ class OsmOverpass(Connector):
             clauses += [sel + bb for sel in OSM_SETS[key]]
         query = f"[out:json][timeout:25];({';'.join(clauses)};);out geom;"
         data, cached_at, cache_note = self._answer(query, (west, south, east, north), sets)
+        if not isinstance(data, dict) or not isinstance(data.get("elements"), list):
+            raise ConnectorError("Overpass вернул неизвестную схему вместо списка объектов")
 
         features, skipped = [], 0
         for el in data.get("elements") or []:
@@ -369,7 +371,9 @@ class OsmOverpass(Connector):
             notes=notes)
         if cached_at:
             res["fetched_at"] = time.strftime("%Y-%m-%d", time.localtime(cached_at))
-        return res
+        res["osmSchema"] = 2
+        return with_acquisition(res, bbox, sets, provenance="cache" if cached_at else "network",
+                                data_date=(data.get("osm3s") or {}).get("timestamp_osm_base"), fields_complete=not skipped)
 
     def _answer(self, query, bbox, sets):
         """(ответ Overpass, время снятия из кэша или None, пометка для пользователя)."""

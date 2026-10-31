@@ -1,6 +1,6 @@
 // ГРАДО 2 · сценарии приёмки C, D (и D2: ряды по границе, стоянки), E, G, H, N из docs/ux/grado2-ux.md в новом интерфейсе (/next/), без интернета: тестовый сервер
 // на копии tests/fixtures/next_ui_project.grado2 с границей территории вокруг его зданий; мышь и клавиши — как у владельца.
-// Запуск: CHROME=… node apps/grado2/tests/e2e/next_acceptance.mjs [--shots DIR]; нужны (cd tools && npm ci) и ~/.grado2/venv.
+// Запуск: CHROME=… node apps/grado2/tests/e2e/next_acceptance.mjs [--shots DIR] [--scenario C3]; нужны (cd tools && npm ci) и ~/.grado2/venv.
 // Итог: строки «ok - …» и «FAILED …», SUMMARY; код выхода 1 при провале. Вызывают tests/test_e2e.py (GRADO2_E2E=1) и CI.
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
@@ -25,6 +25,7 @@ function startServer() {
   soc.fc.features.forEach((f, i) => { f.properties = { "Вид": i ? "школа" : "детский сад", "Название": `Соцобъект ${i + 1}` }; });
   proj.data["osm.social"] = soc;
   proj.layers.forEach(l => { if (l.key === "social") l.key = "osm.social"; });
+  delete proj.layers.find(l => l.key === "egko.buildings").geom; // настоящий серверный импорт тоже может не иметь geom
   writeFileSync(join(dir, ".autosave.grado2"), JSON.stringify({ ...proj, territory: TERR }));
   const port = String(8950 + Math.floor(Math.random() * 40));
   const proc = spawn(PY, [join(ROOT, "apps/grado2/server.py"), port], {
@@ -39,6 +40,7 @@ function startServer() {
   });
 }
 
+const ONLY = (i => i > 0 ? process.argv[i + 1] : "")(process.argv.indexOf("--scenario"));
 let failed = 0, passed = 0;
 const errors = [];
 function check(cond, msg, detail = "") {
@@ -46,6 +48,7 @@ function check(cond, msg, detail = "") {
   return cond;
 }
 async function scenario(name, page, fn) {
+  if (ONLY && !name.startsWith(ONLY)) return;
   const before = errors.length;
   try { await fn(); } catch (e) { failed++; console.log(`STEP FAILED ${name}: ${e.message.split("\n").slice(0, 3).join(" ")}`); }
   if (SHOTS) await page.screenshot({ path: join(SHOTS, name.replace(/[^\wа-яё]+/gi, "_") + ".png") }).catch(() => {});
@@ -60,7 +63,11 @@ async function showWin(page, t) {
     await page.locator("header.top wa-dropdown-item[type=checkbox]", { hasText: t }).first().click();
     await page.waitForTimeout(400);
   }
-  await tab(page, t).click(); await page.waitForTimeout(300);
+  await tab(page, t).click();
+  await page.waitForFunction(t => {
+    const tab = [...document.querySelectorAll(".dv-tab")].find(x => x.textContent.trim() === t);
+    return tab?.getAttribute("aria-selected") === "true" && document.querySelector(`[aria-labelledby="${tab.id}"]`)?.getBoundingClientRect().height > 0;
+  }, t, { timeout: 10000 });
 }
 async function closeWin(page, t) {
   if (!(await tab(page, t).count())) return;
@@ -74,7 +81,7 @@ const winBody = (page, t) => page.evaluate(t => {
 }, t);
 const winText = (page, t) => page.evaluate(t => {
   const tb = [...document.querySelectorAll(".dv-tab")].find(x => x.textContent.trim() === t);
-  return tb ? tb.closest(".dv-groupview").querySelector(".dv-content-container").innerText : "";
+  return tb ? document.querySelector(`[aria-labelledby="${tb.id}"]`)?.innerText || "" : "";
 }, t);
 const winButton = (page, t, label) => page.locator(".dv-groupview", { has: page.locator(".dv-tab.dv-active-tab", { hasText: t }) })
   .locator(".dv-content-container wa-button", { hasText: label }).first();
@@ -136,6 +143,80 @@ try {
     await mapClick();
     await showWin(page, "Таблица атрибутов");
     check(/выбрано 1/.test(await tblTitle()), "щелчок по зданию в текущем слое зданий выбирает его", await tblTitle());
+    await closeWin(page, "Таблица атрибутов");
+  });
+
+  // C3. Единый инспектор: выбор не забирает фокус таблицы, ввод остаётся у своего объекта, поиск и отмена.
+  await scenario("C3 единый инспектор", page, async () => {
+    await showWin(page, "Слои");
+    await page.locator('.pane.layers .row[data-key="egko.buildings"]').click();
+    await until(page, () => document.querySelector('#inspector-tab-layer')?.getAttribute('aria-selected') === 'true', null, "слой открыл свою вкладку");
+    check(await page.locator('.dv-tab', { hasText: /^Объект$/ }).count() === 0, "отдельного окна объекта нет");
+    check(await page.locator('#inspector-layer .ph').innerText().then(t => t.includes('Полигоны')), "тип импортированного слоя определён по геометрии");
+    await showWin(page, "Таблица атрибутов");
+    const rows = page.locator('.pane.tbl .tabulator-row');
+    await rows.first().click();
+    await until(page, () => document.querySelector('#inspector-tab-object')?.getAttribute('aria-selected') === 'true', null, "строка таблицы открыла атрибуты");
+    const address = page.locator('#inspector-object input[aria-label="адрес"]');
+    const original = await address.inputValue();
+    await address.fill("НЕ ЗАПИСЫВАТЬ"); await address.press('Escape');
+    check(await address.inputValue() === original, "Esc отменяет незавершённый ввод");
+    const search = page.locator('#inspector-object wa-input[aria-label="Поиск атрибутов объекта"] input');
+    await search.fill('Хабаровская');
+    check(await page.locator('#inspector-object table.attrs tbody tr').count() === 1, "поиск находит поле по значению");
+    await search.fill('нет такого поля');
+    check(await page.locator('#inspector-object').innerText().then(t => t.includes('По запросу ничего не найдено')), "у поиска есть пустое состояние");
+    await search.fill('');
+    await address.fill('Проверка инспектора'); await address.press('Enter');
+    check(await rows.first().innerText().then(t => t.includes('Проверка инспектора')), "Enter записывает атрибут в таблицу");
+    await page.waitForFunction(() => document.querySelector('header.top wa-button[aria-label="Отменить"]')?.disabled === false);
+    await page.locator('header.top wa-button[aria-label="Отменить"]').click();
+    await until(page, v=>document.querySelector('#inspector-object input[aria-label="адрес"]')?.value===v, original, "отмена отобразила прежний атрибут");
+    check(await address.inputValue() === original, "отмена возвращает атрибут");
+    await page.locator('header.top wa-button[aria-label="Вернуть"]').click();
+    await until(page, ()=>document.querySelector('#inspector-object input[aria-label="адрес"]')?.value==='Проверка инспектора', null, "повтор отобразил правку");
+    check(await address.inputValue() === 'Проверка инспектора', "повтор возвращает правку");
+    await address.fill(original); await address.press('Enter');
+    await address.fill('Правка прежнего объекта');
+    await rows.nth(1).click();
+    await until(page, () => document.querySelector('#inspector-object input[aria-label="адрес"]')?.value === 'ул. Хабаровская, 2', null, "при смене объекта правка не попала в новый");
+    await rows.first().click();
+    check(await address.inputValue() === 'Правка прежнего объекта', "правка сохранилась у прежнего объекта");
+    await address.fill(original); await address.press('Enter');
+    // Фокус после выбора с клавиатуры остаётся в таблице.
+    const holder = page.locator('.pane.tbl .tabulator-tableholder');
+    await holder.focus(); await holder.press('Home'); await holder.press('Enter');
+    check(await holder.evaluate(e => e === document.activeElement), "инспектор не забирает фокус таблицы");
+    await showWin(page, "Слои");
+    await page.locator('.pane.layers .row[data-key="osm.roads"]').click();
+    check(await page.locator('#inspector-tab-layer').getAttribute('aria-selected') === 'true', "щелчок по слою возвращает оформление");
+    await page.locator('#inspector-tab-object').click();
+    check(await page.locator('#inspector-object .ph').innerText().then(t=>t.includes('Здания (ЕГКО)')), "слой выбранного объекта указан независимо от текущего");
+    await page.locator('.pane.layers .row[data-key="egko.buildings"]').click();
+    // Проверка сохранения оформления, подписей и геометрии в настоящем файле проекта.
+    const labelField = page.locator('#inspector-layer .inspector-section').filter({ has: page.locator('summary', { hasText: /^Подписи$/ }) }).locator('wa-select').first();
+    await labelField.click(); await labelField.locator('wa-option[value="адрес"]').click();
+    await page.locator('header.top wa-button[slot=trigger]', { hasText: 'Проект' }).click();
+    await page.locator('header.top wa-dropdown-item', { hasText: /^Сохранить как/ }).click();
+    await page.getByRole('textbox', { name: 'Название проекта', exact: true }).fill('Проверка инспектора');
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await until(page, () => document.querySelector('button.note')?.textContent.includes('сохранён'), null, "проект записан");
+    const stored = await (await page.request.get(srv.url + '/api/project?name=' + encodeURIComponent('Проверка инспектора'))).json();
+    const fixture = JSON.parse(readFileSync(join(ROOT, 'apps/grado2/tests/fixtures/next_ui_project.grado2'), 'utf8'));
+    check(stored.data['egko.buildings'].fc.features.every((f,i) => JSON.stringify(f.geometry) === JSON.stringify(fixture.data['egko.buildings'].fc.features[i].geometry)), "геометрия объектов сохранена без изменений");
+    check(stored.layers.find(l=>l.key==='egko.buildings').style.label === 'адрес', "подпись слоя записана в файл");
+    await page.reload();
+    await until(page, () => document.querySelector('.project')?.textContent.includes('Проверка инспектора'), null, "сохранённый проект открылся повторно");
+    await showWin(page, 'Слои'); await page.locator('.pane.layers .row[data-key="egko.buildings"]').click();
+    check(await page.locator('#inspector-layer wa-select').allTextContents().then(t=>t.join(' ').includes('адрес')), "подписи доступны после повторного открытия");
+    await showWin(page, 'Таблица атрибутов'); await rows.first().click();
+    await address.fill('НЕ ПЕРЕНОСИТЬ В ДРУГОЙ ПРОЕКТ');
+    // Смена файла без предварительного blur: те же key/uid, как при открытии копии/получении обновления.
+    await page.locator('input[type=file][accept*="grado2"]').setInputFiles({ name:'Копия инспектора.grado2', mimeType:'application/json', buffer:Buffer.from(JSON.stringify(stored)) });
+    await until(page, () => document.querySelector('button.note')?.textContent.includes('Открыт файл'), null, "копия проекта открылась при активном вводе");
+    await showWin(page, 'Таблица атрибутов'); await rows.first().click();
+    await until(page, v=>document.querySelector('#inspector-object input[aria-label="адрес"]')?.value===v, original, "ввод прежнего проекта не попал в его копию");
+    check(await address.inputValue()===original, "совпадающие key/uid другого проекта защищены от старого ввода");
     await closeWin(page, "Таблица атрибутов");
   });
 
@@ -278,6 +359,37 @@ try {
     await showWin(page, "Виды");
     const vt = await winText(page, "Виды");
     check(await page.locator(".views table.vl td.nm").count() === n0 + 1 && /рамка \d/.test(vt), "«Вид» на ленте: выделенная область стала видом с рамкой", vt.slice(0, 300));
+  });
+  await scenario("I перенос старой раскладки инспектора", page, async () => {
+    await showWin(page, 'Свойства');
+    const before = await page.evaluate(() => JSON.parse(localStorage.getItem('grado-next-layout')));
+    const propsRect = await page.locator('.inspector').boundingBox();
+    const oldOnly = JSON.parse(JSON.stringify(before).replaceAll('"props"', '"object"'));
+    oldOnly.panels.object.id = 'object'; oldOnly.panels.object.contentComponent = 'object'; oldOnly.panels.object.title = 'Объект';
+    function activate(node, id, layout) {
+      if (node.type === 'leaf' && node.data.views.includes(id)) { node.data.activeView = id; layout.activeGroup = node.data.id; }
+      else if (Array.isArray(node.data)) node.data.forEach(n=>activate(n,id,layout));
+    }
+    activate(oldOnly.grid.root, 'object', oldOnly);
+    await page.evaluate(x=>localStorage.setItem('grado-next-layout', JSON.stringify(x)), oldOnly);
+    await page.reload(); await page.waitForSelector('.inspector');
+    await until(page, () => document.querySelector('#inspector-tab-object')?.getAttribute('aria-selected') === 'true', null, "старое окно объекта стало вкладкой инспектора");
+    check(await page.locator('.inspector').count() === 1, 'старое одиночное окно даёт один инспектор');
+    await page.waitForFunction(r => { const b=document.querySelector('.inspector')?.getBoundingClientRect(); return b && Math.abs(b.x-r.x)<=3 && Math.abs(b.width-r.width)<=3; }, propsRect, {timeout:5000}).catch(()=>{});
+    const afterRect = await page.locator('.inspector').boundingBox();
+    check(Math.abs(afterRect.x-propsRect.x)<=3 && Math.abs(afterRect.width-propsRect.width)<=3, 'положение и ширина старого окна сохранены', JSON.stringify({before:propsRect,after:afterRect}));
+    const both = JSON.parse(JSON.stringify(before));
+    both.panels.object = { ...both.panels.props, id:'object', contentComponent:'object', title:'Объект' };
+    function duplicate(node) {
+      if (node.type === 'leaf' && node.data.views.includes('props')) { node.data.views.push('object'); node.data.activeView='object'; both.activeGroup=node.data.id; }
+      else if (Array.isArray(node.data)) node.data.forEach(duplicate);
+    }
+    duplicate(both.grid.root);
+    await page.evaluate(x=>localStorage.setItem('grado-next-layout', JSON.stringify(x)), both);
+    await page.reload(); await page.waitForSelector('.inspector');
+    check(await page.locator('.inspector').count() === 1 && await page.locator('.dv-tab', {hasText:/^Объект$/}).count() === 0, 'два прежних окна объединены без дубликата');
+    const saved = await page.evaluate(()=>JSON.parse(localStorage.getItem('grado-next-layout')));
+    check(!!saved.panels.props && !saved.panels.object, 'перенесённая раскладка сохранена в новом виде');
   });
 } catch (e) {
   failed++; console.log("STEP FAILED запуск: " + e.message.split("\n")[0]);

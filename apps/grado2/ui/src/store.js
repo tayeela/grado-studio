@@ -31,7 +31,12 @@ export function setProject(p, name, source) {
   project.file = p.file !== undefined ? p.file : (p.name || null);
   project.source = source;
   project.groups = (p.groups || []).map(g => ({ id: g.id, title: g.title || g.id, visible: g.visible !== false, open: g.open !== false }));
-  project.layers = (p.layers || []).filter(l => l && l.key).map(l => ({ ...l, visible: l.visible !== false, style: fullStyle(l.style) }));   // стиль со всеми полями, как web/layers.js ST
+  project.layers = (p.layers || []).filter(l => l && l.key).map(l => {
+    // Серверные импорты и старые проекты могут не содержать geom: инспектору нужен тип настоящих объектов.
+    const type = (p.data?.[l.key]?.fc?.features || []).find(f => f.geometry?.type)?.geometry.type || "";
+    const geom = l.geom || (/Polygon/.test(type) ? "poly" : /LineString/.test(type) ? "line" : /Point/.test(type) ? "point" : undefined);
+    return { ...l, ...(geom ? { geom } : {}), visible: l.visible !== false, style: fullStyle(l.style) };
+  });   // стиль со всеми полями, как web/layers.js ST
   project.data = markRaw(p.data || {});
   project.territory = p.territory?.geometry ? markRaw(p.territory) : null;   // граница территории: GeoJSON Feature, как в файле
   project.views = (p.views || []).filter(v => v && v.id).map(v => JSON.parse(JSON.stringify(v)));

@@ -70,7 +70,7 @@ export async function listProjects() {
 
 /* ---------- каталог: переименовать, копия, в корзину, вернуть, избранное (server.py post_catalog) ---------- */
 async function catalogAct(act, body) {
-  const r = await fetch("/api/project/" + act, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch("/api/project/" + act, { method: "POST", headers: { "Content-Type": "application/json", "X-Grado-Project-Capabilities": "sushpol-v1" }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || r.status);
   return j;
@@ -228,7 +228,7 @@ export async function saveProject(name, { replace = false } = {}) {
   busy.value = true;
   try {
     const q = "/api/project?name=" + encodeURIComponent(name) + (base ? "&base=" + base : "") + (replace ? "&replace=1" : "");
-    const r = await fetch(q, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    const r = await fetch(q, { method: "POST", headers: { "Content-Type": "application/json", "X-Grado-Project-Capabilities": "sushpol-v1" }, body });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || r.status);
     fileBase = j.modified ?? null;
@@ -277,7 +277,7 @@ export async function autosave() {
   if (autoBusy) { autoAgain = true; return; }
   autoBusy = true; const t = tick;
   try {
-    const r = await fetch("/api/project?autosave=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: projectJSON() });
+    const r = await fetch("/api/project?autosave=1", { method: "POST", headers: { "Content-Type": "application/json", "X-Grado-Project-Capabilities": "sushpol-v1" }, body: projectJSON() });
     if (r.ok) autoTick = t;
   } catch { /* сервер не ответил — следующая правка попробует снова */ }
   finally { autoBusy = false; if (autoAgain) { autoAgain = false; autosave(); } }

@@ -14,7 +14,7 @@ TEST = Path(__file__).resolve().parents[1] / "ui" / "src" / "rowsgeom.test.js"
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
 class RowsGeomJs(unittest.TestCase):
     def test_rows_geom(self):
-        r = subprocess.run(["node", "--test", str(TEST)], capture_output=True, text=True)
+        r = subprocess.run(["node", "--test", "--test-reporter=tap", str(TEST)], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertIn("# fail 0", r.stdout)
 

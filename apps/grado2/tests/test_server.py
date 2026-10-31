@@ -231,6 +231,66 @@ class Egko(unittest.TestCase):
         self.assertEqual(sorted(p["Состояние"] for p in props), sorted(["действующее", "строящееся", "разрушенное", "нулевой цикл (фундамент)"]))
         self.assertTrue(all(p["_key"].startswith("base2:") for p in props))
 
+    def test_roads_fetch_bridge_polygons_without_replacing_geometry_or_provenance(self):
+        from shapely.geometry import box, mapping, shape, MultiPolygon
+        from shapely.ops import unary_union
+        from grado_connectors.contract import make_result, with_acquisition
+        calls = []
+        bbox = [37.600, 55.760, 37.612, 55.766]
+        road = MultiPolygon([box(37.603, 55.761, 37.605, 55.762),
+                             box(37.606, 55.761, 37.608, 55.762)])
+        bridge = box(37.605, 55.761, 37.606, 55.762)
+        geometries = {"dorogi_pol": mapping(road), "bridge": mapping(bridge)}
+        properties = {"dorogi_pol": {"ext_name": "Дорога", "vid_road": "Проезжая часть"},
+                      "bridge": {"ext_name": " ", "name_br": "Мост через реку", "vid_brid": "Транспортный мост"}}
+
+        class Fake:
+            def __init__(self, **kw):
+                calls.append(("init", kw["map_name"], kw["clip"]))
+
+            def fetch(self, bbox, code):
+                calls.append(("fetch", code))
+                return with_acquisition(make_result([{"type": "Feature", "geometry": geometries[code],
+                    "properties": properties[code], "grado_key": f"base2:{code}:1"}], {}, source_doc="ЕГКО"), bbox, [code])
+
+        with mock.patch.object(S, "GisogdApi", Fake):
+            layers, errors = S.fetch(bbox, ["egko.roads"])
+        self.assertEqual(errors, {})
+        self.assertEqual(calls, [("init", "base2", True), ("fetch", "dorogi_pol"), ("fetch", "bridge")])
+        layer = layers["egko.roads"]
+        features = layer["features"]["features"]
+        self.assertEqual([f["geometry"] for f in features], [geometries["dorogi_pol"], geometries["bridge"]])
+        self.assertEqual([f["properties"]["_key"] for f in features], ["base2:dorogi_pol:1", "base2:bridge:1"])
+        self.assertEqual(features[1]["properties"]["Наименование"], "Мост через реку")
+        self.assertEqual(features[1]["properties"]["Вид"], "Транспортный мост")
+        self.assertEqual(layer["source"], "ЕГКО")
+        self.assertEqual([p["sublayer"] for p in layer["acquisition"]["checkedParts"]], ["dorogi_pol", "bridge"])
+        self.assertEqual(layer["acquisition"]["state"], "received")
+        self.assertTrue(unary_union([shape(f["geometry"]) for f in features]).equals(box(37.603, 55.761, 37.608, 55.762)))
+
+    def test_roads_are_partial_if_official_bridge_layer_fails(self):
+        from grado_connectors.contract import ConnectorError, make_result, with_acquisition
+        from shapely.geometry import box, mapping
+
+        class Fake:
+            def __init__(self, **kw):
+                pass
+
+            def fetch(self, bbox, code):
+                if code == "bridge":
+                    raise ConnectorError("bridge unavailable")
+                return with_acquisition(make_result([{"type": "Feature", "geometry": mapping(box(37.603, 55.761, 37.605, 55.762)),
+                    "properties": {}, "grado_key": "base2:dorogi_pol:1"}], {}, source_doc="ЕГКО"), bbox, [code])
+
+        with mock.patch.object(S, "GisogdApi", Fake):
+            layers, errors = S.fetch([37.600, 55.760, 37.612, 55.766], ["egko.roads"])
+        self.assertEqual(errors, {"egko.roads": "bridge unavailable"})
+        layer = layers["egko.roads"]
+        self.assertEqual(layer["acquisition"]["state"], "partial")
+        self.assertEqual(layer["acquisition"]["reasonCode"], "source_unavailable")
+        self.assertEqual([p["sublayer"] for p in layer["acquisition"]["checkedParts"]], ["dorogi_pol"])
+        self.assertEqual([f["properties"]["_key"] for f in layer["features"]["features"]], ["base2:dorogi_pol:1"])
+
 
 class DataBboxT70(unittest.TestCase):
     """T70: рамка листа не уходит в OSM и ЕГКО; большая область режется на части по очереди, с паузой."""
@@ -322,9 +382,52 @@ class Yandex(unittest.TestCase):
         self.assertTrue(all(S.SOURCES[k][2].endswith("(Яндекс)") for k in keys))
         self.assertEqual(S.SOURCES["yandex.green"][1], ["vegetation", "vegetation_planned", "hd_road_vegetation"])
         self.assertFalse({"poi", "poi_navi"} & {n for k in keys for n in S.SOURCES[k][1]}, "POI и организации не выгружаются")
-        self.assertEqual(S.LIMIT_KM2["yandex"], 40.0)
-        layers, errors = S.fetch([37.3, 55.6, 37.6, 55.9], ["yandex.buildings"])
-        self.assertIn("больше допустимых 40", errors["yandex.buildings"])
+        self.assertEqual(S.TILE_KM2["yandex"], 16.0)                 # 16 км² земли ≈ 2100 тайлов z18 у Москвы, коннектор тянет 2500
+        self.assertIn("yandex", S.TILE_CAPPED)
+
+    def test_big_area_fetches_in_cells_under_connector_tile_cap(self):
+        # Прогон Безобразово 31.10: рамка 24,5 км² = 3355 тайлов Яндекса (тайл z18 у Москвы ≈ 85 м на земле)
+        # падала целиком. Теперь область режется на части ≤ TILE_KM2["yandex"], части по очереди, объекты склеиваются.
+        from grado_connectors import yandex_vmap as yv
+        cells = []
+
+        class Offline(yv.YandexVmap):
+            def __init__(self, **kw):
+                super().__init__(transport=self.read, pause=0)
+                self.n = 0
+
+            def read(self, url, timeout=None):
+                self.n += 1
+                return b""
+
+            def fetch(self, bbox, layers):
+                self.n = 0
+                cells.append((list(bbox), self))
+                return super().fetch(bbox, layers)
+
+        old, S.YandexVmap = S.YandexVmap, Offline
+        sleeps = []
+        try:
+            with mock.patch.object(S.time, "sleep", lambda t: sleeps.append(t)):
+                layers, errors = S.fetch([37.1207, 55.3205, 37.2035, 55.3628], ["yandex.green"])
+        finally:
+            S.YandexVmap = old
+        self.assertEqual(errors, {})
+        self.assertGreater(len(cells), 1, "рамка разбита на части, а не отклонена целиком")
+        self.assertTrue(all(S.bbox_km2(c[0]) <= S.TILE_KM2["yandex"] for c in cells))
+        self.assertTrue(all(c[1].n <= 2500 for c in cells),
+                        f"каждая часть входит в предел коннектора: {[c[1].n for c in cells]}")
+        self.assertEqual(len(sleeps), len(cells) - 1, "части идут по очереди с паузой")
+        proof = layers["yandex.green"]["acquisition"]
+        self.assertEqual(proof["state"], "empty")                    # пустые части — тоже подтверждённое покрытие
+        n_sub = len(S.SOURCES["yandex.green"][1])
+        self.assertEqual(len({p["partId"] for p in proof["checkedParts"]}), len(cells) * n_sub)
+
+    def test_district_scale_area_is_rejected_with_parts_hint(self):
+        layers, errors = S.fetch([36.5, 55.05, 37.8, 55.49], ["yandex.green"])   # 3624 км² района из прогона
+        self.assertEqual(layers, {})
+        self.assertIn("территория слишком велика для Яндекс", errors["yandex.green"])
+        self.assertIn("загрузите слои частями", errors["yandex.green"])
 
     def test_fetch_one_pass_and_readable_fields(self):
         from grado_connectors import yandex_vmap as yv

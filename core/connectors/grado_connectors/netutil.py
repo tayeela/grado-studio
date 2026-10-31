@@ -6,6 +6,7 @@
 ошибка сертификата и прочие 4xx не повторяются. Тесты подменяют сеть через TRANSPORT (httpx.MockTransport):
 core/connectors/tests/test_netutil.py и тесты коннекторов.
 """
+import asyncio
 import contextlib
 import ssl
 import time
@@ -21,6 +22,8 @@ RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 MAX_WAIT = 30.0
 
 TRANSPORT = None                               # тесты: httpx.MockTransport(handler) вместо сети
+PORTAL_POLICY = None                           # сервер: before/response для общей паузы портала
+
 sleep = time.sleep                             # тесты подменяют паузы между попытками
 
 
@@ -82,7 +85,13 @@ def _client(timeout, context):
     return httpx.Client(**kw)
 
 
+class RateLimited(HttpError):
+    """Первая 429/503 с паузой: не повторять, ждать общий cooldown источника."""
+
+
 def _retryable(e):
+    if isinstance(e, RateLimited):
+        return False
     if isinstance(e, HttpError):
         return e.code in RETRY_STATUS
     if isinstance(e, BadBody):
@@ -133,18 +142,25 @@ class Response:
 
 
 def request(url, *, method="GET", headers=None, content=None, timeout=30, context=None,
-            limit=MAX_RESPONSE, attempts=ATTEMPTS, cancel=None, check=None):
+            limit=MAX_RESPONSE, attempts=ATTEMPTS, cancel=None, check=None, portal=None):
     """Запрос с повторами → Response (тело целиком, не больше limit байт, Content-Encoding уже снят).
 
     check(тело) — проверка содержимого: ValueError/IndexError в ней — повтор (BadBody после всех попыток).
     HttpError — код ≥ 400; NetError — сеть или сертификат; ConnectorError — ответ больше limit, редирект не на https.
     """
     def once():
+        if portal and PORTAL_POLICY:
+            PORTAL_POLICY("before", portal, None, None)
         if cancel is not None and cancel.is_set():
             raise ConnectorError("запрос отменён")
         try:
             with _client(timeout, context) as c, c.stream(method, url, headers=headers, content=content) as r:
-                _check(r, limit)
+                try:
+                    _check(r, limit)
+                except HttpError as e:
+                    if portal and PORTAL_POLICY:
+                        PORTAL_POLICY("response", portal, e.code, e.headers)
+                    raise
                 data = bytearray()
                 for chunk in r.iter_bytes():
                     data += chunk
@@ -189,3 +205,85 @@ def stream(url, *, headers=None, timeout=300, context=None, attempts=ATTEMPTS):
     finally:
         r.close()
         client.close()
+
+
+async def arequest(url, *, headers=None, timeout=30, context=None, limit=MAX_RESPONSE,
+                   attempts=ATTEMPTS, cancel=None, deadline=None, check=None, portal=None):
+    """Общее асинхронное правило сети с суммарным deadline и закрытием соединения при отмене.
+
+    Панорамы используют этот метод вместо дополнительного цикла повторов. 429 прекращает
+    операцию сразу; паузу сохраняет серверная PORTAL_POLICY. Остальные вызовы request прежние.
+    """
+    async def redirect(response):
+        _https_only(response)
+
+    async def once():
+        if cancel is not None and cancel.is_set():
+            raise ConnectorError("запрос отменён")
+        if portal and PORTAL_POLICY:
+            PORTAL_POLICY("before", portal, None, None)
+        remaining = timeout if deadline is None else min(timeout, deadline - time.monotonic())
+        if remaining <= 0:
+            raise TimeoutError("общий срок запроса истёк")
+        kw = {"timeout": remaining, "follow_redirects": True,
+              "event_hooks": {"response": [redirect]}}
+        if TRANSPORT is not None:
+            kw["transport"] = TRANSPORT
+        else:
+            kw["verify"] = context if context is not None else ssl_context()
+        try:
+            async with httpx.AsyncClient(**kw) as client:
+                async with client.stream("GET", url, headers=headers) as r:
+                    if r.status_code >= 400:
+                        body = bytearray()
+                        async for chunk in r.aiter_bytes():
+                            body.extend(chunk[:max(0, 65536-len(body))])
+                            if len(body) >= 65536:
+                                break
+                        if portal and PORTAL_POLICY:
+                            PORTAL_POLICY("response", portal, r.status_code, r.headers)
+                        error = RateLimited if r.status_code == 429 else HttpError
+                        raise error(r.status_code, bytes(body), r.headers)
+                    body = bytearray()
+                    async for chunk in r.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > limit:
+                            raise ConnectorError("Ответ источника превышает допустимый размер")
+                    result = Response(r.status_code, r.headers, bytes(body), str(r.url))
+        except httpx.HTTPError as e:
+            raise NetError(e) from None
+        if check is not None:
+            try:
+                check(result.content)
+            except (ValueError, IndexError) as e:
+                raise BadBody(f"ответ не прочитан: {e}") from None
+        return result
+
+    async def run():
+        retry = tenacity.AsyncRetrying(stop=tenacity.stop_after_attempt(min(ATTEMPTS, attempts)),
+                                     wait=_wait, retry=tenacity.retry_if_exception(_retryable), reraise=True)
+        async for attempt in retry:
+            with attempt:
+                return await once()
+
+    async def wait_cancel():
+        while True:
+            if cancel is not None and cancel.is_set():
+                return
+            await asyncio.sleep(.1)
+
+    task = asyncio.create_task(run())
+    watcher = asyncio.create_task(wait_cancel()) if cancel is not None else None
+    try:
+        seconds = max(0., deadline - time.monotonic()) if deadline is not None else None
+        async with asyncio.timeout(seconds):
+            if watcher:
+                done, _ = await asyncio.wait((task, watcher), return_when=asyncio.FIRST_COMPLETED)
+                if watcher in done:
+                    raise ConnectorError("запрос отменён")
+            return await task
+    finally:
+        task.cancel()
+        if watcher:
+            watcher.cancel()
+        await asyncio.gather(task, *([watcher] if watcher else []), return_exceptions=True)

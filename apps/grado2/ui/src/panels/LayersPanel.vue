@@ -31,13 +31,13 @@
           </div>
           <div class="inner" :data-g="b.group.id">
             <div v-for="l in b.layers" v-show="b.group.open || q" :key="l.key" class="row nested" :class="{ cur: l.key === currentId, hid: !b.group.visible }" :data-key="l.key"
-                 role="option" :aria-selected="l.key === currentId" :aria-label="l.title || l.key" :tabindex="l.key === tabKey ? 0 : -1" @click="currentId = l.key" @contextmenu.prevent="e => menuAt(e, 'l', l.key)">
+                 role="option" :aria-selected="l.key === currentId" :aria-label="rowLabel(l)" :tabindex="l.key === tabKey ? 0 : -1" @click="chooseLayer(l.key)" @contextmenu.prevent="e => menuAt(e, 'l', l.key)">
               <LayerRow :l="l" />
             </div>
           </div>
         </div>
         <div v-else class="row" :class="{ cur: b.layers[0].key === currentId }" :data-key="b.layers[0].key"
-             role="option" :aria-selected="b.layers[0].key === currentId" :aria-label="b.layers[0].title || b.layers[0].key" :tabindex="b.layers[0].key === tabKey ? 0 : -1" @click="currentId = b.layers[0].key" @contextmenu.prevent="e => menuAt(e, 'l', b.layers[0].key)">
+             role="option" :aria-selected="b.layers[0].key === currentId" :aria-label="rowLabel(b.layers[0])" :tabindex="b.layers[0].key === tabKey ? 0 : -1" @click="chooseLayer(b.layers[0].key)" @contextmenu.prevent="e => menuAt(e, 'l', b.layers[0].key)">
           <LayerRow :l="b.layers[0]" />
         </div>
       </template>
@@ -89,6 +89,7 @@ import Sortable from "sortablejs";
 import { ChevronDown, ChevronRight, Ellipsis, Eye, EyeOff, FolderPlus, ListOrdered, Plus } from "@lucide/vue";
 import { tidyLayers } from "../data.js";
 import { currentId, project, shown } from "../store.js";
+import { showInspector } from "../inspector.js";
 import LayerSwatch from "./LayerSwatch.vue";
 import { loadError, notice } from "../project.js";
 import {
@@ -96,6 +97,8 @@ import {
   renameLayer, reorder, revertLayer, setGroup, styleClip, ungroup,
 } from "../edit.js";
 
+const rowLabel = l => `${l.title || l.key}, ${l.visible && !shown(l) ? "скрыт группой" : !l.visible ? "выключен" : "виден"}`;
+function chooseLayer(key) { currentId.value = key; showInspector("layer"); }
 const q = ref("");
 const editing = ref("");               // «l:ключ» или «g:id» — строка в режиме переименования
 const vFocus = { mounted: el => { el.focus(); el.select(); } };
@@ -108,14 +111,14 @@ const LayerRow = defineComponent({
       const l = props.l, ed = editing.value === "l:" + l.key;
       const byGroup = l.visible && !shown(l);       // слой включён, но скрыт вместе с группой
       return [
-        h("button", { class: "eye", title: byGroup ? "Слой не виден на карте: скрыта его группа" : l.visible ? "Скрыть слой" : "Показать слой", onClick: e => { e.stopPropagation(); l.visible = !l.visible; } },
-          [h(l.visible ? Eye : EyeOff, { size: 15 })]),
+        h("button", { class: "eye" + (byGroup ? " group-hidden" : ""), "aria-label": byGroup ? "Слой скрыт группой" : l.visible ? "Скрыть слой" : "Показать слой", "aria-pressed": String(!!l.visible), title: byGroup ? "Слой не виден на карте: скрыта его группа" : l.visible ? "Скрыть слой" : "Показать слой", onClick: e => { e.stopPropagation(); l.visible = !l.visible; } },
+          [h(l.visible && !byGroup ? Eye : EyeOff, { size: 15 })]),
         h(LayerSwatch, { l, class: "sw" }),
         ed ? h("input", { class: "ren", value: l.title, onVnodeMounted: v => { v.el.focus(); v.el.select(); }, onClick: e => e.stopPropagation(),
           onKeydown: e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") editing.value = ""; },
           onBlur: e => finishRename("l", l.key, e.target.value) })
           : h("span", { class: "name" + (shown(l) ? "" : " off"), title: l.title || l.key, onDblclick: () => { editing.value = "l:" + l.key; } }, l.title || l.key),
-        h("button", { class: "more", title: "Действия со слоем", onClick: e => { e.stopPropagation(); menuAt(e, "l", l.key); } }, [h(Ellipsis, { size: 15 })]),
+        h("button", { class: "more", "aria-label": "Действия со слоем", title: "Действия со слоем", onClick: e => { e.stopPropagation(); menuAt(e, "l", l.key); } }, [h(Ellipsis, { size: 15 })]),
       ];
     };
   },
@@ -125,8 +128,8 @@ const LayerRow = defineComponent({
 const blocks = computed(() => {
   const s = q.value.trim().toLowerCase(), out = [], byGroup = {};
   for (const l of project.layers) {
-    if (s && !(l.title || l.key).toLowerCase().includes(s)) continue;
     const g = l.group && project.groups.find(x => x.id === l.group);
+    if (s && ![l.title || l.key, g?.title || ""].some(t => t.toLowerCase().includes(s))) continue;
     if (!g) { out.push({ id: "l:" + l.key, group: null, layers: [l] }); continue; }
     if (!byGroup[g.id]) out.push(byGroup[g.id] = { id: "g:" + g.id, group: g, layers: [] });
     byGroup[g.id].layers.push(l);
@@ -146,11 +149,11 @@ const list = ref(null);
 
 /* Клавиатура (#30, аудит 07.10.2026): список слоёв — одна остановка Tab на текущем слое; стрелки — соседний слой,
    Home/End — первый и последний, Пробел — показать или скрыть слой, F2 — переименовать (как дерево слоёв QGIS). */
-const tabKey = computed(() => (project.layers.some(l => l.key === currentId.value) && currentId.value) || blocks.value[0]?.layers[0]?.key || "");
+const tabKey = computed(() => { const rows = blocks.value.flatMap(b => !b.group || b.group.open || q.value ? b.layers : []); return rows.find(l => l.key === currentId.value)?.key || rows[0]?.key || ""; });
 function onListKey(e) {
   const row = e.target.closest?.(".row"); if (!row || e.target !== row) return;
   const rows = [...list.value.querySelectorAll(".row")].filter(r => r.offsetParent), i = rows.indexOf(row);
-  const go = j => { const r = rows[Math.max(0, Math.min(rows.length - 1, j))]; if (!r) return; currentId.value = r.dataset.key; nextTick(() => r.focus()); };
+  const go = j => { const r = rows[Math.max(0, Math.min(rows.length - 1, j))]; if (!r) return; chooseLayer(r.dataset.key); nextTick(() => r.focus()); };
   const l = project.layers.find(x => x.key === row.dataset.key);
   if (e.key === "ArrowDown") go(i + 1);
   else if (e.key === "ArrowUp") go(i - 1);
@@ -158,7 +161,7 @@ function onListKey(e) {
   else if (e.key === "End") go(rows.length - 1);
   else if (e.key === " " && l) l.visible = !l.visible;
   else if (e.key === "F2" && l) editing.value = "l:" + l.key;
-  else if (e.key === "Enter" && l) currentId.value = l.key;
+  else if (e.key === "Enter" && l) chooseLayer(l.key);
   else return;
   e.preventDefault(); e.stopPropagation();
 }
@@ -261,7 +264,8 @@ function groupCurrent() { if (currentId.value) editing.value = "g:" + newGroup([
 .layers .grp .more { margin-left: 0; }
 .layers .row:hover .more, .layers .grp:hover .more, .layers .row.cur .more, .layers .row:focus-within .more, .layers .grp:focus-within .more { opacity: 1; }
 .layers .eye:focus-visible, .layers .tw:focus-visible, .layers .more:focus-visible { outline: 2px solid var(--wa-color-focus); opacity: 1; }
-.layers .row.hid .eye { opacity: .4; }
+.layers .row.hid .eye { opacity: .6; }
+.layers .eye.group-hidden { outline: 1px dotted var(--g-muted); outline-offset: -4px; }
 .layers .row.hid .sw { filter: opacity(.4); }   /* opacity самого образца — прозрачность слоя */   /* группа скрыта — слои в ней приглушены */
 .layers .name, .layers .gname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layers .name.off { color: var(--g-muted); }

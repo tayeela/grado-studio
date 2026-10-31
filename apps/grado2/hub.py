@@ -884,6 +884,10 @@ class Hub:
         return self.root / "projects" / _check_pid(pid)
 
     def _meta(self, pid):
+        import preparation as prep
+        root = self._pdir(pid)
+        with prep.Transaction(root / "project.grado2", root / "meta.json").guard():
+            pass
         try:
             with open(self._pdir(pid) / "meta.json", encoding="utf-8") as fh:
                 meta = json.load(fh)
@@ -1157,13 +1161,16 @@ class Hub:
             return {"rev": meta["rev"], "sec_rev": dict(meta["sec_rev"]),
                     "sections": {n: cur.get(n) for n in names}}    # нет раздела = удалён (None)
 
-    def push(self, user, pid, base_rev, sections, client):
+    def push(self, user, pid, base_rev, sections, client, capabilities=None):
         if not isinstance(base_rev, int) or isinstance(base_rev, bool) or base_rev < 0:
             raise HubError(400, "base_rev должен быть неотрицательным целым числом")
         client = _clean_client(client)
         clean = _check_sections(sections)
         with self.lock:
             login, meta, role = self._require(user, pid, "edit")
+            import preparation_api
+            proposed = {"album": clean.get("album")} if "album" in clean else None
+            preparation_api.require_capabilities(capabilities or {}, meta, proposed)
             if base_rev > meta["rev"]:
                 raise HubError(400, "base_rev больше текущей ревизии проекта")
             if not clean:
@@ -1201,10 +1208,21 @@ class Hub:
         if force_snap or now - meta.get("snap_t", 0) >= HISTORY_INTERVAL:
             self._snapshot(pid, meta)
             new_meta["snap_t"] = now
-        tmp_file = self._stage(d / "project.grado2", data)
-        tmp_meta = self._stage(d / "meta.json", self._dump(new_meta))
-        os.replace(tmp_file, d / "project.grado2")
-        os.replace(tmp_meta, d / "meta.json")
+        import preparation as prep
+        state = ((obj.get("album") or {}).get("meta") or {}).get("sushpolPreparation")
+        if meta.get("requiredCapabilities") or state:
+            import uuid
+            import preparation_api
+            new_meta["requiredCapabilities"] = [prep.CAPABILITY]
+            preparation_api.require_capabilities({preparation_api.CAP_HEADER: prep.CAPABILITY}, new_meta, obj)
+            prep.check_profile(obj)
+            tx = prep.Transaction(d / "project.grado2", d / "meta.json")
+            tx.publish(data, new_meta, str(uuid.uuid4()), prep.body_hash(tx.read()[0]))
+        else:
+            tmp_file = self._stage(d / "project.grado2", data)
+            tmp_meta = self._stage(d / "meta.json", self._dump(new_meta))
+            os.replace(tmp_file, d / "project.grado2")
+            os.replace(tmp_meta, d / "meta.json")
         self._cache_put(pid, rev, norm)
         self._activity_add(pid, login, action, detail)
         with self._live:
