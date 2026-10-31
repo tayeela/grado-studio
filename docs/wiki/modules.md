@@ -133,7 +133,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3437 стр.
+### `apps/grado2/server.py` — 3438 стр.
 
 ГРАДО 2: локальный сервер.
 

@@ -382,43 +382,46 @@ class Yandex(unittest.TestCase):
         self.assertTrue(all(S.SOURCES[k][2].endswith("(Яндекс)") for k in keys))
         self.assertEqual(S.SOURCES["yandex.green"][1], ["vegetation", "vegetation_planned", "hd_road_vegetation"])
         self.assertFalse({"poi", "poi_navi"} & {n for k in keys for n in S.SOURCES[k][1]}, "POI и организации не выгружаются")
-        self.assertEqual(S.TILE_KM2["yandex"], 30.0)                 # 30 км² ≈ 550 тайлов z18, коннектор тянет 2500
+        self.assertEqual(S.TILE_KM2["yandex"], 16.0)                 # 16 км² земли ≈ 2100 тайлов z18 у Москвы, коннектор тянет 2500
         self.assertIn("yandex", S.TILE_CAPPED)
 
     def test_big_area_fetches_in_cells_under_connector_tile_cap(self):
-        # Прогон Безобразово 29.10: рамка 182 км² = 3355 тайлов Яндекса падала целиком (предел 2500).
-        # Теперь область режется на части ≤ TILE_KM2["yandex"], части по очереди с паузой, объекты склеиваются.
+        # Прогон Безобразово 31.10: рамка 24,5 км² = 3355 тайлов Яндекса (тайл z18 у Москвы ≈ 85 м на земле)
+        # падала целиком. Теперь область режется на части ≤ TILE_KM2["yandex"], части по очереди, объекты склеиваются.
         from grado_connectors import yandex_vmap as yv
         cells = []
 
         class Offline(yv.YandexVmap):
             def __init__(self, **kw):
                 super().__init__(transport=self.read, pause=0)
+                self.n = 0
 
             def read(self, url, timeout=None):
+                self.n += 1
                 return b""
 
             def fetch(self, bbox, layers):
-                cells.append(list(bbox))
+                self.n = 0
+                cells.append((list(bbox), self))
                 return super().fetch(bbox, layers)
 
-        import math
-        h = 0.1
-        w = lambda km2: km2 / (110.54 * h) / (111.32 * math.cos(math.radians(55.5 + h / 2)))
         old, S.YandexVmap = S.YandexVmap, Offline
         sleeps = []
         try:
             with mock.patch.object(S.time, "sleep", lambda t: sleeps.append(t)):
-                layers, errors = S.fetch([37.0, 55.5, 37.0 + w(182), 55.5 + h], ["yandex.buildings"])
+                layers, errors = S.fetch([37.1207, 55.3205, 37.2035, 55.3628], ["yandex.green"])
         finally:
             S.YandexVmap = old
         self.assertEqual(errors, {})
         self.assertGreater(len(cells), 1, "рамка разбита на части, а не отклонена целиком")
-        self.assertTrue(all(S.bbox_km2(c) <= S.TILE_KM2["yandex"] for c in cells))
+        self.assertTrue(all(S.bbox_km2(c[0]) <= S.TILE_KM2["yandex"] for c in cells))
+        self.assertTrue(all(c[1].n <= 2500 for c in cells),
+                        f"каждая часть входит в предел коннектора: {[c[1].n for c in cells]}")
         self.assertEqual(len(sleeps), len(cells) - 1, "части идут по очереди с паузой")
-        proof = layers["yandex.buildings"]["acquisition"]
+        proof = layers["yandex.green"]["acquisition"]
         self.assertEqual(proof["state"], "empty")                    # пустые части — тоже подтверждённое покрытие
-        self.assertEqual(len({p["partId"] for p in proof["checkedParts"]}), len(cells))
+        n_sub = len(S.SOURCES["yandex.green"][1])
+        self.assertEqual(len({p["partId"] for p in proof["checkedParts"]}), len(cells) * n_sub)
 
     def test_district_scale_area_is_rejected_with_parts_hint(self):
         layers, errors = S.fetch([36.5, 55.05, 37.8, 55.49], ["yandex.green"])   # 3624 км² района из прогона

@@ -41,18 +41,18 @@ class SourceFootprints(unittest.TestCase):
         self.assertTrue(P.to_msk(box(*bounds)).buffer(.01).covers(box(0,0,200,100)))
 
     def test_yandex_district_context_is_deferred_at_tile_budget(self):
-        # Яндекс режется на 16 частей по 30 км² (TILE_KM2×MAX_TILES = 480): контекст района 3624 км² откладывается явно,
-        # а не валит весь источник (прогон Безобразово 29.10).
+        # Яндекс режется на 16 частей по 16 км² (TILE_KM2×MAX_TILES = 256): контекст района 3624 км² откладывается явно,
+        # а не валит весь источник (прогон Безобразово 31.10).
         from shapely.geometry import box,mapping
         import preparation as P
         from sushpol_jobs import _source_bounds
         project={"territory":mapping(P.to_wgs(box(0,0,200,100))),"album":{"meta":{},"sheets":[]},
                  "data":{"gisogd.admin":{"fc":{"features":[{"geometry":mapping(P.to_wgs(box(-40000,-40000,40000,40000))),"properties":{"Уровень":"район"}}]}}}}
         deferred=[]
-        bounds=_source_bounds(project,"yandex.green",480.0,deferred)
+        bounds=_source_bounds(project,"yandex.green",256.0,deferred)
         self.assertEqual(len(deferred),1)
         self.assertEqual(deferred[0]["reasonCode"],"budget_exceeded")
-        self.assertGreater(deferred[0]["actualAreaKm2"],480)
+        self.assertGreater(deferred[0]["actualAreaKm2"],256)
         self.assertLess(P.to_msk(box(*bounds)).area/1e6,40)
 
 
