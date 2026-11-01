@@ -513,14 +513,25 @@ def build_spec(project,photos=None):
             texts["right_column"]=legend
         elif kind=="photos":
             values=photos if photos is not None else [p for s in c.album.get("sheets") or [] if s.get("kind")=="photos" for p in s.get("photos") or []]
-            for i,p in enumerate(values):
+            # #144 (владелец 21.10): вид с высоты занимает место кадров 1–4; требуются 4 наземных кадра.
+            aerial=next((p for p in values if p.get("aerial") and p.get("data") and p.get("at") is not None),None)
+            ground=[p for p in values if not p.get("aerial")]
+            need=4 if aerial is not None else 8
+            for i,p in enumerate(ground):
+                if i>=need:continue
                 if p.get("data") and p.get("at") is not None and p.get("dir") is not None:
-                    template["photos"].append({**p,"id":p.get("id") or f"{state['instanceId']}:photo:{i}","number":i+1})
+                    template["photos"].append({**p,"id":p.get("id") or f"{state['instanceId']}:photo:{i}",
+                                               "number":len(template["photos"])+1})
                 else:c.issue(kind,"missing_field",key=p.get("id"),field="photo.point_direction")
-            if len(template["photos"])<8:c.issue(kind,"missing_source",field="photos",message="Получить восемь кадров либо принять исключения позиций")
+            if aerial is not None:template["photos"].insert(0,{**aerial,"number":None})
+            if len([p for p in template["photos"] if p.get("number") is not None])<need:
+                c.issue(kind,"missing_source",field="photos",
+                        message="Получить четыре наземных кадра и вид с высоты" if aerial is not None
+                        else "Получить восемь кадров либо принять исключения позиций")
         if kind=="photos" and template["maps"]:
             arrows=[]
             for p in template["photos"]:
+                if p.get("aerial"):continue              # вид с высоты — не точка съёмки со стрелкой
                 arrows.append({"g":{"type":"Point","coordinates":p["at"]},"mk":"view","dir":p["dir"],
                                "label":str(p["number"]),"fill":"#1f3fbf","stroke":"#1f3fbf","w":1.})
             template["maps"][0]["sheet"]["layers"].append({"key":"photo-points","title":"Точки съёмки","top":True,"features":arrows})

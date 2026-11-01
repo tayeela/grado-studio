@@ -69,6 +69,29 @@ class LegendSigns(unittest.TestCase):
         self.assertTrue(any("ГРАНИЦЫ" in str(o.get("text","")) for o in bold))
 
 
+class AerialPhotoLayout(unittest.TestCase):
+    def test_aerial_spans_upper_zone_and_ground_frames_take_bottom_row(self):
+        # #144 (владелец 21.10): на месте снимков 1–4 — вид с высоты одним кадром,
+        # наземные снимки становятся нижним рядом с номерами 1–4.
+        blocks=M.BLOCKS["photos"]
+        sh={"mytishchiKind":"photos","maps":[],"textBlocks":{},"tables":{},
+            "photos":[{"aerial":True,"data":"aerial","at":[37.16,55.34],"dir":0},
+                      {"data":"g1","at":[37.15,55.34],"dir":90,"number":1},
+                      {"data":"g2","at":[37.15,55.34],"dir":180,"number":2},
+                      {"data":"g3","at":[37.15,55.34],"dir":270,"number":3},
+                      {"data":"g4","at":[37.15,55.34],"dir":0,"number":4}]}
+        page=type("P",(object,),{"size":list((420,297))})()
+        frames=[f for f in M.build_frames(page,sh,{"short":"тест"},None,None,None,lambda r,s:None)
+                if isinstance(f,M.PhotoBlock)]
+        self.assertEqual(len(frames),5)
+        top=frames[0]
+        self.assertGreater(top.rect[2],150)               # аэрокадр занимает всю верхнюю правую зону
+        self.assertIsNone(top.number)
+        for i,f in enumerate(frames[1:]):
+            self.assertEqual(tuple(f.rect),tuple(blocks[f"photo_{5+i}"]["rect"]))
+            self.assertEqual(f.number,i+1)
+
+
 class LongTable(unittest.TestCase):
     def test_szz_long_row_fits_narrow_number_column_and_retains_all_text(self):
         text="Очень длинное название объекта "*100

@@ -616,6 +616,9 @@ class Runs:
                 raise P.PreparationError("invalid_input","Укажите координаты/направление либо явно подтвердите прежние",400)
             found.clear();found.update(id=photo_id,name=str(req.get("name") or "Свой снимок")[:200],source="own",
                     data=base64.b64encode(out.getvalue()).decode("ascii"),w=w,h=h,at=list(point),dir=direction%360)
+            if req.get("aerial") is not None:            # вид с высоты (#144): без номера и стрелки на схеме
+                if not isinstance(req["aerial"],bool):raise P.PreparationError("invalid_input","aerial: ожидается логическое значение",400)
+                found["aerial"]=req["aerial"]
             state["sheets"]["photos"].update(state="stale",reasonCodes=["stale_dependency"])
             state["lastExport"]=None
             result=self._write(rec,project,rec["meta"])

@@ -200,8 +200,10 @@ class PhotoBlock(Frame):
         except (ValueError,OSError):
             raise PreparationError("layout_overflow","Файл фотографии повреждён") from None
         ratio=min(w/iw,(h-6)/ih);dw,dh=iw*ratio,ih*ratio
-        return [{"op":"image","x":x+(w-dw)/2,"y":y+(h-6-dh)/2,"w":dw,"h":dh,"data":raw},
-                _text(x+1,y+h-1.5,8,str(self.number),family="sans")]
+        out=[{"op":"image","x":x+(w-dw)/2,"y":y+(h-6-dh)/2,"w":dw,"h":dh,"data":raw}]
+        if self.number is not None:                        # вид с высоты (#144) — без номера
+            out.append(_text(x+1,y+h-1.5,8,str(self.number),family="sans"))
+        return out
 
 
 def build_frames(page,sh,meta,lib,lgr_dash,tiles,map_frame):
@@ -213,7 +215,19 @@ def build_frames(page,sh,meta,lib,lgr_dash,tiles,map_frame):
         frames.append(TextBlock(blocks[role]["rect"],lines,8))
     for role,value in (sh.get("tables") or {}).items():
         frames.append(TableBlock(blocks[role]["rect"],value,value["rows"]))
-    for i,p in enumerate(sh.get("photos") or []):
-        frames.append(PhotoBlock(blocks[f"photo_{i+1}"]["rect"],p,p.get("number",i+1)))
+    photos=sh.get("photos") or []
+    aerial=next((p for p in photos if p.get("aerial") and p.get("data")),None)
+    if aerial is not None:
+        # #144 (владелец 21.10): на месте снимков 1–4 — вид с высоты одним крупным кадром,
+        # наземные снимки становятся нижним рядом 1–4.
+        r=[blocks[f"photo_{i}"]["rect"] for i in range(1,5)]
+        span=(min(v[0] for v in r),min(v[1] for v in r),
+              max(v[0]+v[2] for v in r)-min(v[0] for v in r),max(v[1]+v[3] for v in r)-min(v[1] for v in r))
+        frames.append(PhotoBlock(span,aerial,None))
+        for i,p in enumerate([q for q in photos if not q.get("aerial")][:4]):
+            frames.append(PhotoBlock(tuple(blocks[f"photo_{5+i}"]["rect"]),p,p.get("number",i+1)))
+    else:
+        for i,p in enumerate(photos):
+            frames.append(PhotoBlock(blocks[f"photo_{i+1}"]["rect"],p,p.get("number",i+1)))
     frames.append(Decoration(page,sh,meta))
     return frames

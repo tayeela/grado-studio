@@ -31,7 +31,7 @@
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
-| `test_mytishchi_io.py` | MytishchiLayout, FundShare, LegendSigns, LongTable, AdministrativeUseClass, SourceLineColors | 9 |
+| `test_mytishchi_io.py` | MytishchiLayout, FundShare, LegendSigns, AerialPhotoLayout, LongTable, AdministrativeUseClass, SourceLineColors | 10 |
 | `test_next_ui.py` | NextUi | 24 |
 | `test_ogd_all.py` | OgdAll, SheetValidation | 18 |
 | `test_ogd_warm.py` | Warm, WarmStart | 5 |
