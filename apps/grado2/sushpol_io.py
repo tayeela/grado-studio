@@ -224,6 +224,10 @@ class Content:
             # Канон Мытищинской: легенда с образцами, по группам (docs/standards/albums/label-rules.md, #144)
             legend_add({"text":"ГРАНИЦЫ","header":True})
             legend_add({"text":"разрабатываемой территории","stroke":R.RULES["C_TERR"],"dash":[1,1]})
+        if kind=="restrictions":
+            # Правило альбома: границы зон — в группе «Линии градостроительного регулирования, действующие»,
+            # образом типа линии и подписью «граница …» (например, «граница водоохранных зон»)
+            legend_add({"text":"ЛИНИИ ГРАДОСТРОИТЕЛЬНОГО РЕГУЛИРОВАНИЯ, ДЕЙСТВУЮЩИЕ","header":True})
         ordered_keys=list(dict.fromkeys(keys))
         if kind=="existing_use" and "osm.landuse" in ordered_keys and "nspd.parcels" in ordered_keys:
             # Класс по ВРИ ЕГРН подтверждён сильнее общей территории OSM: рисуется поверх неё.
@@ -294,10 +298,10 @@ class Content:
                     stroke=style.get("stroke") or "#000000"
                     if key=="gisogd.szz":stroke="#000000"
                     out.update(stroke=stroke,fill=stroke,a=0,h=True,lt=p.get("_lt"),miss=p.get("_miss"),label=None)
-                    legend_add({"text":title,"stroke":stroke})
+                    legend_add({"text":f"граница {title}","stroke":stroke})
                 rows.append(out)
             if rows:layers.append({"key":key,"title":((self.project.get("data") or {}).get(key) or {}).get("title",key),"features":rows})
-        if "gisogd.red_lines" in ordered_keys:
+        if "gisogd.red_lines" in ordered_keys and not any(str(v.get("text","")).startswith("ЛИНИИ") for v in legend):
             legend[2:2]=[{"text":"ЛИНИИ ГРАДОСТРОИТЕЛЬНОГО РЕГУЛИРОВАНИЯ, ДЕЙСТВУЮЩИЕ","header":True},
                          {"text":"линии регулирования","stroke":"#ff0000","dash":[2,1]}]
         if zones_legend:
@@ -455,7 +459,17 @@ def build_spec(project,photos=None):
                     if kind=="general_plan":
                         fields=[p.get("n") or p.get("number_fz"),p.get("fztip") or p.get("fz_type"),p.get("naimfunkzony") or p.get("Вид зоны") or p.get("name"),p.get("summfondpersp") or p.get("interval_fo")]
                     elif kind=="planning_docs":fields=[p.get("document_1"),p.get("document_n"),p.get("document_d")]
-                    else:fields=[p.get("Вид зоны") or p.get("Наименование") or key,p.get("Документ") or p.get("document_n")]
+                    else:
+                        title=p.get("Вид зоны") or p.get("Наименование")
+                        if key=="gisogd.red_lines":
+                            # сырой ключ слоя в списке не показываем: тип линии знает своё название (Эталон ЛГР)
+                            names=[]
+                            for lt in p.get("_lt") or []:
+                                m=re.search(r"s(\d+)",str(lt or ""))
+                                nm=LGR.get(int(m.group(1)),{}).get("title") if m else None
+                                if nm:names.append(nm)
+                            title=title or "; ".join(dict.fromkeys(names))
+                        fields=[title or key,p.get("Документ") or p.get("document_n")]
                     values=[c.field(kind,f,f"{kind}.{i}",key,v) for i,v in enumerate(fields)]
                     text=f"{len(items)+1}. "+"; ".join(map(str,values))
                     if kind=="general_plan":

@@ -199,8 +199,20 @@ class PhotoBlock(Frame):
                 iw,ih=im.size;im.verify()
         except (ValueError,OSError):
             raise PreparationError("layout_overflow","Файл фотографии повреждён") from None
-        ratio=min(w/iw,(h-6)/ih);dw,dh=iw*ratio,ih*ratio
-        out=[{"op":"image","x":x+(w-dw)/2,"y":y+(h-6-dh)/2,"w":dw,"h":dh,"data":raw}]
+        if p.get("aerial") and self.number is None:
+            # #144: вид с высоты заполняет зону целиком — центрированная обрезка под пропорции зоны
+            with Image.open(io.BytesIO(raw)) as im:
+                target=w/max(1e-6,h)
+                if iw/ih>target:
+                    nw=int(ih*target);box=((iw-nw)//2,0,(iw-nw)//2+nw,ih)
+                else:
+                    nh=int(iw/target);box=(0,(ih-nh)//2,iw,(ih-nh)//2+nh)
+                crop=im.crop(box)
+                if crop.mode!="RGB":crop=crop.convert("RGB")
+                buf=io.BytesIO();crop.save(buf,"JPEG",quality=88);raw=buf.getvalue();iw,ih=crop.size
+        vh=h if p.get("aerial") and self.number is None else h-6   # резерв под номер — только у нумерованных
+        ratio=min(w/iw,vh/ih);dw,dh=iw*ratio,ih*ratio
+        out=[{"op":"image","x":x+(w-dw)/2,"y":y+(vh-dh)/2,"w":dw,"h":dh,"data":raw}]
         if self.number is not None:                        # вид с высоты (#144) — без номера
             out.append(_text(x+1,y+h-1.5,8,str(self.number),family="sans"))
         return out

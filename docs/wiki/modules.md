@@ -69,7 +69,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_num`, `page_size`, `frame_rect`, `_rgb`, `_fade`, `_rect`, `_path`, `_baseline`, `_text`, `_fit`, `_wrap`, `fmt_m`, `fmt_scale`, `linked_scale`, `scalebar_step`, `_legend`, `_table`, `_textblock`, `_picture`, `_north`, `_scalebar`, `_ellipse`, `_line`, `_placeholder`, `map_sheet`, `_map`, `_local`, `_frame_ops`, `_place`, `_block`, `_Blocks`, `_PaperBorder`, `_doc`, `_page`, `build_pages`, `build_page`, `render_pdf`, `render_page_svg`, `map_svg`
 
-### `apps/grado2/mytishchi_io.py` — 233 стр.
+### `apps/grado2/mytishchi_io.py` — 245 стр.
 
 ГРАДО 2 · компоновки мытищинского набора на действующем печатном ядре.
 
@@ -147,7 +147,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `clinic_zones`, `education_zones`
 
-### `apps/grado2/sushpol_io.py` — 573 стр.
+### `apps/grado2/sushpol_io.py` — 587 стр.
 
 ГРАДО 2 · единое содержание презентации сущпола для интерфейса и MCP.
 
