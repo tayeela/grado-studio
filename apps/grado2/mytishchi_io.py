@@ -56,10 +56,11 @@ def text_pages(texts, rect, pt=8):
     pages=[];current=[]
     for item in texts:
         key,text=item["key"],item["text"]
-        for n,line in enumerate(wrap(text,w-2,pt)):
+        for n,line in enumerate(wrap(text,w-6 if item.get("fill") or item.get("stroke") else w-2,pt)):
             if len(current)==capacity:
                 pages.append(current);current=[]
-            current.append({"key":key,"text":line,"first":n==0})
+            current.append({**{k:v for k,v in item.items() if k not in ("key","text")},
+                            "key":key,"text":line,"first":n==0})
         if len(current)<capacity:current.append({"key":key,"text":"","first":False})
     if current:pages.append(current)
     return pages or [[]]
@@ -109,8 +110,23 @@ class TextBlock(Frame):
     def ops(self,ctx):
         x,y,w,h=self.rect;out=[];lead=self.pt*PT*1.15
         for i,line in enumerate(self.lines):
-            text=line.get("text","") if isinstance(line,dict) else str(line)
-            out.append(_text(x+1,y+.7+self.pt*PT+i*lead,self.pt,text,family="sans-bold" if self.bold else "sans"))
+            d=line if isinstance(line,dict) else {}
+            text=d.get("text","") if d else str(line)
+            ty=y+.7+self.pt*PT+i*lead
+            tx=x+1;bold=self.bold or d.get("header")
+            if d.get("fill") is not None:                      # образец заливки зоны (канон: цветной квадрат)
+                sy=ty-self.pt*PT*.72
+                out.append({"op":"path","rings":[[(x+1,sy),(x+3.6,sy),(x+3.6,sy+2.6),(x+1,sy+2.6)]],"closed":True,
+                            "fill":hex_to_rgb(d["fill"]),"stroke":hex_to_rgb(d["stroke"]) if d.get("stroke") else None,
+                            "width":.18,"dash":None})
+                tx=x+4.8
+            elif d.get("stroke") is not None:                   # образец линии (граница, линия регулирования)
+                cy=ty-self.pt*PT*.35
+                out.append({"op":"path","rings":[[(x+1,cy),(x+3.8,cy)]],"closed":False,"fill":None,
+                            "stroke":hex_to_rgb(d["stroke"]),"width":.5,
+                            "dash":[v*.5 for v in d["dash"]] if d.get("dash") else None})
+                tx=x+4.8
+            out.append(_text(tx,ty,self.pt,text,family="sans-bold" if bold else "sans"))
         return out
 
 

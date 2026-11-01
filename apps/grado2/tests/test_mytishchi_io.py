@@ -53,6 +53,22 @@ class FundShare(unittest.TestCase):
             with self.subTest(raw=raw):self.assertIsNone(fund_share(raw,.2))
 
 
+class LegendSigns(unittest.TestCase):
+    def test_zone_rows_carry_color_swatches_and_headers_are_bold(self):
+        # Канон Мытищинской: у строк легенды — цветные квадраты/линии-образцы, группы — заголовки.
+        ops=M.TextBlock((100,10,60,40),[{"text":"ГРАНИЦЫ","header":True},
+                                        {"text":"природно-рекреационного вида","fill":"#cfe4b3"},
+                                        {"text":"разрабатываемой территории","stroke":"#ff00ff","dash":[1,1]},
+                                        "простая строка"],8).ops(None)
+        swatch=[o for o in ops if o.get("op")=="path" and o.get("fill") is not None]
+        sample=[o for o in ops if o.get("op")=="path" and o.get("dash")]
+        self.assertEqual(len(swatch),1)                     # заливка зоны — один квадрат с образом цвета
+        self.assertEqual(len(sample),1)                     # линия границы — образец с тем же штрихом
+        self.assertEqual(sample[0]["stroke"],(1.0,0.0,1.0))
+        bold=[o for o in ops if o.get("op")=="text" and o.get("font_family")=="sans-bold"]
+        self.assertTrue(any("ГРАНИЦЫ" in str(o.get("text","")) for o in bold))
+
+
 class LongTable(unittest.TestCase):
     def test_szz_long_row_fits_narrow_number_column_and_retains_all_text(self):
         text="Очень длинное название объекта "*100

@@ -215,7 +215,15 @@ class Content:
         if keys[:len(BASE)]==BASE and not all(latest_coverage(self.state,k,region) for k in BASE) and all(latest_coverage(self.state,k,region) for k in FALLBACK):
             keys=FALLBACK+keys[len(BASE):]
         self.require(kind,[k for k in keys if k!="gisogd.admin"],region)
-        layers=[];legend=[]
+        layers=[];legend=[];zones_legend=[]
+        def legend_add(entry):
+            if not any(v.get("text")==entry["text"] for v in legend):legend.append(entry)
+        def zone_add(entry):
+            if not any(v.get("text")==entry["text"] for v in zones_legend):zones_legend.append(entry)
+        if not satellite and keys[:len(BASE)]==BASE:
+            # Канон Мытищинской: легенда с образцами, по группам (docs/standards/albums/label-rules.md, #144)
+            legend_add({"text":"ГРАНИЦЫ","header":True})
+            legend_add({"text":"разрабатываемой территории","stroke":R.RULES["C_TERR"],"dash":[1,1]})
         ordered_keys=list(dict.fromkeys(keys))
         if kind=="existing_use" and "osm.landuse" in ordered_keys and "nspd.parcels" in ordered_keys:
             # Класс по ВРИ ЕГРН подтверждён сильнее общей территории OSM: рисуется поверх неё.
@@ -255,19 +263,19 @@ class Content:
                                 self.issue(kind,"missing_field",key,feature_key(f),"useClass")
                         else:
                             title,color=R.ZONES[cls];out.update(fill=color,a=1)
-                            if title not in legend:legend.append(title)
+                            zone_add({"text":title,"fill":color})
                 elif key=="osm.landuse":
                     cls=R.osm_class(p,self.tinao(f))
                     if cls in R.ZONES:
                         title,color=R.ZONES[cls];out.update(fill=color,a=1,label=None)
-                        if title not in legend:legend.append(title)
+                        zone_add({"text":title,"fill":color})
                 elif key in GP:
                     title=str(p.get("naimfunkzony") or p.get("Вид зоны") or p.get("name") or "")
                     idx=str(p.get("fztip") or p.get("fz_type") or "")
                     palette=GP_STYLES.get(title.lower()) or GP_STYLES.get(str(GP_LIB["fz_code"].get(idx,"")).lower())
                     if palette:out.update(fill=palette["fill"],stroke=palette.get("stroke"),a=1)
                     out["label"]="\n".join(str(v) for v in (p.get("n") or p.get("number_fz"),idx) if v)
-                    if title and title not in legend:legend.append(title)
+                    if title:zone_add({"text":title,"fill":out.get("fill") or "#ffffff"})
                 elif key=="gisogd.pzz_zones":out["label"]=str(p.get("Номер зоны") or p.get("Индекс") or "")
                 elif key=="gisogd.pzz_sub":out["label"]=str(p.get("Номер подзоны") or "")
                 elif key=="gisogd.red_lines":
@@ -286,9 +294,21 @@ class Content:
                     stroke=style.get("stroke") or "#000000"
                     if key=="gisogd.szz":stroke="#000000"
                     out.update(stroke=stroke,fill=stroke,a=0,h=True,lt=p.get("_lt"),miss=p.get("_miss"),label=None)
-                    if title not in legend:legend.append(title)
+                    legend_add({"text":title,"stroke":stroke})
                 rows.append(out)
             if rows:layers.append({"key":key,"title":((self.project.get("data") or {}).get(key) or {}).get("title",key),"features":rows})
+        if "gisogd.red_lines" in ordered_keys:
+            legend[2:2]=[{"text":"ЛИНИИ ГРАДОСТРОИТЕЛЬНОГО РЕГУЛИРОВАНИЯ, ДЕЙСТВУЮЩИЕ","header":True},
+                         {"text":"линии регулирования","stroke":"#ff0000","dash":[2,1]}]
+        if zones_legend:
+            legend_add({"text":"ВИД ФУНКЦИОНАЛЬНОГО НАЗНАЧЕНИЯ УЧАСТКА","header":True})
+            legend.extend(zones_legend)
+        if not satellite and keys[:len(BASE)]==BASE:
+            bf,bs,_=DEFAULTS["egko.buildings"];rf,rs,_=DEFAULTS["egko.roads"]
+            legend_add({"text":"ЗДАНИЯ И СООРУЖЕНИЯ","header":True})
+            legend_add({"text":"существующие здания","fill":bf,"stroke":bs})
+            legend_add({"text":"ЭЛЕМЕНТЫ ТРАНСПОРТНОЙ ИНФРАСТРУКТУРЫ","header":True})
+            legend_add({"text":"автомобильные дороги","fill":rf,"stroke":rs})
         extra={}
         if kind in ("district_ortho","territory_ortho"):
             west,south,east,north=self.territory.bounds
@@ -509,8 +529,10 @@ def build_spec(project,photos=None):
             template.update(center=first["sheet"]["center"],scale=first["sheet"]["scale"],rect=blocks[first["role"]]["rect"])
         for mp in template["maps"]:
             if mp.get("legend") and "right_column" in blocks and kind not in ("parcels_oks",):
-                existing=texts.setdefault("right_column",[])
-                for title in mp["legend"]:existing.insert(0,{"key":"legend:"+title,"text":title})
+                entries=[{"key":"legend:"+(item if isinstance(item,str) else item["text"]),
+                          **({k:v for k,v in item.items() if k!="text"} if isinstance(item,dict) else {}),
+                          "text":item if isinstance(item,str) else item["text"]} for item in mp["legend"]]
+                texts.setdefault("right_column",[])[0:0]=entries
         text_series={role:M.text_pages(items,blocks[role]["rect"],8) for role,items in texts.items()}
         table_series=template.pop("tableSeries",{})
         n=max([1,*[len(v) for v in text_series.values()],*[len(t["pages"]) for t in table_series.values()],math.ceil(len(template["photos"])/8)])
