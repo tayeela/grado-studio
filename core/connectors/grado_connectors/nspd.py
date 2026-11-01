@@ -31,7 +31,7 @@ import urllib.parse
 from pathlib import Path
 
 from . import crs, netutil
-from .contract import Connector, ConnectorError, make_result
+from .contract import Connector, ConnectorError, make_result, with_acquisition
 
 
 def _flatten_options(props):
@@ -244,7 +244,9 @@ class NspdDirect(Connector):
             except ConnectorError as e:
                 notes.append(f"{NSPD_CATEGORIES.get(int(cid), cid)}: {e}")
                 continue
-            raw.extend(data.get("features") or [])
+            if not isinstance(data, dict) or not isinstance(data.get("features"), list):
+                raise ConnectorError("НСПД вернул неизвестную схему вместо списка объектов")
+            raw.extend(data["features"])
         # дальше — тот же путь нормализации, что у захвата моста
         result = NspdCapture().fetch(payload={"features": raw})
         result["params"] = {
@@ -255,7 +257,7 @@ class NspdDirect(Connector):
         if notes:
             # отказ геопортала — ошибка, а не пустой слой: пустой ответ при повторной выгрузке затёр бы слой с правками
             raise ConnectorError("; ".join(notes))
-        return result
+        return with_acquisition(result, bbox, [str(c) for c in categories])
 
 
 # --- поиск участка по кадастровому номеру ------------------------------------

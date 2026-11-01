@@ -285,6 +285,21 @@ async function main() {
       const titles = await page.evaluate(() => [...[...document.querySelectorAll("header.top wa-dropdown")].find(d => d.querySelector("wa-button[slot=trigger]")?.textContent.trim() === "Окна")
         .querySelectorAll("wa-dropdown-item[type=checkbox]")].map(i => i.textContent.trim()).filter(t => !["Карта", "Комментарии", "Макет листа", "Макет надписей"].includes(t)));
       const record = (list, win) => { for (const f of list) found.push({ ...f, screen: tag, step: win }); };
+      // Вкладки инспектора больше не являются отдельными окнами dockview: проверяем обе явно.
+      const inspect = async label => {
+        await page.locator('#inspector-tab-layer').click();
+        const closed = await page.locator('#inspector-layer details:not([open]) summary').allTextContents();
+        for (const title of closed) await page.locator('#inspector-layer summary').filter({hasText:title}).click();
+        record(await page.evaluate(measure), label + ': слой, все разделы');
+        if (SHOTS) await page.screenshot({ path: join(OUT, `${w}x${h}-${theme}-${label}-layer.png`) });
+        for (const title of closed) await page.locator('#inspector-layer summary').filter({hasText:title}).click();
+        const rows = page.locator('.pane.tbl .tabulator-row');
+        if (await rows.count() && await rows.first().isVisible()) await rows.first().dispatchEvent('click', {button:0});
+        await page.locator('#inspector-tab-object').click();
+        record(await page.evaluate(measure), label + ': объект');
+        if (SHOTS) await page.screenshot({ path: join(OUT, `${w}x${h}-${theme}-${label}-object.png`) });
+        await page.locator('#inspector-tab-layer').click();
+      };
       record(await page.evaluate(measure), "открытие");
       if (SHOTS) await page.screenshot({ path: join(OUT, `${w}x${h}-${theme}-00-start.png`) });
       for (const [i, t] of titles.entries()) {
@@ -306,6 +321,7 @@ async function main() {
         if (sum > 0.02) found.push({ rule: "shift", where: "окно «" + t + "»", what: cls.flatMap(e => e.src).slice(0, 3).join(", "), detail: "CLS " + sum.toFixed(3), screen: tag, step: "окно «" + t + "»" });
         record(await page.evaluate(measure), "окно «" + t + "»");
         if (SHOTS) await page.screenshot({ path: join(OUT, `${w}x${h}-${theme}-${String(i + 1).padStart(2, "0")}.png`) });
+        if (t === 'Свойства') await inspect('inspector');
       }
       await page.evaluate(() => { localStorage.removeItem("grado-next-layout"); localStorage.setItem("grado-next-seen", JSON.stringify(["norms", "vars", "cmp", "vol", "views", "help", "comments", "sheet", "cons", "sketch", "graph"])); });
       await page.reload(); await page.waitForSelector(".dv-tab"); await page.waitForTimeout(1200);
@@ -323,6 +339,7 @@ async function main() {
           await page.waitForTimeout(400);
           record(await page.evaluate(measure), "узкое окно «Свойства»");
           if (SHOTS) await page.screenshot({ path: join(OUT, `${w}x${h}-${theme}-98-props-narrow.png`) });
+          await inspect('inspector-narrow');
         }
       }
       await ctx.close();

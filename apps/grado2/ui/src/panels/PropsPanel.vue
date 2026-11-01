@@ -9,7 +9,7 @@
       <LayerSwatch :l="l" />
       <div class="pt">
         <b :title="l.title || l.key">{{ l.title || l.key }}</b>
-        <span class="sub">{{ GEOM[l.geom] || l.geom }} · {{ plural(count, ["объект", "объекта", "объектов"]) }}</span>
+        <span class="sub">{{ GEOM[l.geom] || "Слой" }} · {{ plural(count, ["объект", "объекта", "объектов"]) }}</span>
       </div>
       <wa-button :aria-label="l.visible ? 'Скрыть слой на карте' : 'Показать слой на карте'" size="s" appearance="plain" class="eyeb" :title="l.visible ? 'Скрыть слой на карте' : 'Показать слой на карте'"
                  :aria-pressed="String(!!l.visible)" @click="l.visible = !l.visible">
@@ -18,7 +18,7 @@
     </div>
     <p v-if="l.visible && !shown(l)" class="hint">Слой не виден на карте: скрыта его группа.</p>
 
-    <h3>Оформление</h3>
+    <InspectorSection section="appearance" title="Оформление">
     <!-- способ оформления — выпадающим списком: пять кнопок в ряд не помещаются в узкое окно -->
     <label class="f">
       <span>Способ</span>
@@ -114,7 +114,7 @@
       <div class="f" v-if="l.geom === 'poly'">
         <span>Заливка</span>
         <div class="fc">
-          <wa-color-picker v-if="st.mode === 'single'" size="s" aria-label="Цвет заливки" :value="st.fill" @change="e => (st.fill = e.target.value)"></wa-color-picker>
+          <wa-color-picker v-if="st.mode === 'single'" size="s" aria-label="Цвет заливки" label="Цвет заливки" :value="st.fill" @change="e => (st.fill = e.target.value)"></wa-color-picker>
           <span v-if="hatched" class="u">штриховка своей подложкой</span>
           <span v-else class="sl" title="Прозрачность заливки: 0 % — только контур">
             <wa-slider size="s" min="0" max="100" aria-label="Непрозрачность заливки" :value="Math.round(st.opacity * 100)" @input="e => (st.opacity = num(e, 70) / 100)"></wa-slider>
@@ -182,7 +182,8 @@
       </label>
     </template>
 
-    <h3>Подписи</h3>
+    </InspectorSection>
+    <InspectorSection section="labels" title="Подписи">
     <label class="f">
       <span>Поле</span>
       <wa-select size="s" :value="st.label || '-'" @change="e => (st.label = e.target.value === '-' ? '' : e.target.value)">
@@ -205,7 +206,8 @@
       </wa-select>
     </label>
 
-    <h3>Слой</h3>
+    </InspectorSection>
+    <InspectorSection section="visibility" title="Видимость и масштаб">
     <div class="f">
       <span>Непрозрачность</span>
       <span class="sl" title="Непрозрачность всего слоя: заливки, контура и подписей">
@@ -219,12 +221,17 @@
         <wa-option v-for="d in DENS" :key="d" :value="String(d)">{{ d ? "крупнее 1:" + d.toLocaleString("ru-RU") : "всегда" }}</wa-option>
       </wa-select>
     </label>
+    </InspectorSection>
+    <InspectorSection section="data" title="Данные слоя">
+    <div class="source-value"><b>Источник</b><br>{{ project.data[l.key]?.source || "Не указан" }}</div>
+    <div v-if="project.data[l.key]?.fetched_at" class="source-value"><b>Получен</b><br>{{ project.data[l.key].fetched_at }}</div>
     <label class="f" title="Какие расчёты берут этот слой: ограничения, анализ, эскиз. «Авто» — по источнику слоя; ручная роль заменяет её.">
       <span>Роль</span>
       <wa-select size="s" :value="l.role || 'auto'" @change="e => setRole(e.target.value)">
         <wa-option v-for="[v, t] in roles" :key="v" :value="v">{{ t }}</wa-option>
       </wa-select>
     </label>
+    </InspectorSection>
   </div>
   <div class="pane" v-else><p class="hint">Выберите слой в окне «Слои».</p></div>
 </template>
@@ -237,6 +244,7 @@ import { current, project, shown } from "../store.js";
 import { dataRev } from "../edit.js";
 import { plural } from "../geom.js";
 import LayerSwatch from "./LayerSwatch.vue";
+import InspectorSection from "./InspectorSection.vue";
 import {
   CAT, DASHES, DENS, HATCHES, LGR_LINES, OPS, OTHER, RAMPS, RAMP_TITLES, assignCats, breaks, catValues, edgeColor, fieldsOf, floorsDenOf, legendItems, loadLibs, numFields, okn, ruleCount,
 } from "../symbology.js";
@@ -296,6 +304,7 @@ function setRole(v) { if (v === "auto") delete l.value.role; else l.value.role =
 .props .pt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .props .pt b { font-weight: 600; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .props .sub { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
+.props wa-color-picker::part(form-control-label) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .props .eyeb { flex: none; margin: -4px -4px 0 0; color: var(--g-muted); }
 .props .eyeb[aria-pressed="false"] { color: var(--wa-color-text-quiet); opacity: .7; }
 .props wa-button.wide { display: block; width: 100%; margin-bottom: var(--wa-space-s); }

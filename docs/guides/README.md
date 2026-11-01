@@ -8,3 +8,5 @@
 | [collab.md](collab.md) | совместная работа: вход, роли, доступ по ссылке (сайт grado.tailink.tech); контракт для кода — [../specs/collab-contract.md](../specs/collab-contract.md) |
 
 Руководства по закрытой студии (установка, облачный режим в Docker) — в [архиве](../archive/studio/).
+
+- [grado-mcp.md](grado-mcp.md) — доступ агента, отдельный сервер и сборка презентации.

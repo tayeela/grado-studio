@@ -59,7 +59,7 @@ class YandexSat:
     def _get(self, url):
         """Тайл по сети, повторы — общее правило netutil; netutil.HttpError(404) — снимка нет."""
         # больше мегабайта — не тайл (заглушка, чужой ответ): netutil обрывает чтение, ensure считает это сбоем
-        return netutil.request(url, headers=HEADERS, timeout=30, limit=MAX_TILE_BYTES).content
+        return netutil.request(url, headers=HEADERS, timeout=30, limit=MAX_TILE_BYTES, portal="yandex").content
 
     def path(self, z, x, y):
         return self.cache_dir / f"{z}_{x}_{y}.jpg"

@@ -57,7 +57,7 @@ const toast = t => { notice.value = t; };
 /* запрос к серверу: есть тело — POST, нет — GET; 401 — снова экран входа */
 export async function api(path, body) {
   let r;
-  try { r = await fetch("/api/hub/" + path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+  try { r = await fetch("/api/hub/" + path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-Grado-Project-Capabilities": "sushpol-v1" }, body: JSON.stringify(body) }); }
   catch { throw new Error("нет связи с сервером"); }
   let j = null; try { j = await r.json(); } catch { /* без тела */ }
   if (r.status === 401 && !/^(login|register|me|password)$/.test(path)) { sessionLost(); throw Object.assign(new Error("нужно войти заново"), { status: 401 }); }

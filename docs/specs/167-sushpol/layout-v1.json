@@ -1,0 +1,909 @@
+{
+  "schemaVersion": 1,
+  "recipeId": "sushpol-mytishchi",
+  "recipeVersion": 1,
+  "sourceSHA256": "5f1c2708b7cbd00d17218ef09cc4af4a2962273793d3cb930e35e47de147b8b2",
+  "units": "mm",
+  "paper": [
+    419.9819444444444,
+    296.99480555555556
+  ],
+  "fontFamily": "Montserrat",
+  "fontPolicy": "Existing owner album rules override mixed source faces. Explicit sizes below are canonical product choices; source styles remain in reference-layout.json.",
+  "styles": {
+    "title": {
+      "pt": 18,
+      "bold": true,
+      "maxLines": 2
+    },
+    "legend": {
+      "pt": 8
+    },
+    "table": {
+      "pt": 11
+    },
+    "metrics": {
+      "pt": 7.5
+    },
+    "caption": {
+      "pt": 8
+    },
+    "card": {
+      "pt": 8
+    },
+    "page": {
+      "pt": 12
+    },
+    "cover": {
+      "pt": 36,
+      "secondaryPt": 28
+    }
+  },
+  "sheets": [
+    {
+      "kind": "title",
+      "sourceSlide": 1,
+      "blocks": [
+        {
+          "role": "cover_title",
+          "rect": [
+            23.870889,
+            117.120972,
+            333.543389,
+            176.084306
+          ],
+          "sourceShapeId": "3",
+          "geometryPart": "ppt/slides/slide1.xml",
+          "style": null
+        },
+        {
+          "role": "year",
+          "rect": [
+            383.717556,
+            278.852278,
+            25.284194,
+            10.259222
+          ],
+          "sourceShapeId": "4",
+          "geometryPart": "ppt/slides/slide1.xml",
+          "style": null
+        }
+      ]
+    },
+    {
+      "kind": "location",
+      "sourceSlide": 2,
+      "blocks": [
+        {
+          "role": "location_base",
+          "rect": [
+            35.719028,
+            43.479861,
+            330.904806,
+            233.968333
+          ],
+          "sourceShapeId": "4",
+          "geometryPart": "ppt/slides/slide2.xml",
+          "style": null
+        },
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "6",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "city_map",
+          "rect": [
+            35.7,
+            43.5,
+            164.0,
+            234.0
+          ],
+          "geometryPart": "canonical subregion of source shape 4",
+          "sourceShapeId": null,
+          "style": null
+        },
+        {
+          "role": "okrug_map",
+          "rect": [
+            214.0,
+            43.5,
+            152.6,
+            234.0
+          ],
+          "geometryPart": "canonical subregion of source shape 4",
+          "sourceShapeId": null,
+          "style": null
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "district_ortho",
+      "sourceSlide": 3,
+      "blocks": [
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "6",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "map",
+          "rect": [
+            24.518056,
+            43.795722,
+            382.818444,
+            233.708111
+          ],
+          "sourceShapeId": "5",
+          "geometryPart": "ppt/slides/slide3.xml",
+          "style": null
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "territory_ortho",
+      "sourceSlide": 4,
+      "blocks": [
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "6",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "map",
+          "rect": [
+            24.518056,
+            43.795722,
+            382.818444,
+            233.708111
+          ],
+          "sourceShapeId": "3",
+          "geometryPart": "ppt/slides/slide4.xml",
+          "style": null
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "existing_use",
+      "sourceSlide": 5,
+      "blocks": [
+        {
+          "role": "map",
+          "rect": [
+            24.518028,
+            43.479889,
+            261.496528,
+            234.023944
+          ],
+          "sourceShapeId": "29",
+          "geometryPart": "ppt/slides/slide5.xml",
+          "style": null
+        },
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "135",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "metrics",
+          "rect": [
+            294.397167,
+            244.52725,
+            112.884778,
+            43.712944
+          ],
+          "sourceShapeId": "221",
+          "geometryPart": "ppt/slides/slide5.xml",
+          "style": "metrics",
+          "columnWidthsMm": [
+            7.599167,
+            57.815722,
+            12.636194,
+            20.54975,
+            14.283944
+          ]
+        },
+        {
+          "role": "right_column",
+          "rect": [
+            294.4,
+            42.0,
+            113.1,
+            200.52725
+          ],
+          "sourceShapeId": null,
+          "geometryPart": "canonical role envelope; source shapes measured separately",
+          "style": "legend"
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "land_rights",
+      "sourceSlide": 6,
+      "blocks": [
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "7",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "rights_table",
+          "rect": [
+            24.518056,
+            43.479833,
+            382.763833,
+            234.023972
+          ],
+          "sourceShapeId": "2",
+          "geometryPart": "ppt/slides/slide6.xml",
+          "style": "table",
+          "columnWidthsMm": [
+            14.558861,
+            54.316917,
+            25.4,
+            37.904639,
+            35.615806,
+            47.171444,
+            30.535806,
+            26.069889,
+            65.370111,
+            45.820361
+          ]
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "parcels_oks",
+      "sourceSlide": 7,
+      "blocks": [
+        {
+          "role": "map",
+          "rect": [
+            24.587806,
+            44.049583,
+            261.911389,
+            233.553194
+          ],
+          "sourceShapeId": "29",
+          "geometryPart": "ppt/slides/slide7.xml",
+          "style": null
+        },
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "7",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "right_column",
+          "rect": [
+            294.4,
+            42.0,
+            113.1,
+            235.5
+          ],
+          "sourceShapeId": null,
+          "geometryPart": "canonical role envelope; source shapes measured separately",
+          "style": "legend"
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "restrictions",
+      "sourceSlide": 8,
+      "blocks": [
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "29",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "map",
+          "rect": [
+            24.567222,
+            44.0665,
+            261.536556,
+            233.437333
+          ],
+          "sourceShapeId": "3",
+          "geometryPart": "ppt/slides/slide8.xml",
+          "style": null
+        },
+        {
+          "role": "restrictions_table",
+          "rect": [
+            294.969806,
+            243.155333,
+            112.341694,
+            44.525861
+          ],
+          "sourceShapeId": "153",
+          "geometryPart": "ppt/slides/slide8.xml",
+          "style": null,
+          "columnWidthsMm": [
+            4.515556,
+            40.314444,
+            37.262361,
+            30.249333
+          ]
+        },
+        {
+          "role": "right_column",
+          "rect": [
+            294.4,
+            42.0,
+            113.1,
+            199.155333
+          ],
+          "sourceShapeId": null,
+          "geometryPart": "canonical role envelope; source shapes measured separately",
+          "style": "legend"
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "photos",
+      "sourceSlide": 9,
+      "blocks": [
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "2",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "photo_8",
+          "rect": [
+            313.587667,
+            202.227833,
+            93.441056,
+            75.503417
+          ],
+          "sourceShapeId": "7",
+          "geometryPart": "ppt/slides/slide9.xml",
+          "style": "caption"
+        },
+        {
+          "role": "photo_7",
+          "rect": [
+            216.904444,
+            202.418472,
+            92.951722,
+            75.153889
+          ],
+          "sourceShapeId": "8",
+          "geometryPart": "ppt/slides/slide9.xml",
+          "style": "caption"
+        },
+        {
+          "role": "photo_6",
+          "rect": [
+            122.47975,
+            202.418472,
+            90.5805,
+            75.114111
+          ],
+          "sourceShapeId": "9",
+          "geometryPart": "ppt/slides/slide9.xml",
+          "style": "caption"
+        },
+        {
+          "role": "photo_5",
+          "rect": [
+            25.124889,
+            202.418472,
+            93.375444,
+            75.168694
+          ],
+          "sourceShapeId": "10",
+          "geometryPart": "ppt/slides/slide9.xml",
+          "style": "caption"
+        },
+        {
+          "role": "photo_4",
+          "rect": [
+            313.4765,
+            124.762111,
+            93.704944,
+            73.835806
+          ],
+          "sourceShapeId": "11",
+          "geometryPart": "ppt/slides/slide9.xml",
+          "style": "caption"
+        },
+        {
+          "role": "photo_2",
+          "rect": [
+            313.933972,
+            43.038639,
+            92.931778,
+            78.093556
+          ],
+          "sourceShapeId": "12",
+          "geometryPart": "ppt/slides/slide9.xml",
+          "style": "caption"
+        },
+        {
+          "role": "photo_3",
+          "rect": [
+            217.243861,
+            124.716361,
+            93.200278,
+            74.49125
+          ],
+          "sourceShapeId": "13",
+          "geometryPart": "ppt/slides/slide9.xml",
+          "style": "caption"
+        },
+        {
+          "role": "photo_1",
+          "rect": [
+            217.607472,
+            42.995694,
+            92.473056,
+            78.148778
+          ],
+          "sourceShapeId": "14",
+          "geometryPart": "ppt/slides/slide9.xml",
+          "style": "caption"
+        },
+        {
+          "role": "map",
+          "rect": [
+            24.518028,
+            43.820194,
+            188.599139,
+            155.180833
+          ],
+          "sourceShapeId": "15",
+          "geometryPart": "ppt/slides/slide9.xml",
+          "style": null
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "general_plan",
+      "sourceSlide": 10,
+      "blocks": [
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "9",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "map",
+          "rect": [
+            24.587806,
+            44.049583,
+            261.911389,
+            233.553167
+          ],
+          "sourceShapeId": "45",
+          "geometryPart": "ppt/slides/slide10.xml",
+          "style": null
+        },
+        {
+          "role": "right_column",
+          "rect": [
+            294.4,
+            42.0,
+            113.1,
+            235.5
+          ],
+          "sourceShapeId": null,
+          "geometryPart": "canonical role envelope; source shapes measured separately",
+          "style": "legend"
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "pzz",
+      "sourceSlide": 11,
+      "blocks": [
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "2",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "pzz_zones_map",
+          "rect": [
+            24.799361,
+            63.813639,
+            176.145611,
+            174.974722
+          ],
+          "sourceShapeId": "24",
+          "geometryPart": "ppt/slides/slide11.xml",
+          "style": null
+        },
+        {
+          "role": "pzz_parameters_map",
+          "rect": [
+            230.768278,
+            63.813639,
+            176.145611,
+            176.200556
+          ],
+          "sourceShapeId": "36",
+          "geometryPart": "ppt/slides/slide11.xml",
+          "style": null
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        },
+        {
+          "role": "pzz_zones_notes",
+          "rect": [
+            24.799361,
+            241.8,
+            176.145611,
+            35.7
+          ],
+          "sourceShapeId": null,
+          "geometryPart": "canonical notes envelope below source map 24",
+          "style": "legend"
+        },
+        {
+          "role": "pzz_parameters_notes",
+          "rect": [
+            230.768278,
+            241.8,
+            176.145611,
+            35.7
+          ],
+          "sourceShapeId": null,
+          "geometryPart": "canonical notes envelope below source map 36",
+          "style": "legend"
+        }
+      ]
+    },
+    {
+      "kind": "planning_docs",
+      "sourceSlide": 12,
+      "blocks": [
+        {
+          "role": "map",
+          "rect": [
+            24.587806,
+            44.049583,
+            261.911389,
+            233.553167
+          ],
+          "sourceShapeId": "29",
+          "geometryPart": "ppt/slides/slide12.xml",
+          "style": null
+        },
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "7",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "right_column",
+          "rect": [
+            294.4,
+            42.0,
+            113.1,
+            235.5
+          ],
+          "sourceShapeId": null,
+          "geometryPart": "canonical role envelope; source shapes measured separately",
+          "style": "legend"
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "education",
+      "sourceSlide": 13,
+      "blocks": [
+        {
+          "role": "map",
+          "rect": [
+            25.328889,
+            43.929194,
+            260.685694,
+            233.662222
+          ],
+          "sourceShapeId": "4",
+          "geometryPart": "ppt/slides/slide13.xml",
+          "style": null
+        },
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "3",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "right_column",
+          "rect": [
+            294.4,
+            42.0,
+            113.1,
+            235.5
+          ],
+          "sourceShapeId": null,
+          "geometryPart": "canonical role envelope; source shapes measured separately",
+          "style": "legend"
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    },
+    {
+      "kind": "healthcare",
+      "sourceSlide": 14,
+      "blocks": [
+        {
+          "role": "map",
+          "rect": [
+            24.579556,
+            43.933639,
+            261.435028,
+            234.146667
+          ],
+          "sourceShapeId": "4",
+          "geometryPart": "ppt/slides/slide14.xml",
+          "style": null
+        },
+        {
+          "role": "title",
+          "rect": [
+            22.296139,
+            27.0,
+            357.750639,
+            14.6
+          ],
+          "sourceShapeId": "6",
+          "geometryPart": "canonical heading envelope for two 18pt lines; source placeholder retained by shape ID",
+          "style": "title"
+        },
+        {
+          "role": "right_column",
+          "rect": [
+            294.4,
+            42.0,
+            113.1,
+            235.5
+          ],
+          "sourceShapeId": null,
+          "geometryPart": "canonical role envelope; source shapes measured separately",
+          "style": "legend"
+        },
+        {
+          "role": "page_number",
+          "rect": [
+            383.5,
+            289.0,
+            30.0,
+            7.5
+          ],
+          "geometryPart": "canonical page-contained number",
+          "sourceShapeId": null,
+          "style": "page"
+        }
+      ]
+    }
+  ]
+}

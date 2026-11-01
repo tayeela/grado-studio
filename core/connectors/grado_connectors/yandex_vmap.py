@@ -29,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import netutil
-from .contract import Connector, ConnectorError, make_result
+from .contract import Connector, ConnectorError, make_result, with_acquisition
 
 URL = ("https://core-renderer-tiles.maps.yandex.net/vmap3/tiles"
        "?lang=ru_RU&x={x}&y={y}&z={z}&zmin={z}&zmax={z}")
@@ -516,7 +516,7 @@ class YandexVmap(Connector):
         на тайл, который через минуту отдавался (с msk, Mac и облака), и из-за одного тайла упали все слои Яндекса."""
         for attempt in (1, 2, 3):
             try:
-                return netutil.request(url, headers=HEADERS, timeout=timeout,
+                return netutil.request(url, headers=HEADERS, timeout=timeout, portal="yandex",
                                        check=lambda data: data and decode(data)).content
             except netutil.HttpError as e:
                 if e.code == 400 and attempt < 3:
@@ -571,5 +571,5 @@ class YandexVmap(Connector):
 
         feats = features_from_tiles(blobs, want, self.zoom, bbox)
         notes = [] if net[0] else ["тайлы с диска: повторно Яндекс не запрашивался"]
-        return make_result(feats, {"bbox": list(bbox), "layers": sorted(want), "zoom": self.zoom, "tiles": len(tiles),
-                                   "downloaded": net[0]}, source_doc=SOURCE_DOC, notes=notes)
+        return with_acquisition(make_result(feats, {"bbox": list(bbox), "layers": sorted(want), "zoom": self.zoom, "tiles": len(tiles),
+                                   "downloaded": net[0]}, source_doc=SOURCE_DOC, notes=notes), bbox, sorted(want), provenance="network" if net[0] else "cache")

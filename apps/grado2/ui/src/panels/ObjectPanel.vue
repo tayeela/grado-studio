@@ -18,7 +18,10 @@
       </table>
     </div>
 
-    <template v-else-if="items.length === 1">
+    <div v-if="items.length && byLayer.length === 1" class="object-search">
+      <wa-input size="s" placeholder="Найти поле или значение" aria-label="Поиск атрибутов объекта" with-clear :value="q" @input="q = $event.target.value"></wa-input>
+    </div>
+    <template v-if="items.length === 1">
       <div class="ph"><b>{{ lyr(items[0].key)?.title }}</b>
         <wa-button aria-label="Приблизить к объекту" size="s" appearance="plain" title="Приблизить к объекту" @click="mapApi.fitFeature(items[0].f)"><Focus :size="15" /></wa-button></div>
       <div class="sub">{{ sizeText(items) }}{{ items[0].f.properties._edited ? " · изменён вручную" : "" }}</div>
@@ -27,17 +30,17 @@
       <table class="attrs">
         <thead><tr><th>Поле</th><th>Значение</th></tr></thead>
         <tbody>
-          <tr v-for="k in fields" :key="k">
+          <tr v-for="k in visibleFields" :key="context + k">
             <th :title="k">{{ k }}</th>
             <td><input :value="String(items[0].f.properties[k] ?? '')" :aria-label="k" :title="'Значение поля «' + k + '»: правка — ввести и Enter'"
-                       @change="e => setAttr(items, k, e.target.value)" @keydown.enter="e => e.target.blur()"></td>
+                       @focus="e => beginAttr(k, e)" @blur="e => finishAttr(e)" @keydown.enter.prevent="e => e.target.blur()" @keydown.esc.stop.prevent="cancelAttr"></td>
           </tr>
           <tr v-if="!fields.length"><td colspan="2" class="none">У объекта нет полей — добавьте ниже.</td></tr>
         </tbody>
       </table>
     </template>
 
-    <template v-else>
+    <template v-else-if="items.length > 1">
       <div class="ph"><b>Выбрано объектов: {{ items.length.toLocaleString("ru-RU") }}</b></div>
       <div class="sub">{{ sizeText(items) }}</div>
       <DecisionBar :items="items" />
@@ -54,16 +57,17 @@
         <table class="attrs">
           <thead><tr><th>Поле</th><th>Значение у всех</th></tr></thead>
           <tbody>
-            <tr v-for="k in fields" :key="k">
+            <tr v-for="k in visibleFields" :key="context + k">
               <th :title="k">{{ k }}</th>
               <td><input :value="common(k).same ? common(k).v : ''" :placeholder="common(k).same ? '' : `разные: ${common(k).n}`" :aria-label="k"
-                         @change="e => setAttr(items, k, e.target.value)" @keydown.enter="e => e.target.blur()"></td>
+                         @focus="e => beginAttr(k, e)" @blur="e => finishAttr(e)" @keydown.enter.prevent="e => e.target.blur()" @keydown.esc.stop.prevent="cancelAttr"></td>
             </tr>
           </tbody>
         </table>
       </template>
     </template>
 
+    <p v-if="items.length && byLayer.length === 1 && fields.length && !visibleFields.length" class="hint">По запросу ничего не найдено.</p>
     <div v-if="items.length && byLayer.length === 1" class="row">
       <wa-input size="s" :placeholder="items.length > 1 ? 'Новое поле для всех' : 'Новое поле'" :value="newField" @input="e => (newField = e.target.value)"
                 @keydown.enter="addNew"></wa-input>
@@ -73,17 +77,38 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, ref } from "vue";
+import { computed, defineComponent, h, onBeforeUnmount, ref, watch } from "vue";
 import { Focus, MousePointerClick } from "@lucide/vue";
 import { lyr, mapApi } from "../edit.js";
 import { addField, editFeatures, fieldsOfFeatures, selected, sel, setAttr, setSel, sizeOf } from "../features.js";
 import { dataRev } from "../edit.js";
+import { project } from "../store.js";
 
 const DECISION = "Решение", DECISIONS = { "сохраняем": "#b9b4ab", "реконструкция": "#eda100", "сносим": "#b3261e" };
 const DECSHORT = { "сохраняем": "сохраняем", "реконструкция": "реконстр.", "сносим": "сносим" };
 
 const items = computed(() => (dataRev.value, sel.length, selected()));
+const q = ref("");
+const context = computed(() => items.value.map(s => s.key + "|" + s.uid).join(";"));
+let draft = null;
+function beginAttr(field, e) { draft = { project: project.raw, targets: items.value.map(({ key, uid }) => ({ key, uid })), field, el: e.target, original: e.target.value }; }
+function finishAttr(e) {
+  const d = draft; if (!d || d.el !== e.target) return;
+  draft = null;
+  if (d.project === project.raw && d.el.value !== d.original) setAttr(d.targets, d.field, d.el.value);
+}
+function cancelAttr(e) { if (draft?.el === e.target) e.target.value = draft.original; e.target.blur(); }
+// Сначала фиксируем ввод у прежнего объекта, затем Vue меняет набор строк. Новому объекту значение не достанется.
+// При открытии копии key/uid могут совпадать: ввод прежнего проекта нельзя переносить в новый.
+watch(() => project.raw, () => { const el = draft?.el; draft = null; el?.blur(); q.value = ""; }, { flush: "sync" });
+watch(context, () => { if (draft) { const el = draft.el; el.blur(); if (draft) finishAttr({ target: el }); } q.value = ""; }, { flush: "sync" });
+onBeforeUnmount(() => { if (draft) finishAttr({ target: draft.el }); });
 const fields = computed(() => fieldsOfFeatures(items.value.slice(0, 2000).map(s => s.f)));
+const visibleFields = computed(() => {
+  const query = q.value.trim().toLocaleLowerCase("ru");
+  return fields.value.filter(k => !query || k.toLocaleLowerCase("ru").includes(query)
+    || items.value.some(s => String(s.f.properties[k] ?? "").toLocaleLowerCase("ru").includes(query)));
+});
 const byLayer = computed(() => { const m = new Map(); items.value.forEach(s => m.set(s.key, (m.get(s.key) || 0) + 1)); return [...m]; });
 const fmt = (v, d) => v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
 function sizeText(list) {
@@ -132,6 +157,9 @@ const DecisionBar = defineComponent({
 </script>
 
 <style>
+.obj .object-search { margin-bottom: 8px; }
+.obj .object-search wa-input { display: block; width: 100%; }
+.obj .ph b { min-width: 0; overflow-wrap: anywhere; }
 .obj .ph { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
 .obj .sub { color: var(--g-muted); font-size: var(--wa-font-size-xs); margin: 2px 0 var(--wa-space-s); }
 .obj .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 24px 8px; color: var(--g-muted); }

@@ -21,10 +21,11 @@ import "tabulator-tables/dist/css/tabulator_simple.min.css";
 import { current, project } from "../store.js";
 import { dataRev, mapApi } from "../edit.js";
 import { plural } from "../geom.js";
+import { showInspector } from "../inspector.js";
 import { featureOf, fieldsOfFeatures, indexOf, sel, setAttr, setSel, toggleSel } from "../features.js";
 
 const el = ref(null), q = ref(""), selOnly = ref(false), said = ref("");
-let table = null, ready = false, shownKey = "", shownFc = null, shownCols = "";
+let table = null, ready = false, shownKey = "", shownFc = null, shownCols = "", shownUids = "", filtered = false;
 
 const fc = computed(() => (dataRev.value, project.data[current.value?.key]?.fc));
 const nSel = computed(() => sel.filter(s => s.key === current.value?.key).length);
@@ -49,8 +50,19 @@ function columns(fields) {
 function refresh() {
   if (!ready) return;
   const key = current.value?.key || "", f = fc.value, fields = fieldsOfFeatures(f?.features || []), cols = fields.join("\u0001");
-  if (cols !== shownCols || key !== shownKey) { table.setColumns(columns(fields)); shownCols = cols; }
-  if (key !== shownKey || f !== shownFc) { table.replaceData(rows()); shownKey = key; shownFc = f; }
+  const structure = cols !== shownCols || key !== shownKey;
+  if (structure) { table.setColumns(columns(fields)); shownCols = cols; }
+  if (key !== shownKey || f !== shownFc) {
+    const data = rows(), uids = data.map(r => r._uid).join("|");
+    // Правка атрибута в инспекторе не должна удалять строку под нажатой мышью:
+    // иначе blur редактора заменяет таблицу раньше rowClick и выбор теряется.
+    if (!structure && uids === shownUids) {
+      const changed = data.filter((r, i) => f.features[i] !== shownFc?.features?.[i]);
+      if (changed.length) table.updateData(changed);
+    }
+    else table.replaceData(data);
+    shownKey = key; shownFc = f; shownUids = uids;
+  }
   applyFilter(); mark();
 }
 function mark() {
@@ -60,13 +72,14 @@ function mark() {
 }
 function applyFilter() {
   const s = q.value.trim().toLowerCase(), want = new Set(sel.filter(x => x.key === current.value?.key).map(x => x.uid));
-  if (!s && !selOnly.value) return table.clearFilter();
+  if (!s && !selOnly.value) { if (filtered) table.clearFilter(); filtered = false; return; }
+  filtered = true;
   table.setFilter(d => (!selOnly.value || want.has(d._uid)) && (!s || Object.entries(d).some(([k, v]) => k[0] !== "_" && String(v ?? "").toLowerCase().includes(s))));
 }
 
 onMounted(() => {
   table = new Tabulator(el.value, {
-    height: "100%", layout: "fitDataStretch", editTriggerEvent: "dblclick", nestedFieldSeparator: false, selectableRows: false, columnDefaults: { maxWidth: 360 },
+    height: "100%", layout: "fitDataStretch", editTriggerEvent: "dblclick", nestedFieldSeparator: false, selectableRows: false, index: "_uid", columnDefaults: { maxWidth: 360 },
     placeholder: "Нет объектов", data: [], columns: columns([]),
     rowFormatter: r => {
       r.getElement().classList.toggle("sel", sel.some(s => s.key === current.value?.key && s.uid === r.getData()._uid));
@@ -85,6 +98,7 @@ onMounted(() => {
 /* щелчок или Enter по строке — выбор объекта и приближение к нему; с Shift (Ctrl, ⌘) — добавить к выбору или убрать */
 function pick(r, add) {
   const key = current.value?.key, uid = r.getData()._uid; if (!key) return;
+  showInspector("object");
   if (add) return toggleSel({ key, uid });
   setSel([{ key, uid }]); mapApi.fitFeature(featureOf(key, uid));
 }

@@ -12,6 +12,7 @@
      масштаб схем и формат слайдов — здесь же (прежнего окна «Подробно» больше нет). -->
 <template>
   <div class="pane alb">
+    <PreparationPanel />
     <!-- листы проекта — те же, что в «Макете листа»: одна логика везде (владелец 12.10.2026) -->
     <div class="ahead">
       <p class="stat">{{ ownHead }}</p>
@@ -308,6 +309,7 @@ import { project, sheetNav, winApi } from "../store.js";
 import { newId, newSheet } from "../sheet/model.js";
 import { printAll } from "./sheetmaps.js";
 import FontPicker from "./FontPicker.vue";
+import PreparationPanel from "./PreparationPanel.vue";
 
 const WATER = "#bfe0f5";   // вода белых схем по умолчанию (albums.js C_WATER_VIS, print_io.WATER_VIS)
 /* шрифт подписей карт: base — как печаталось до настройки (подписи альбома ППТ КРТ Montserrat жирным, у прочих листов PT Sans) */

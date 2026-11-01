@@ -196,6 +196,8 @@ import { printAll } from "./panels/sheetmaps.js";
 import { plural } from "./geom.js";
 import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
+import { inspector, showInspector } from "./inspector.js";
+import { mergeInspectorPanels } from "./inspector-layout.js";
 import { BASEMAPS, basemapId, current, cursor, mapOnly, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
 import {
   busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, retitle, saveProject, shared,
@@ -208,7 +210,6 @@ const PANELS = [
   { id: "map", title: "Карта" },
   { id: "layers", title: "Слои" },
   { id: "props", title: "Свойства" },
-  { id: "object", title: "Объект" },
   { id: "tep", title: "Показатели (ТЭП)" },
   { id: "table", title: "Таблица атрибутов" },
   { id: "data", title: "Данные" },
@@ -280,7 +281,7 @@ let api = null;
 /* Ширины по умолчанию от ширины экрана: на 1280 карта остаётся главной, на широком экране боковые окна просторнее,
    чтобы имена слоёв и вкладки «Свойства, Объект, Ограничения, Эскиз» не обрезались. Нижняя группа — две пятых высоты: «Схеме расчёта» и таблице есть где развернуться. */
 const clamp = (v, a, b) => Math.round(Math.min(b, Math.max(a, v)));
-const sizes = () => ({ left: clamp(innerWidth * .22, 270, 330), right: clamp(innerWidth * .26, 336, 390), bottom: clamp((innerHeight - 140) * .3, 180, 340) });   // низ — около трети высоты под картой: на 1280×720 карта не мельчает (UX-аудит 12.10 п. 17)
+const sizes = () => ({ left: clamp(innerWidth * .22, 270, 330), right: 340, bottom: clamp((innerHeight - 140) * .3, 180, 340) });   // низ — около трети высоты под картой: на 1280×720 карта не мельчает (UX-аудит 12.10 п. 17)
 
 function defaultLayout() {
   api.clear();
@@ -288,7 +289,6 @@ function defaultLayout() {
   api.addPanel({ id: "map", component: "map", title: "Карта" });
   api.addPanel({ id: "layers", component: "layers", title: "Слои", position: { referencePanel: "map", direction: "left" }, initialWidth: z.left });
   api.addPanel({ id: "props", component: "props", title: "Свойства", position: { referencePanel: "map", direction: "right" }, initialWidth: z.right });
-  api.addPanel({ id: "object", component: "object", title: "Объект", position: { referencePanel: "props", direction: "within" } });
   api.addPanel({ id: "data", component: "data", title: "Данные", position: { referencePanel: "layers", direction: "within" } });
   api.addPanel({ id: "views", component: "views", title: "Виды", position: { referencePanel: "layers", direction: "within" } });
   api.addPanel({ id: "cons", component: "cons", title: "Ограничения", position: { referencePanel: "props", direction: "within" } });
@@ -305,7 +305,7 @@ function defaultLayout() {
 
 /* Раскладка из браузера сохранена до появления новых окон: перенесённое окно встаёт на своё место по умолчанию один раз,
    дальше пользователь закрывает и двигает его сам (список показанных — «grado-next-seen»). */
-const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"], data: ["layers", "within"], cons: ["props", "within"], graph: ["tep", "within"], sketch: ["props", "within"], vars: ["tep", "within"] };
+const NEW_WINDOWS = { table: ["tep", "within"], views: ["layers", "within"], data: ["layers", "within"], cons: ["props", "within"], graph: ["tep", "within"], sketch: ["props", "within"], vars: ["tep", "within"] };
 function addNewWindows() {
   let seen = [];
   try { seen = JSON.parse(localStorage.getItem("grado-next-seen") || "[]"); } catch { /* нет — все новые */ }
@@ -319,7 +319,7 @@ function addNewWindows() {
 
 /* Место окна в раскладке по умолчанию: окно, открытое заново из меню «Окна», встаёт вкладкой к соседям по своей группе,
    если хоть один из них открыт и не плавает; иначе — краем к карте; иначе — плавающим. */
-const LEFT = ["layers", "data", "views"], RIGHT = ["props", "object", "cons", "sketch", "album"], BOTTOM = ["tep", "table", "graph", "vars"];
+const LEFT = ["layers", "data", "views"], RIGHT = ["props", "cons", "sketch", "album"], BOTTOM = ["tep", "table", "graph", "vars"];
 function homeOf(id) {
   const docked = x => { const q = api.getPanel(x); return q && q.group?.api.location?.type === "grid" ? q : null; };
   const z = sizes();
@@ -337,7 +337,7 @@ function homeOf(id) {
 }
 
 const SHEET_MIN = 560, MAP_MIN = 360;   // макет листа и карта рядом — не уже этого
-const DOCK_NEAR = { norms: ["props", "object", "sketch"], vol: ["props", "object", "sketch"], comments: ["props", "object"], cmp: ["tep", "table", "vars"] };
+const DOCK_NEAR = { norms: ["props", "sketch"], vol: ["props", "sketch"], comments: ["props"], cmp: ["tep", "table", "vars"] };
 function dockOf(id) {
   return (DOCK_NEAR[id] || []).find(x => api.getPanel(x)?.group?.api.location?.type === "grid") || null;
 }
@@ -388,7 +388,11 @@ function onExport(e) {
   else if (v === "sheets") printAll(JSON.parse(JSON.stringify(project.layouts)), project.raw?.album?.meta || {}, project.name || "листы").catch(e => { notice.value = "PDF не собран: " + e.message; });
 }
 
-winApi.open = id => { const p = api?.getPanel(id); if (p) p.api.setActive(); else if (api) addOne(id); syncOpen(); };
+winApi.open = id => {
+  if (id === "props" || id === "object") { inspector.tab = id === "object" ? "object" : "layer"; id = "props"; }
+  const p = api?.getPanel(id); if (p) p.api.setActive(); else if (api) addOne(id);
+  if (api) syncOpen();
+};
 function syncOpen() { for (const p of PANELS) open[p.id] = !!api.getPanel(p.id); }
 
 /* «Только карта» (#26, аудит 07.10.2026: на ноутбуке карта теряется за окнами): группа карты разворачивается во всё рабочее
@@ -417,10 +421,11 @@ function onReady(event) {
     if (s) { api.fromJSON(JSON.parse(s)); restored = true; }
   } catch { restored = false; }
   if (!restored) defaultLayout();
-  else addNewWindows();
+  else { if (mergeInspectorPanels(api)) inspector.tab = "object"; addNewWindows(); }
   syncOpen();
   // «только карта» не запоминается: раскладка пишется без развёрнутой карты, после выхода из режима — заново
   const keep = () => { if (api.hasMaximizedGroup()) return; try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(api.toJSON())); } catch { /* частный режим браузера */ } };
+  keep();
   api.onDidMaximizedGroupChange(() => { mapOnly.value = !!api.getPanel("map")?.group?.api.isMaximized(); keep(); });
   api.onDidLayoutChange(() => { syncOpen(); keep(); });
   // активен лист — лента и строка карты прячутся: у листа своя лента и своя строка состояния (аудит UX, находка 2)
@@ -508,7 +513,7 @@ addEventListener("keydown", e => {
   }
   if (e.code === "Backslash" && !e.shiftKey && !e.altKey) { e.preventDefault(); winApi.mapOnly(); return; }
   if (e.code === "KeyA" && !typing(e) && current.value) {
-    e.preventDefault(); selectAll(current.value.key); notice.value = `Выбраны все объекты слоя «${current.value.title}»: ${sel.length}`; return;
+    e.preventDefault(); selectAll(current.value.key); showInspector("object"); notice.value = `Выбраны все объекты слоя «${current.value.title}»: ${sel.length}`; return;
   }
   if (e.code === "KeyS") { e.preventDefault(); if (shared.value) hubFlush(); else save(); }
   else if (e.code === "KeyO" && !e.shiftKey && !e.altKey) { e.preventDefault(); if (shared.value) openWin("projects"); else openCatalog(); }
