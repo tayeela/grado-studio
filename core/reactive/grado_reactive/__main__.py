@@ -36,7 +36,7 @@ def main(argv=None):
     project.add_layer("terr.restrict")
     session = Session(project)
     engine = Engine.from_file(PRESET)
-    link = TepLink(session, engine)
+    _link = TepLink(session, engine)                     # подписка сессии на движок держится до конца работы
 
     def report(step):
         print(f"{step:<58} население {engine.display('population'):>5} чел  "

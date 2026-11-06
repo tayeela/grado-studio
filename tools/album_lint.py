@@ -234,7 +234,7 @@ def check_wrap(page_no, pw, ph, blocks, out):
             last = ln["words"][-1]["text"]
             bare = re.sub(r"[^\wёЁ-]", "", last).lower()
             first = nxt["words"][0]["text"]
-            if bare in SHORT_WORDS and not last[-1:] in ",.;:":
+            if bare in SHORT_WORDS and last[-1:] not in ",.;:":
                 add("hang", ln, f"«{last}» остаётся в конце строки — должно уйти вниз вместе со словом")
             elif last in ABBR_END and re.match(r"[A-ZА-ЯЁ\d«„\"]", first):
                 add("hang", ln, f"«{last}» отделено от «{first}» переносом строки")

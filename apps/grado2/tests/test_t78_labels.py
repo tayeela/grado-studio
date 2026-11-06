@@ -46,7 +46,6 @@ class StationNotOnRail(unittest.TestCase):
             layers.append({"key": "yandex.rail", "title": "Железная дорога", "over": True,
                            "features": [{"g": hline(), "stroke": "#1f1f1f", "w": 4}]})
         sh = sheet(layers)
-        tr = print_io.MapTransform((0, 0, 400, 277), sh["center"], sh["scale"])
         return ops_of(sh)
 
     def _line_y(self, ops):

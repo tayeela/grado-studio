@@ -1,7 +1,6 @@
 """Exports of ГРАДО 2: GeoJSON in МСК for QGIS (/api/export/geojson) and the ТЭП + sheet list workbook (/api/export/xlsx)."""
 import io
 import json
-import re
 import sys
 import threading
 import unittest

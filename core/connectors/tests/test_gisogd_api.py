@@ -171,7 +171,6 @@ class GisogdProgress(unittest.TestCase):
         self.assertIsNone(_expected_size({"Content-Encoding": "gzip"}))
 
     def test_parse_stage_reported_with_custom_transport(self):
-        import json
         import tempfile
         from grado_connectors.gisogd_api import GisogdApi
         from _shpfix import shp_zip

@@ -19,7 +19,6 @@
 """
 
 import io
-import math
 import os
 import tempfile
 import time

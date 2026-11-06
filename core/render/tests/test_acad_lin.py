@@ -3,7 +3,6 @@
 Запуск: python -m unittest discover -s core/render/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
 """
 
-import json
 import unittest
 from pathlib import Path
 

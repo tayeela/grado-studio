@@ -7,7 +7,6 @@
 линейка, рамка и основная надпись по ГОСТ Р 21.101 (рамка и штамп — фреймы ядра).
 """
 
-import base64
 import math
 import os
 import re
@@ -17,7 +16,7 @@ from pathlib import Path
 
 from grado_connectors import crs
 from grado_layout import A1_LANDSCAPE, A3_LANDSCAPE, Document, Page, PageBorder, StampFrame, TableFrame
-from grado_layout.compose import document_pages_ops
+from grado_layout.compose import document_pages_ops  # noqa: F401  реэкспорт: альбом и тесты зовут print_io.document_pages_ops
 from grado_layout.model import Frame
 from grado_render import PdfBackend, hex_to_rgb, render_svg
 from grado_render.scene import hatch_ops

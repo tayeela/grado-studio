@@ -12,9 +12,12 @@ on:
     paths:
       - "apps/grado2/**"
       - "core/**"
-      - "packaging/grado2*"
+      - "packaging/**"                              # правки инфраструктуры проверок не проходят мимо тестов (аудит 06.11, 1.2)
+      - "tools/**"
       - ".github/workflows/grado2-release.yml"
   push:
+    branches:
+      - main                                        # пуш в main тоже проверяется тестами (аудит 06.11, 1.1)
     tags:
       - "grado2-v*"
 
@@ -23,6 +26,7 @@ permissions:
 
 jobs:
   test:
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'   # по тегу тесты уже прогонялись в main
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -35,8 +39,12 @@ jobs:
           node-version: "22"
       - name: Install dependencies
         run: |
-          python -m pip install -r apps/grado2/requirements.txt -r apps/grado2/requirements-dev.txt
+          python -m pip install -r apps/grado2/requirements.lock -r apps/grado2/requirements-dev.txt
           cd tools && npm ci                  # Playwright (playwright-core) для браузерных сценариев; браузер — Chrome раннера
+      - name: Lint (ruff)
+        run: python -m ruff check apps/grado2 core tools
+      - name: Type check of apps/grado2/web (tsc, always in CI)
+        run: tools/node_modules/.bin/tsc -p tools/ts/tsconfig.json   # локально без node_modules gate это пропускает (аудит 06.11, 1.4)
       - name: New interface build is fresh (apps/grado2/ui -> apps/grado2/web/next)
         run: tools/ui_check.sh
       - name: Unit tests (server, import, print, insolation under node)
@@ -91,8 +99,9 @@ jobs:
       contents: write  # нужен только шагу Release (публикация по тегу)
     strategy:
       matrix:
-        # вручную можно собрать одну систему (минуты macOS дороже); по тегу — обе
-        os: ${{ fromJSON(inputs.targets == 'windows' && '["windows-latest"]' || inputs.targets == 'macos' && '["macos-latest"]' || '["windows-latest", "macos-latest"]') }}
+        # вручную можно собрать одну систему (минуты macOS дороже); по тегу — все три: Windows, macOS arm64 и x86_64
+        # (правило команды: обе архитектуры macOS; macos-latest = arm64, macos-13 = x86_64 — аудит 06.11, 1.6)
+        os: ${{ fromJSON(inputs.targets == 'windows' && '["windows-latest"]' || inputs.targets == 'macos' && '["macos-latest", "macos-13"]' || '["windows-latest", "macos-latest", "macos-13"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
@@ -101,7 +110,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install build dependencies
-        run: python -m pip install -r apps/grado2/requirements.txt "pyinstaller>=6.14,<7"
+        run: python -m pip install -r apps/grado2/requirements.lock "pyinstaller>=6.14,<7"   # тот же lock, что и в тестах и на сайте
       - name: Build application
         run: pyinstaller --noconfirm --clean packaging/grado2.spec
       - name: Smoke test (Windows)
@@ -133,18 +142,19 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$v" packaging\grado2-installer.iss
       - name: macOS disk image
         if: runner.os == 'macOS'
-        run: hdiutil create -volname "ГРАДО 2" -srcfolder "dist/ГРАДО 2.app" -ov -format UDZO "dist/GRADO2.dmg"
+        # имя с архитектурой: arm64 и x86_64 собираются параллельно, в релизе оба файла (аудит 06.11, 1.6)
+        run: hdiutil create -volname "ГРАДО 2" -srcfolder "dist/ГРАДО 2.app" -ov -format UDZO "dist/GRADO2-$(echo $RUNNER_ARCH | tr 'A-Z' 'a-z').dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: grado2-${{ matrix.os }}
           if-no-files-found: warn
           path: |
             dist/installer/*.exe
-            dist/GRADO2.dmg
+            dist/GRADO2-*.dmg
       - name: Release
         if: startsWith(github.ref, 'refs/tags/grado2-v')
         uses: softprops/action-gh-release@v2  # TODO: закрепить по SHA
         with:
           files: |
             dist/installer/*.exe
-            dist/GRADO2.dmg
+            dist/GRADO2-*.dmg

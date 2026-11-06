@@ -2,7 +2,6 @@
 PDF, PPTX и SVG, настройка альбома labelFont и правка надписи макета."""
 
 import io
-import shutil
 import sys
 import tempfile
 import unittest

@@ -48,9 +48,10 @@ rm -rf $A.new && mkdir -p $A.new
 git archive --format=tar "$REV" $PATHS | tar -x -C $A.new || { echo "не распаковался код — сервер не тронут"; rm -rf $A.new; exit 1; }
 # зависимости поменялись: прежний набор версий — в freeze.prev, откат ниже вернёт и его (общий venv; аудит 12.10.2026, находка 6)
 rm -f "$P/freeze.prev"
-if ! cmp -s $A/apps/grado2/requirements.txt $A.new/apps/grado2/requirements.txt; then
+# версии зависимостей — из lock-файла: сборка и деплой воспроизводимы, обновления — осознанными правками lock (аудит 06.11, 1.5)
+if ! cmp -s $A/apps/grado2/requirements.lock $A.new/apps/grado2/requirements.lock; then
   /opt/grado/venv/bin/pip freeze > "$P/freeze.prev" 2>/dev/null || rm -f "$P/freeze.prev"
-  /opt/grado/venv/bin/pip install -q -r $A.new/apps/grado2/requirements.txt || {
+  /opt/grado/venv/bin/pip install -q -r $A.new/apps/grado2/requirements.lock || {
     echo "зависимости не поставились — сервер не тронут"; rm -rf $A.new
     [ -s "$P/freeze.prev" ] && /opt/grado/venv/bin/pip install -q -r "$P/freeze.prev"
     exit 1; }
@@ -58,8 +59,11 @@ fi
 rm -rf $A.prev && mv $A $A.prev && mv $A.new $A
 systemctl restart grado
 systemctl restart grado-guest 2>/dev/null || true   # гостевая копия (вход guest, свои проекты) — тот же код
+ready() {  # смок шире строки версии (аудит 06.11, 1.7): живой API и статика страницы входа
+  health | grep -q "\"version\": \"$VER\"" && curl -s -m 5 -H "$H" http://127.0.0.1:8650/login.html | grep -qi "<html"
+}
 for _ in $(seq 1 20); do
-  if health | grep -q "\"version\": \"$VER\""; then
+  if ready; then
     echo "$KEY" > "$P/deployed"; echo "$REV" > "$P/deployed.rev"; rm -f "$P/failed"
     echo "Готово: на сервере версия $VER (main ${REV:0:7})"
     git gc -q --prune=now 2>/dev/null || true

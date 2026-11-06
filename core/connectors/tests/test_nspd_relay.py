@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 import _paths  # noqa: F401
-from grado_connectors import ConnectorError, netutil
+from grado_connectors import ConnectorError
 from grado_connectors import nspd
 
 TOKEN = "t0ken-for-tests-0123456789abcdef"

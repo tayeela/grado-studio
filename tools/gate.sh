@@ -20,15 +20,22 @@ step() {  # имя, команда…
 if "$PY" -c "import pytest" 2>/dev/null; then T="-m pytest -q -p no:cacheprovider"; else T="-m unittest discover -s"; echo "note pytest не установлен: $PY -m pip install -r apps/grado2/requirements-dev.txt"; fi
 step wiki       "$PY" tools/wiki.py --check
 step docs       "$PY" tools/docs_check.py
+step ruff       "$PY" -m ruff check apps/grado2 core tools
 step unit       env PYTHONPATH="$PP" "$PY" $T apps/grado2/tests
 step unit-bare  bash -c "cd apps/grado2 && env -u PYTHONPATH '$PY' $T tests"
 step connectors env PYTHONPATH="$PP" "$PY" $T core/connectors/tests
 step core       bash -c "set -e; for m in compute geom layout model reactive render; do PYTHONPATH='$PP' '$PY' $T core/\$m/tests; done"
+# правки интерфейса в рабочем дереве? без node_modules проверка типов и сборки молча пропускалась (аудит 06.11, 1.4)
+UI_TOUCHED=$(git diff HEAD --name-only -- apps/grado2/ui "apps/grado2/web/*.js" | wc -l | tr -d ' ')
 if [ -x tools/node_modules/.bin/tsc ]; then  # files with // @ts-check in apps/grado2/web; install: (cd tools && npm ci)
   step types    tools/node_modules/.bin/tsc -p tools/ts/tsconfig.json
+elif [ "$UI_TOUCHED" != 0 ]; then
+  echo "FAIL types — правки интерфейса есть, а tools/node_modules нет: (cd tools && npm ci)"; fail+=(types)
 else echo "skip types — no tools/node_modules (cd tools && npm ci)"; fi
 if [ -d apps/grado2/ui/node_modules ]; then  # новый интерфейс: собранное совпадает с исходниками; install: (cd apps/grado2/ui && npm ci)
   step ui       tools/ui_check.sh
+elif [ "$UI_TOUCHED" != 0 ]; then
+  echo "FAIL ui — правки интерфейса есть, а apps/grado2/ui/node_modules нет: (cd apps/grado2/ui && npm ci)"; fail+=(ui)
 else echo "skip ui — no apps/grado2/ui/node_modules (cd apps/grado2/ui && npm ci)"; fi
 if [ "${E2E:-}" = 1 ] || [ -n "${E2E_ONLY:-}" ]; then
   # драйвер сценариев (tests/e2e/driver.mjs) берёт module.registerHooks — он есть только в Node 22+
@@ -39,4 +46,7 @@ if [ "${E2E:-}" = 1 ] || [ -n "${E2E_ONLY:-}" ]; then
   fi
   [ -d apps/grado2/ui/node_modules ] && step ui-layout node tools/ui_layout_check.mjs --out "$LOG/ui-layout"   # окна нового интерфейса по docs/ux/ui-grid.md
 fi
-if [ ${#fail[@]} -eq 0 ]; then echo "GATE: OK"; else echo "GATE: FAIL (${fail[*]})"; exit 1; fi
+# скипы в итогах (аудит 06.11, 1.9): «покрытие упало незаметно» становится видимым — число в скобках растёт
+SKIPPED=$(cat "$LOG/unit.log" "$LOG/unit-bare.log" "$LOG/connectors.log" "$LOG/core.log" "$LOG/e2e.log" 2>/dev/null \
+  | grep -oE '[0-9]+ skipped|skipped=[0-9]+' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+if [ ${#fail[@]} -eq 0 ]; then echo "GATE: OK (скипы тестов: $SKIPPED)"; else echo "GATE: FAIL (${fail[*]})"; exit 1; fi

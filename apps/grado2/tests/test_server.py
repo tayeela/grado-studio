@@ -424,7 +424,10 @@ class SituationPlanSources(unittest.TestCase):
 class RailRoute(unittest.TestCase):
     """K1 по улицам: маршрут по пешеходной сети OSM до входа в метро (данные из кэша, без сети)."""
     def test_route_goes_around_the_block(self):
-        import gzip, json as J, math, tempfile
+        import gzip
+        import json as J
+        import math
+        import tempfile
         lon, lat = 37.60, 55.75
         kx, ky = 111320 * math.cos(math.radians(lat)), 110540
         ll = lambda x, y: [lon + x / kx, lat + y / ky]
@@ -521,7 +524,6 @@ class PublicHost(unittest.TestCase):
     """За обратным прокси сервер принимает имя из GRADO2_PUBLIC_HOST, чужие имена и чужие страницы — нет."""
 
     def ask(self, host, origin=None):
-        import os
         import threading
         import urllib.request
         srv = S.Server(("127.0.0.1", 0))
@@ -1840,7 +1842,8 @@ class HubHttp(unittest.TestCase):
         self.assertEqual(self.call("/api/hub/teams", cookie="")[0], 401)
 
     def test_team_members_need_explicit_role_and_owner(self):
-        ann, vic, boss = self.login("ann"), self.login("vic"), self.login("boss")
+        ann, vic = self.login("ann"), self.login("vic")
+        self.login("boss")                                            # владелец входит, но в тесте не участвует
         tid = self.call("/api/hub/teams", {"name": "Бюро"}, ann)[2]["id"]
         path = f"/api/hub/team/{tid}/members"
         s, _, j = self.call(path, {"login": "vic"}, ann)                      # без role — 400, ничего не меняется

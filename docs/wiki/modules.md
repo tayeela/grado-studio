@@ -89,7 +89,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `Busy`, `Gate`, `portals_of`
 
-### `apps/grado2/print_io.py` — 2595 стр.
+### `apps/grado2/print_io.py` — 2594 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
@@ -103,7 +103,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `flatten`, `icon_id`, `icon_width`, `icon_ops`
 
-### `apps/grado2/sat_io.py` — 242 стр.
+### `apps/grado2/sat_io.py` — 241 стр.
 
 Спутник Яндекса для AutoCAD: снимок рамки листа, пересчитанный в МСК (как в QGIS владельца).
 
@@ -389,7 +389,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_check_code`, `_inflate`, `_tmp_beside`, `_nowhere`, `_expected_size`, `_net_error`, `_http_get`, `_http_stream`, `_layer_lock`, `catalog`, `_full_names`, `_shp_features`, `_zip_of`, `_geom_bbox`, `_overlaps`, `norm_id`, `GisogdApi`
 
-### `core/connectors/grado_connectors/importer.py` — 65 стр.
+### `core/connectors/grado_connectors/importer.py` — 67 стр.
 
 Импорт снимка в проект: снимок → слой .grado через журнал.
 
@@ -651,11 +651,11 @@ PPTX-бэкенд: тот же список операций, что у PDF и S
 
 Функции: `to_px`, `slug`, `entry`
 
-### `tools/gen_moscow_lgr.py` — 441 стр.
+### `tools/gen_moscow_lgr.py` — 440 стр.
 
 Функции: `to_px`
 
-### `tools/gen_osm_highway.py` — 119 стр.
+### `tools/gen_osm_highway.py` — 118 стр.
 
 Знаки дорог OSM → core/render/grado_render/styles/osm_highway.json.
 
@@ -675,7 +675,7 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_sections`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
 
-### `tools/gate.sh` — 42 стр.
+### `tools/gate.sh` — 52 стр.
 
 Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой): tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py), свежесть сборки нового интерфейса (tools/ui_check.sh) E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин) и проверка раскладки нового интерфейса (tools/ui_layout_check.mjs, ≈3 мин); E2E_ONLY=t71,t82 — только эти группы Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое. Тесты идут под pytest (apps/grado2/requirements-dev.txt); б…
 

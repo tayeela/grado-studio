@@ -26,7 +26,8 @@
 | [AGENTS.md](AGENTS.md) | вход для любых ИИ-агентов, указывает на CLAUDE.md и эту карту |
 | `INDEX.md` | эта карта |
 | `ГРАДО 2.command`, `ГРАДО 2.bat` | запуск двойным щелчком на macOS и Windows |
-| `requirements.txt` | зависимости ГРАДО 2 (ссылка на `apps/grado2/requirements.txt`) |
+| `requirements.txt` | зависимости ГРАДО 2 (ссылка на `apps/grado2/requirements.txt`); рядом `apps/grado2/requirements.lock` — точные версии для CI, сборки и сайта |
+| `pyproject.toml` | конфигурация инструментов разработки (ruff: правила линтера) |
 | `requirements-cloud.txt`, `Dockerfile`, `.dockerignore` | облачный образ **закрытой студии**; к ГРАДО 2 не относятся |
 | `.gitignore`, `.gitattributes` | настройки git (переводы строк для лаунчеров, исключённые файлы) |
 
