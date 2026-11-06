@@ -2405,8 +2405,13 @@ def post_font(c):
     if HUB and (c.who() or {}).get("guest", True):     # совместный сайт: гость не пишет в общую папку шрифтов (аудит 12.10, находка 5)
         return _json(403, {"error": "Гость не может добавлять шрифты: войдите своим логином"})
     req = c.obj()
+    b64 = str(req.get("b64") or "")
+    # длина b64 проверяется до декодирования (аудит 06.11, пункт 0.8): строка в 5 раз больше лимита
+    # распухала в память (пик ~187 МБ на запрос), а предел шрифта всё равно отверг бы её ниже
+    if len(b64) > (fonts.MAX_UPLOAD + 2) // 3 * 4:
+        raise ValueError("Файл шрифта больше 20 МБ")
     try:
-        data = base64.b64decode(str(req.get("b64") or ""), validate=True)
+        data = base64.b64decode(b64, validate=True)
     except ValueError:
         raise ValueError("Файл повреждён при передаче (b64)") from None
     ids = fonts.add_file(str(req.get("name") or "font.ttf"), data)
