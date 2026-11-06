@@ -18,8 +18,8 @@ step() {  # имя, команда…
   else echo "FAIL $name — $LOG/$name.log"; grep -E 'STEP FAILED|^FAIL:|^ERROR:|^FAILED |^ERROR |stale' "$LOG/$name.log" | sort -u | head -8; fail+=("$name"); fi
 }
 if "$PY" -c "import pytest" 2>/dev/null; then T="-m pytest -q -p no:cacheprovider"; else T="-m unittest discover -s"; echo "note pytest не установлен: $PY -m pip install -r apps/grado2/requirements-dev.txt"; fi
-step wiki       python3 tools/wiki.py --check
-step docs       python3 tools/docs_check.py
+step wiki       "$PY" tools/wiki.py --check
+step docs       "$PY" tools/docs_check.py
 step unit       env PYTHONPATH="$PP" "$PY" $T apps/grado2/tests
 step unit-bare  bash -c "cd apps/grado2 && env -u PYTHONPATH '$PY' $T tests"
 step connectors env PYTHONPATH="$PP" "$PY" $T core/connectors/tests
