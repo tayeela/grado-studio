@@ -547,6 +547,51 @@ class PublicHost(unittest.TestCase):
             self.assertEqual(self.ask("evil.example"), 403)
 
 
+class PublicAuthCheck(unittest.TestCase):
+    """Публичная копия без ни одного ключа доступа не поднимается (аудит 06.11, дефект 2)."""
+
+    def setUp(self):
+        import os
+        self.env = mock.patch.dict(os.environ, {"GRADO2_PUBLIC_HOST": "grado.tailink.tech"})
+        self.env.start()
+        self.old_hub, self.old_token = S.HUB, S.TOKEN
+        S.HUB, S.TOKEN = None, ""
+        for k in list(os.environ):                     # ключи Telegram у тестовой машины не трогаем, чистим на время
+            if k.startswith("GRADO2_TG_"):
+                os.environ.pop(k)
+
+    def tearDown(self):
+        S.HUB, S.TOKEN = self.old_hub, self.old_token
+        self.env.stop()
+
+    def test_no_keys_refuses_to_start(self):
+        with self.assertRaises(SystemExit):
+            S.check_public_auth()
+
+    def test_token_is_enough(self):
+        S.TOKEN = "секрет"
+        S.check_public_auth()
+
+    def test_tg_keys_are_enough(self):
+        import os
+        os.environ["GRADO2_TG_CLIENT_ID"] = "id"
+        os.environ["GRADO2_TG_CLIENT_SECRET"] = "sec"
+        try:
+            S.check_public_auth()
+        finally:
+            os.environ.pop("GRADO2_TG_CLIENT_ID")
+            os.environ.pop("GRADO2_TG_CLIENT_SECRET")
+
+    def test_hub_is_enough(self):
+        S.HUB = object()
+        S.check_public_auth()
+
+    def test_without_public_host_no_check(self):
+        import os
+        os.environ.pop("GRADO2_PUBLIC_HOST")
+        S.check_public_auth()                          # локальная копия без ключей — норма
+
+
 class SplitArea(unittest.TestCase):
     """Область больше, чем НСПД или Overpass отдают за раз: части по очереди, объекты склеиваются."""
 

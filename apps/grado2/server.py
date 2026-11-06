@@ -1948,6 +1948,18 @@ def site_cfg():
     return None if HUB else tglogin.config()
 
 
+def check_public_auth():
+    """Публичная копия (GRADO2_PUBLIC_HOST) без единого ключа доступа не поднимается: так сайт открыл бы
+    интернету все проекты молча — потеря env-ключей проходила незаметно (аудит 06.11, дефект 2).
+    Ключ — любой: вход через Telegram (GRADO2_TG_*), GRADO2_TOKEN или совместный режим (хаб)."""
+    if not os.environ.get("GRADO2_PUBLIC_HOST") or HUB or TOKEN or site_cfg():
+        return
+    raise SystemExit(
+        "ГРАДО 2: задан GRADO2_PUBLIC_HOST, но ключей доступа нет — ни входа через Telegram (GRADO2_TG_*),\n"
+        "ни GRADO2_TOKEN, ни совместного режима. Публичная копия открыла бы интернету все проекты.\n"
+        "Задайте ключи входа (docs/guides/install.md, «Сайт») или уберите GRADO2_PUBLIC_HOST.")
+
+
 def same_token(a, b):
     """Сравнение ключей за постоянное время (по байтам), чтобы не выдавать совпавший префикс по времени ответа."""
     return hmac.compare_digest(str(a).encode("utf-8", "replace"), str(b).encode("utf-8", "replace"))
@@ -3278,6 +3290,7 @@ def main(argv=None):
     if hub_enabled(argv):
         HUB = open_hub()
         print(f"ГРАДО 2: совместный режим, хранилище {HUB.root}")
+    check_public_auth()                               # публичная копия без ключей — громкий отказ вместо тихого сайта (аудит 06.11)
     nums = [a for a in argv if not a.startswith("--")]
     port = int(nums[0]) if nums else int(os.environ.get("GRADO2_PORT") or 8650)
     import signal
