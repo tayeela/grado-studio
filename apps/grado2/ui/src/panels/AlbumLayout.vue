@@ -100,7 +100,7 @@ import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEn
 import "../../../web/snap.js";                       // привязка и умные направляющие — та же, что у макетов (кладёт Snap в globalThis)
 import { album, call, editSheet } from "../albumhost.js";
 import { C } from "../collab.js";
-import { notice } from "../project.js";
+import { notice, say } from "../project.js";
 import { project } from "../store.js";
 import { rulerStep } from "../sheet/model.js";
 import FontPicker from "./FontPicker.vue";
@@ -352,7 +352,7 @@ function alignSel(mode) {
     if (isItem(key)) { e.x = r2(e.x + dx); e.y = r2(e.y + dy); } else { e.dx = r2((e.dx || 0) + dx); e.dy = r2((e.dy || 0) + dy); } });
   save({ edits: sheet.value.edits, items: sheet.value.items });
 }
-function pdf() { call(a => a.file("pdf", idx.value)).catch(e => { notice.value = "PDF листа: " + (e.message || e); }); }
+function pdf() { call(a => a.file("pdf", idx.value)).catch(e => say("PDF листа: " + (e.message || e), { level: "error", retry: pdf })); }
 
 /* ---------- мышь: выбор, рамка, перетаскивание, своя надпись, сдвиг листа ---------- */
 let space = false;

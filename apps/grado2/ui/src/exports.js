@@ -3,7 +3,7 @@
    bExpXls): POST /api/export/dxf, /api/export/geojson, /api/export/shp, /api/export/xlsx. Слои выгрузки — все слои проекта и граница
    территории. Файл кладётся в папку загрузок браузера. */
 import { project } from "./store.js";
-import { busy, notice } from "./project.js";
+import { busy, notice, say } from "./project.js";
 import { RESULT } from "./graph.js";
 
 export function exportLayers() {
@@ -30,9 +30,10 @@ async function exportTo(path, body, file, okText, failText) {
       const j = await r.json().catch(() => ({})); console.warn("export", path, r.status, j.error);
       throw new Error(r.status === 413 ? "слишком много данных" : r.status === 401 || r.status === 403 ? "нет доступа, войдите заново" : "сервер не принял данные");
     }
-    saveBlob(await r.blob(), file); notice.value = okText;
+    saveBlob(await r.blob(), file); say(okText, { level: "success" });
   } catch (e) {
-    notice.value = `${failText}: ${e instanceof TypeError ? "нет связи с программой" : e.message}`;
+    say(`${failText}: ${e instanceof TypeError ? "нет связи с программой" : e.message}`,
+      { level: "error", retry: () => exportTo(path, body, file, okText, failText) });
   } finally { busy.value = false; }
 }
 

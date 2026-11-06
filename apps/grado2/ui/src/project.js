@@ -2,11 +2,12 @@
    файл .grado2 с диска и на диск. Те же адреса и тот же формат файла, что у рабочей страницы (web/project.js):
    GET/POST /api/project?name=… и ?autosave=1. Пишет весь файл из project.raw, меняя только то, что правит новый интерфейс
    (слои, группы, виды, граница, схема, листы «Макета листа» — ключ layouts в конце файла). */
-import { nextTick, ref, toRaw, watch } from "vue";
+import { customRef, nextTick, ref, toRaw, watch } from "vue";
 import { basemapId, currentId, project, setProject, viewNow } from "./store.js";
 import { dataRev, graphRev, resetHistory } from "./edit.js";
 import { normGraph } from "./graphfile.js";
 import { setSel } from "./features.js";
+import { toast, dropText, dropBusy } from "./toasts.js";
 
 export const projects = ref([]);      // [{name, modified, size, album_n, star, opened}], новые сверху
 export const trash = ref({ n: 0, items: [] });   // корзина папки проектов: сколько и что в ней (catalog.py)
@@ -14,7 +15,17 @@ export const projDir = ref("");
 export const loadError = ref("");
 export const dirty = ref(false);      // есть правки, не записанные под именем проекта (автосохранение их держит)
 export const busy = ref(false);
-export const notice = ref("");        // последнее сообщение для строки состояния: «Проект сохранён», «Не сохранён: …»
+/* Канал сообщений — карточка внизу справа (toasts.js, panels/Toasts.vue): «Проект сохранён», «Не сохранён: …». */
+const noticeVer = ref(0);             // номер записи: watch не срабатывает на неизменившееся значение, а тот же текст
+                                      // тоже должен выйти карточкой заново (повторные подсказки MapPanel.vue, graph.js, variants.js)
+let noticePrev = "";                  // текст до последней записи: пустая строка гасит его карточку («убрать сообщение»)
+export const notice = customRef((track, trigger) => {
+  let v = "";                         // последний текст сообщения — читают как строку (MapPanel.vue, albumhost.js, cad.js)
+  return {
+    get() { track(); return v; },
+    set(t) { noticePrev = v; v = t; noticeVer.value++; trigger(); },   // каждая запись — новый номер, даже тот же текст
+  };
+});
 export const shared = ref(false);     // общий сервер (совместная работа): своей папки проектов нет, запись идёт через хаб
 export const appVersion = ref("");
 
@@ -31,7 +42,10 @@ async function getJSON(url) {
   return r.json();
 }
 
-function say(t) { notice.value = t; }
+/* Сообщение: say(t, { level, retry }) задаёт уровень тоста и «Повторить» явно; прямые записи (notice.value = …)
+   в других модулях получают уровень по тексту (toasts.js). Пустая строка карточку не создаёт — гасит последнюю. */
+let pendingOpts = null;
+export function say(t, opts) { pendingOpts = opts; if (notice.value === t) notice.value = ""; notice.value = t; }
 
 /* Правка проекта: окна меняют слои и группы в store — следим за ними здесь, а не в каждом окне. */
 export function markDirty() {
@@ -48,6 +62,17 @@ export function markClean() { dirty.value = false; autoTick = tick; }
 export const editTick = () => tick;   // номер последней правки: окно «Листы и альбом» (albumhost.js) знает, видело ли оно её
 watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, () => project.layouts, basemapId, dataRev, graphRev], markDirty, { deep: true });
 
+/* Канал сообщений — тосты (panels/Toasts.vue, toasts.js): каждая запись в notice выходит карточкой; уровень — от say
+   или по тексту. Наблюдатель синхронный: say() успевает передать свои опции именно этой записи. Следит за номером
+   записи, а не за текстом: тот же текст перезапускает карточку, пустая строка гасит последнюю (подсказки MapPanel.vue, cad.js). */
+watch(noticeVer, () => {
+  const t = notice.value;
+  if (!t) { if (noticePrev) dropText(noticePrev); return; }   // «убрать сообщение»
+  const o = pendingOpts; pendingOpts = null; toast(t, o);
+}, { flush: "sync" });
+/* «Записываю…» — как раньше в строке состояния: карточка на время записи проекта, её итог заменяет её сам */
+watch(busy, on => on ? toast("Записываю…", { level: "action", busy: true }) : dropBusy(), { flush: "sync" });
+
 async function load(p, name, source) {
   if (p?.format !== FORMAT) throw new Error("это не файл проекта ГРАДО 2");
   if ((p.version || 1) > VERSION) throw new Error(`файл сохранён более новой версией ГРАДО 2 (формат ${p.version}) — обновите программу`);
@@ -55,7 +80,7 @@ async function load(p, name, source) {
   normGraph(p);                       // схема расчёта: по умолчанию, если её нет; новые поля узлов старой версии
   setProject(p, name, source);
   setSel([]); resetHistory();
-  dirty.value = !!p.dirty; autoTick = tick;
+  dirty.value = !!p.dirty; autoTick = tick; autoFail.value = false;   // новый проект — чистая точка у названия
   await nextTick();                   // наблюдатели за слоями отработали на открытии — дальше всё правки
   quiet = false;
 }
@@ -80,14 +105,14 @@ async function catalogAct(act, body) {
 export async function renameProject(name, to) {
   to = (to || "").trim();
   if (!to || to === name) return true;
-  if (BAD_NAME.test(to)) { say("В названии не должно быть знаков / \\ : * ? \" < > | и точки в начале"); return false; }
+  if (BAD_NAME.test(to)) { say("В названии не должно быть знаков / \\ : * ? \" < > | и точки в начале", { level: "error" }); return false; }
   try {
     const j = await catalogAct("rename", { name, to });
     if (project.file === name) { project.name = project.file = j.name; autosave(); }
-    say(`Проект «${name}» теперь называется «${j.name}»`);
+    say(`Проект «${name}» теперь называется «${j.name}»`, { level: "success" });
     await listProjects();
     return true;
-  } catch (e) { say("Не переименован: " + e.message); return false; }
+  } catch (e) { say("Не переименован: " + e.message, { level: "error", retry: () => renameProject(name, to) }); return false; }
 }
 
 /* Название открытой работы из шапки: сохранённый проект переименовывается, несохранённый — сохраняется под этим названием. */
@@ -96,23 +121,23 @@ export async function retitle(to) {
   if (!to || to === project.name) return true;
   if (project.file) return renameProject(project.file, to);
   const c = await clashOf(to);
-  if (c) { say(`В папке уже есть проект «${c.name}»: выберите другое название`); return false; }
+  if (c) { say(`В папке уже есть проект «${c.name}»: выберите другое название`, { level: "error" }); return false; }
   return saveProject(to);
 }
 
 export async function copyProject(name) {
-  try { const j = await catalogAct("copy", { name }); say(`Сделана копия «${j.name}»`); await listProjects(); return j.name; }
-  catch (e) { say("Копия не сделана: " + e.message); return null; }
+  try { const j = await catalogAct("copy", { name }); say(`Сделана копия «${j.name}»`, { level: "success" }); await listProjects(); return j.name; }
+  catch (e) { say("Копия не сделана: " + e.message, { level: "error", retry: () => copyProject(name) }); return null; }
 }
 
 export async function trashProject(name) {
   try {
     await catalogAct("delete", { name });
     if (project.file === name) { project.file = null; dirty.value = true; autosave(); }   // открытая работа остаётся: «Сохранить» вернёт её в папку
-    say(`Проект «${name}» в корзине. Вернуть — «Корзина» в окне «Проекты»`);
+    say(`Проект «${name}» в корзине. Вернуть — «Корзина» в окне «Проекты»`, { level: "success" });
     await listProjects();
     return true;
-  } catch (e) { say("Не удалён: " + e.message); return false; }
+  } catch (e) { say("Не удалён: " + e.message, { level: "error", retry: () => trashProject(name) }); return false; }
 }
 
 export async function listTrash() {
@@ -121,13 +146,13 @@ export async function listTrash() {
 }
 
 export async function restoreProject(id) {
-  try { const j = await catalogAct("restore", { id }); say(`Проект «${j.name}» вернулся в папку`); await Promise.all([listProjects(), listTrash()]); return j.name; }
-  catch (e) { say("Не возвращён: " + e.message); return null; }
+  try { const j = await catalogAct("restore", { id }); say(`Проект «${j.name}» вернулся в папку`, { level: "success" }); await Promise.all([listProjects(), listTrash()]); return j.name; }
+  catch (e) { say("Не возвращён: " + e.message, { level: "error", retry: () => restoreProject(id) }); return null; }
 }
 
 export async function starProject(p) {
   const on = !p.star; p.star = on;
-  try { await catalogAct("star", { name: p.name, on }); } catch (e) { p.star = !on; say("Не отмечен: " + e.message); }
+  try { await catalogAct("star", { name: p.name, on }); } catch (e) { p.star = !on; say("Не отмечен: " + e.message, { level: "error", retry: () => starProject(p) }); }
 }
 
 export async function openProject(name) {
@@ -139,10 +164,10 @@ export async function openProject(name) {
     await load(p, name, "file");
     project.file = name; dirty.value = false; fileBase = Number(r.headers.get("X-Grado-Modified")) || null;
     loadError.value = "";
-    say(`Открыт проект «${name}»`);
+    say(`Открыт проект «${name}»`, { level: "success" });
     autosave();
   } catch (e) {
-    say("Проект не открылся: " + e.message);
+    say("Проект не открылся: " + e.message, { level: "error", retry: () => openProject(name) });
   } finally { busy.value = false; }
 }
 
@@ -221,7 +246,7 @@ export async function saveProject(name, { replace = false } = {}) {
   if (shared.value) { say("Общий сервер: правки уходят на сервер сами"); return false; }
   name = (name ?? project.name ?? "").trim();
   if (!name) return false;
-  if (BAD_NAME.test(name)) { say("В названии не должно быть знаков / \\ : * ? \" < > | и точки в начале"); return false; }
+  if (BAD_NAME.test(name)) { say("В названии не должно быть знаков / \\ : * ? \" < > | и точки в начале", { level: "error" }); return false; }
   const prev = [project.name, project.file], base = name === project.file ? fileBase : null;
   project.name = name; project.file = name;
   const t = tick, body = projectJSON({ dirty: false });
@@ -234,12 +259,13 @@ export async function saveProject(name, { replace = false } = {}) {
     fileBase = j.modified ?? null;
     if (tick === t) dirty.value = false;
     project.source = "file";
-    say(`Проект «${name}» сохранён`);
+    autoFail.value = false;           // записано под именем — точка «автосохранение не прошло» не нужна
+    say(`Проект «${name}» сохранён`, { level: "success" });
     autosave();
     return true;
   } catch (e) {
     [project.name, project.file] = prev;
-    say("Проект не сохранён: " + e.message);
+    say("Проект не сохранён: " + e.message, { level: "error", retry: () => saveProject(name, { replace }) });
     return false;
   } finally { busy.value = false; }
 }
@@ -248,7 +274,7 @@ export async function saveProject(name, { replace = false } = {}) {
 export async function newProject() {
   await load({ format: FORMAT, version: VERSION, name: null, groups: [], layers: [], data: {}, views: [], album: { meta: {}, sheets: [] } }, "", "new");
   project.file = null; dirty.value = false; loadError.value = "";
-  say("Новый проект. Прежний остался в папке проектов, если был сохранён");
+  say("Новый проект. Прежний остался в папке проектов, если был сохранён", { level: "success" });
   autosave();
 }
 
@@ -259,8 +285,8 @@ export async function openFile(file) {
     p.name ||= file.name.replace(/\.grado2$/i, "");
     await load(p, p.name, "disk");
     project.file = null; dirty.value = true; markDirty();
-    say(`Открыт файл «${file.name}». Сохраните проект, чтобы он появился в папке проектов`);
-  } catch (e) { say("Файл не открылся: " + e.message); }
+    say(`Открыт файл «${file.name}». Сохраните проект, чтобы он появился в папке проектов`, { level: "success" });
+  } catch (e) { say("Файл не открылся: " + e.message, { level: "error", retry: () => openFile(file) }); }
 }
 
 export function downloadProject() {
@@ -272,6 +298,7 @@ export function downloadProject() {
 
 /* ---------- автосохранение: правки затихли на 1,5 с, но не реже раза в 15 с; одна запись за раз ---------- */
 let autoBusy = false, autoAgain = false;
+export const autoFail = ref(false);   // последняя попытка автосохранения не прошла: точка у названия проекта (App.vue)
 export async function autosave() {
   if (shared.value || quiet) return;
   if (autoBusy) { autoAgain = true; return; }
@@ -279,9 +306,13 @@ export async function autosave() {
   try {
     const r = await fetch("/api/project?autosave=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: projectJSON() });
     if (r.ok) autoTick = t;
-  } catch { /* сервер не ответил — следующая правка попробует снова */ }
+    autoFail.value = !r.ok;           // HTTP-ошибка тоже молчание: точка у названия
+  } catch { autoFail.value = true;    // сервер не ответил — точка у названия, следующая правка попробует снова
+  }
   finally { autoBusy = false; if (autoAgain) { autoAgain = false; autosave(); } }
 }
+/* о неудаче автосохранения говорят один раз за серию (потом точка у названия молча ждёт связи) */
+watch(autoFail, fail => { if (fail) toast("Нет связи с сервером: правки сохранятся, когда связь вернётся", { level: "action" }); });
 setInterval(() => {
   if (quiet || tick === autoTick || autoBusy) return;
   const t = Date.now();

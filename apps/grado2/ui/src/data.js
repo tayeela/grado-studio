@@ -10,7 +10,7 @@ import * as turf from "@turf/turf";
 import "../../web/roles.js";
 import { currentId, project } from "./store.js";
 import { lyr, mapApi, normGroups, touchData } from "./edit.js";
-import { busy, markDirty, notice } from "./project.js";
+import { busy, markDirty, notice, say } from "./project.js";
 import { setSel, sizeOf } from "./features.js";
 import { CAT, assignCats, fullStyle } from "./symbology.js";
 import { plural } from "./geom.js";
@@ -540,7 +540,7 @@ export async function startOgd(req, codes, extra = []) {
   try { await api("/api/ogd_all/start", { ...(req.sheet ? { sheet: req.sheet } : { bbox: req.bbox }), codes, extra, where: req.where, boundary: req.boundary || null, name: req.name }); }
   catch (e) {
     if (/уже идёт|already/i.test(e.message)) { notice.value = "Выгрузка ГИС ОГД уже идёт — показываю её ход. Новая начнётся, когда эта закончится."; watchOgd(); return false; }
-    notice.value = "Выгрузка ГИС ОГД не началась: " + e.message; return false;
+    say("Выгрузка ГИС ОГД не началась: " + e.message, { level: "error", retry: () => startOgd(req, codes, extra) }); return false;
   }
   notice.value = `Выгрузка отмеченных слоёв в DXF по ${req.where}. Ход — в окне «Данные»; работать можно дальше.`;
   watchOgd(); return true;
@@ -552,7 +552,7 @@ export function areaOgdReq() {
     where: "области загрузки", name: `ОГД ${project.name || "область"}` };
 }
 export async function stopOgd() {
-  try { await api("/api/ogd_all/cancel", {}); notice.value = "Остановка: текущий слой дочитывается, потом выгрузка ГИС ОГД встанет."; } catch (e) { notice.value = "Не остановлено: " + e.message; }
+  try { await api("/api/ogd_all/cancel", {}); notice.value = "Остановка: текущий слой дочитывается, потом выгрузка ГИС ОГД встанет."; } catch (e) { say("Не остановлено: " + e.message, { level: "error", retry: stopOgd }); }
 }
 /* открыли программу во время выгрузки (начатой раньше или в другой вкладке) — показываем её ход */
 export function ogdResume() { api("/api/ogd_all/status").then(st => { if (st.running) watchOgd(); }).catch(() => { }); }

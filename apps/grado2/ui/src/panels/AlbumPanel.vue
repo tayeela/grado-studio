@@ -303,7 +303,7 @@ import { ArrowDown, ArrowUp, Camera, CircleAlert, Eye, EyeOff, FileDown, FilePlu
 import { ALB } from "../viewframesmap.js";
 import { album, call, engineState, startEngine, sync } from "../albumhost.js";
 import { C } from "../collab.js";
-import { markDirty, notice } from "../project.js";
+import { markDirty, notice, say } from "../project.js";
 import { project, sheetNav, winApi } from "../store.js";
 import { newId, newSheet } from "../sheet/model.js";
 import { printAll } from "./sheetmaps.js";
@@ -471,7 +471,7 @@ function addOwn() {
 }
 async function ownPdf() {
   ownBusy.value = true;
-  try { await printAll(JSON.parse(JSON.stringify(own.value)), meta.value, project.name || "листы"); } catch (e) { notice.value = "PDF листов: " + (e.message || e); } finally { ownBusy.value = false; }
+  try { await printAll(JSON.parse(JSON.stringify(own.value)), meta.value, project.name || "листы"); } catch (e) { say("PDF листов: " + (e.message || e), { level: "error", retry: ownPdf }); } finally { ownBusy.value = false; }
 }
 /* раздел альбома раскрыт, если в альбоме есть листы; вопрос, ход сборки или «не всё готово» раскрывают его сами */
 const albOpen = ref(!!project.raw?.album?.sheets?.length);
