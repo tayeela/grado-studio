@@ -20,7 +20,7 @@
 | `test_export.py` | Http, GeoJsonExport, GeoJsonExportHardening, XlsxExport, PlaceByArea | 20 |
 | `test_export_shp.py` | ShpExport, FieldNames | 4 |
 | `test_file_io.py` | FileImport, PortalFields, Fgistp, SizeCeiling | 21 |
-| `test_fonts.py` | Fonts | 9 |
+| `test_fonts.py` | Fonts | 10 |
 | `test_gpzones_js.py` | GpZonesJs | 1 |
 | `test_hub.py` | Base, Accounts, SplitJoin, Projects, Roles, PushConflict, History, Comments, Presence, Events, Teams, Hardening, Stage2, AlbumSection | 152 |
 | `test_insol.py` | Insolation | 1 |
@@ -40,7 +40,7 @@
 | `test_roles_js.py` | RolesJs, LayerRolesApi | 5 |
 | `test_rowsgeom_js.py` | RowsGeomJs | 1 |
 | `test_sat.py` | FakeTiles, SatExport | 8 |
-| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 161 |
+| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, PublicAuthCheck, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 167 |
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |
 | `test_sheetmodel_js.py` | SheetModelJs | 1 |
 | `test_snap_js.py` | SnapJs | 1 |

@@ -24,7 +24,6 @@ RuleRenderer по тегу OSM `highway`). Правило 2 CLAUDE.md: JSON ге
 учитывает; иначе значения молча не находятся.
 """
 import json
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]

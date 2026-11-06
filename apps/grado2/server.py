@@ -82,6 +82,7 @@ AUTOSAVE = ".autosave"
 
 # ---------- Источники данных: ключ слоя → (вид, параметр, название) ----------
 # ключ → (коннектор, параметр, название слоя)
+_SOURCES_LOCK = threading.Lock()                       # слои ogd.* добавляются из fetch() под замком (аудит 06.11, находка 9)
 SOURCES = {
     "nspd.parcels": ("nspd", [36368], "Земельные участки (ЕГРН)"),
     "nspd.buildings": ("nspd", [36369], "Здания (ЕГРН)"),
@@ -1004,16 +1005,20 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
     Кроме ключей SOURCES — любой слой каталога ГИС ОГД ключом «ogd.<код слоя>» (окно «Исходные данные»).
     _gate — владелец очереди к порталам (portalgate.py) у вложенной выгрузки частей: она идёт как часть этой же выгрузки."""
     gate_token = _gate or object()
-    for k in keys:
-        if k.startswith("ogd.") and k not in SOURCES:
+    additions = {}                                     # к SOURCES добавляем одним куском под замком (аудит 06.11, находка 9):
+    for k in keys:                                     # два запроса совместного режима добавляют один слой одновременно
+        if k.startswith("ogd.") and k not in SOURCES and k not in additions:
             try:
                 it = next((x for x in ogd_catalog() if x.get("code") == k[4:] and x.get("type") in ("layer", "virtual")), None)
             except ConnectorError:
                 it = None
             if it:
-                SOURCES[k] = ("gisogd", {it["code"]: None}, f"{it['name']} (ОГД)")
+                additions[k] = ("gisogd", {it["code"]: None}, f"{it['name']} (ОГД)")
             elif (twin := next((x for x in SOURCES if x != k and source_ogd_code(x) == k[4:]), None)):
-                SOURCES[k] = ("gisogd", {k[4:]: None}, SOURCES[twin][2])      # каталог не ответил — тот же слой по названию подборки
+                additions[k] = ("gisogd", {k[4:]: None}, SOURCES[twin][2])    # каталог не ответил — тот же слой по названию подборки
+    if additions:
+        with _SOURCES_LOCK:
+            SOURCES.update(additions)
     # ключ, которого нет ни в SOURCES, ни в каталоге ГИС ОГД, раньше пропадал молча: ни слоя, ни ошибки (#51, пункт 2)
     layers, errors = {}, {k: "нет такого источника данных" for k in keys if k not in SOURCES}
     keys = [k for k in keys if k in SOURCES]
@@ -1172,7 +1177,7 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
         после реформы ТиНАО, каждый район целиком в одном округе, округ — ровно сумма его районов, районы покрывают
         Москву без щелей и наложений. В ГИС ОГД округа ТиНАО собраны из старых поселений, а новые районы нарисованы
         схематично — собирать из них границы не получилось (v0.65.4–0.65.6)."""
-        doc = json.loads(ADMIN_FILE.read_text(encoding="utf-8"))
+        doc = _admin_doc()
         cx, cy = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
         home, feats = None, []
         for f in doc["features"]:
@@ -1420,6 +1425,16 @@ def _rail_nodes(raw):
 WALK_HW = ("footway|path|pedestrian|living_street|residential|service|unclassified|tertiary|tertiary_link|secondary|"
            "secondary_link|primary|primary_link|steps|cycleway|track|corridor|crossing")
 _ROUTE_MEMO = {}
+MAX_ROUTE_MEMO = 256                   # последних маршрутов K1 в памяти (аудит 06.11, находка 11: без лимита сайт тек)
+_ROUTE_LOCK = threading.Lock()
+
+
+def _route_memo_put(key, value):
+    """Результат Дейкстры в память: под замком и с потолком, как _PLACE_MEMO (самый старый — первый)."""
+    with _ROUTE_LOCK:
+        _ROUTE_MEMO[key] = value
+        while len(_ROUTE_MEMO) > MAX_ROUTE_MEMO:
+            del _ROUTE_MEMO[next(iter(_ROUTE_MEMO))]
 
 
 def rail_route(lon, lat, radius=2400):
@@ -1435,7 +1450,7 @@ def rail_route(lon, lat, radius=2400):
     raw = json.loads((CACHE / "place" / f"{key[0]}_{key[1]}.json").read_text("utf-8"))
     rail = _rail_nodes(raw)
     if not rail:
-        _ROUTE_MEMO[key] = None
+        _route_memo_put(key, None)
         return None
     cache = CACHE / "place" / f"walk_{key[0]}_{key[1]}_{radius}.json.gz"
     ways = None
@@ -1468,7 +1483,7 @@ def rail_route(lon, lat, radius=2400):
             adj[i].append((j, d))
             adj[j].append((i, d))
     if not pts:
-        _ROUTE_MEMO[key] = None
+        _route_memo_put(key, None)
         return None
     nearest = lambda q: min(range(len(pts)), key=lambda i: (pts[i][0] - q[0]) ** 2 + (pts[i][1] - q[1]) ** 2)
     start = nearest((0.0, 0.0))
@@ -1494,7 +1509,7 @@ def rail_route(lon, lat, radius=2400):
         if best is None or route < best["route_m"]:
             best = {"route_m": round(route), "straight_m": round(math.dist(q, (0.0, 0.0))),
                     "station": e["tags"].get("name") or (f"вход {e['tags']['ref']}" if e["tags"].get("ref") else "вход")}
-    _ROUTE_MEMO[key] = best
+    _route_memo_put(key, best)
     return best
 
 
@@ -1511,14 +1526,22 @@ OKRUG_FULL = {"ЦАО": "Центральный", "САО": "Северный", 
               "НАО": "Новомосковский", "ТАО": "Троицкий"}
 MAX_PLACE_VERTICES = 100000
 _ADMIN_DIST = {}
+_ADMIN_DOC = {}
+
+
+def _admin_doc():
+    """Эталон адмделения целиком (docs/standards/admin/moscow-adm.geojson): читается один раз.
+    Аудит 06.11, находка 0.5: run_admin парсил 2,9 МБ на каждый запрос слоя."""
+    if ADMIN_FILE not in _ADMIN_DOC:
+        _ADMIN_DOC[ADMIN_FILE] = json.loads(ADMIN_FILE.read_text(encoding="utf-8"))
+    return _ADMIN_DOC[ADMIN_FILE]
 
 
 def _admin_districts():
     """Районы из эталона (docs/standards/admin/moscow-adm.geojson): [(название, код округа, полигоны, bbox)]; читается один раз."""
     if ADMIN_FILE not in _ADMIN_DIST:
-        doc = json.loads(ADMIN_FILE.read_text(encoding="utf-8"))
         out = []
-        for f in doc["features"]:
+        for f in _admin_doc()["features"]:
             pr, g = f["properties"], f["geometry"]
             if pr.get("Уровень") != "район":
                 continue
@@ -1670,13 +1693,16 @@ _SAVE_LOCK = threading.Lock()
 # ---------- Проекты на диске: запись, версии, размер папки ----------
 def atomic_write(path, body):
     """Запись файла целиком или никак: свой временный файл рядом + os.replace. Общий «.tmp» на всех писателей
-    давал при двух одновременных сохранениях (две вкладки, автосейв) склейку чужих хвостов — битый JSON."""
+    давал при двух одновременных сохранениях (две вкладки, автосейв) склейку чужих хвостов — битый JSON.
+    flush+fsync перед заменой — как в hub.py: без них «мигнул свет» оставлял пустой файл проекта (аудит 06.11, дефект 3)."""
     import tempfile
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix="." + path.stem[:40] + ".", suffix=".part")
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(body)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -1943,6 +1969,18 @@ def open_hub(root=None):
 def site_cfg():
     """Ключи бота, если сайт закрыт входом через Telegram (хаб выключен), иначе None."""
     return None if HUB else tglogin.config()
+
+
+def check_public_auth():
+    """Публичная копия (GRADO2_PUBLIC_HOST) без единого ключа доступа не поднимается: так сайт открыл бы
+    интернету все проекты молча — потеря env-ключей проходила незаметно (аудит 06.11, дефект 2).
+    Ключ — любой: вход через Telegram (GRADO2_TG_*), GRADO2_TOKEN или совместный режим (хаб)."""
+    if not os.environ.get("GRADO2_PUBLIC_HOST") or HUB or TOKEN or site_cfg():
+        return
+    raise SystemExit(
+        "ГРАДО 2: задан GRADO2_PUBLIC_HOST, но ключей доступа нет — ни входа через Telegram (GRADO2_TG_*),\n"
+        "ни GRADO2_TOKEN, ни совместного режима. Публичная копия открыла бы интернету все проекты.\n"
+        "Задайте ключи входа (docs/guides/install.md, «Сайт») или уберите GRADO2_PUBLIC_HOST.")
 
 
 def same_token(a, b):
@@ -2367,8 +2405,13 @@ def post_font(c):
     if HUB and (c.who() or {}).get("guest", True):     # совместный сайт: гость не пишет в общую папку шрифтов (аудит 12.10, находка 5)
         return _json(403, {"error": "Гость не может добавлять шрифты: войдите своим логином"})
     req = c.obj()
+    b64 = str(req.get("b64") or "")
+    # длина b64 проверяется до декодирования (аудит 06.11, пункт 0.8): строка в 5 раз больше лимита
+    # распухала в память (пик ~187 МБ на запрос), а предел шрифта всё равно отверг бы её ниже
+    if len(b64) > (fonts.MAX_UPLOAD + 2) // 3 * 4:
+        raise ValueError("Файл шрифта больше 20 МБ")
     try:
-        data = base64.b64decode(str(req.get("b64") or ""), validate=True)
+        data = base64.b64decode(b64, validate=True)
     except ValueError:
         raise ValueError("Файл повреждён при передаче (b64)") from None
     ids = fonts.add_file(str(req.get("name") or "font.ttf"), data)
@@ -3275,6 +3318,7 @@ def main(argv=None):
     if hub_enabled(argv):
         HUB = open_hub()
         print(f"ГРАДО 2: совместный режим, хранилище {HUB.root}")
+    check_public_auth()                               # публичная копия без ключей — громкий отказ вместо тихого сайта (аудит 06.11)
     nums = [a for a in argv if not a.startswith("--")]
     port = int(nums[0]) if nums else int(os.environ.get("GRADO2_PORT") or 8650)
     import signal

@@ -8,7 +8,7 @@
 
 import math
 
-from .curves import Arc, CurveError
+from .curves import Arc
 
 
 class PathError(ValueError):

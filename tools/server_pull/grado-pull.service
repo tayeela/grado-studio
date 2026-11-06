@@ -1,4 +1,7 @@
 # Служба выкладки ГРАДО 2 самим сервером msk: один запуск tools/server_pull/grado-pull.sh (ставит install-on-msk.sh).
+# Песочница (аудит 06.11, 1.8): вся файловая система только на чтение, писать можно в /opt/grado (код, ключ, venv)
+# и в /run/systemd (systemctl restart); без новых привилегий; /home и ядро недоступны. Служба остаётся под root —
+# перезапуск grado из скрипта; проверка песочницы — на msk при следующей установке: journalctl -u grado-pull.
 [Unit]
 Description=GRADO 2: pull main from GitHub and deploy grado.tailink.tech
 After=network-online.target grado.service
@@ -8,3 +11,11 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/opt/grado/bin/grado-pull.sh
 TimeoutStartSec=15min
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/grado /run/systemd
+ProtectHome=read-only
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes

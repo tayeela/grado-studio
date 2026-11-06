@@ -424,7 +424,10 @@ class SituationPlanSources(unittest.TestCase):
 class RailRoute(unittest.TestCase):
     """K1 по улицам: маршрут по пешеходной сети OSM до входа в метро (данные из кэша, без сети)."""
     def test_route_goes_around_the_block(self):
-        import gzip, json as J, math, tempfile
+        import gzip
+        import json as J
+        import math
+        import tempfile
         lon, lat = 37.60, 55.75
         kx, ky = 111320 * math.cos(math.radians(lat)), 110540
         ll = lambda x, y: [lon + x / kx, lat + y / ky]
@@ -498,6 +501,20 @@ class Projects(unittest.TestCase):
             S.save_project("x", b"{not json")
         self.assertFalse(S.project_path("x").exists())
 
+    def test_atomic_write_fsyncs_before_replace(self):
+        # аудит 06.11, дефект 3: без flush+fsync «мигнул свет» оставлял пустой файл проекта
+        import tempfile
+        order = []
+        real_replace = S.os.replace
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "Проект.grado2"
+            with mock.patch.object(S.os, "fsync", side_effect=lambda fd: order.append("fsync")), \
+                 mock.patch.object(S.os, "replace",
+                                   side_effect=lambda a, b: (order.append("replace"), real_replace(a, b))[1]):
+                S.atomic_write(path, b'{"format": "grado2"}')
+            self.assertEqual(order, ["fsync", "replace"])
+            self.assertEqual(path.read_bytes(), b'{"format": "grado2"}')
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -507,7 +524,6 @@ class PublicHost(unittest.TestCase):
     """За обратным прокси сервер принимает имя из GRADO2_PUBLIC_HOST, чужие имена и чужие страницы — нет."""
 
     def ask(self, host, origin=None):
-        import os
         import threading
         import urllib.request
         srv = S.Server(("127.0.0.1", 0))
@@ -531,6 +547,51 @@ class PublicHost(unittest.TestCase):
             self.assertEqual(self.ask("grado.tailink.tech", "https://grado.tailink.tech"), 200)
             self.assertEqual(self.ask("grado.tailink.tech", "https://evil.example"), 403)
             self.assertEqual(self.ask("evil.example"), 403)
+
+
+class PublicAuthCheck(unittest.TestCase):
+    """Публичная копия без ни одного ключа доступа не поднимается (аудит 06.11, дефект 2)."""
+
+    def setUp(self):
+        import os
+        self.env = mock.patch.dict(os.environ, {"GRADO2_PUBLIC_HOST": "grado.tailink.tech"})
+        self.env.start()
+        self.old_hub, self.old_token = S.HUB, S.TOKEN
+        S.HUB, S.TOKEN = None, ""
+        for k in list(os.environ):                     # ключи Telegram у тестовой машины не трогаем, чистим на время
+            if k.startswith("GRADO2_TG_"):
+                os.environ.pop(k)
+
+    def tearDown(self):
+        S.HUB, S.TOKEN = self.old_hub, self.old_token
+        self.env.stop()
+
+    def test_no_keys_refuses_to_start(self):
+        with self.assertRaises(SystemExit):
+            S.check_public_auth()
+
+    def test_token_is_enough(self):
+        S.TOKEN = "секрет"
+        S.check_public_auth()
+
+    def test_tg_keys_are_enough(self):
+        import os
+        os.environ["GRADO2_TG_CLIENT_ID"] = "id"
+        os.environ["GRADO2_TG_CLIENT_SECRET"] = "sec"
+        try:
+            S.check_public_auth()
+        finally:
+            os.environ.pop("GRADO2_TG_CLIENT_ID")
+            os.environ.pop("GRADO2_TG_CLIENT_SECRET")
+
+    def test_hub_is_enough(self):
+        S.HUB = object()
+        S.check_public_auth()
+
+    def test_without_public_host_no_check(self):
+        import os
+        os.environ.pop("GRADO2_PUBLIC_HOST")
+        S.check_public_auth()                          # локальная копия без ключей — норма
 
 
 class SplitArea(unittest.TestCase):
@@ -1781,7 +1842,8 @@ class HubHttp(unittest.TestCase):
         self.assertEqual(self.call("/api/hub/teams", cookie="")[0], 401)
 
     def test_team_members_need_explicit_role_and_owner(self):
-        ann, vic, boss = self.login("ann"), self.login("vic"), self.login("boss")
+        ann, vic = self.login("ann"), self.login("vic")
+        self.login("boss")                                            # владелец входит, но в тесте не участвует
         tid = self.call("/api/hub/teams", {"name": "Бюро"}, ann)[2]["id"]
         path = f"/api/hub/team/{tid}/members"
         s, _, j = self.call(path, {"login": "vic"}, ann)                      # без role — 400, ничего не меняется

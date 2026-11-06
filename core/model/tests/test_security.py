@@ -1,6 +1,5 @@
 """Защита от враждебных входов: SQL-идентификаторы, геометрия, файл проекта."""
 
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path

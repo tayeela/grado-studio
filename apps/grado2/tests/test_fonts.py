@@ -2,7 +2,6 @@
 PDF, PPTX и SVG, настройка альбома labelFont и правка надписи макета."""
 
 import io
-import shutil
 import sys
 import tempfile
 import unittest
@@ -167,6 +166,15 @@ class Fonts(unittest.TestCase):
         c.q = lambda k, d="": "f:000000000000" if k == "f" else ""
         self.assertEqual(S.get_font_file(c).status_code, 404)
 
+    def test_oversized_b64_rejected_before_decode(self):
+        """Аудит 06.11, пункт 0.8: длина b64 проверяется до декодирования — запрос в разы больше
+        лимита шрифта отвергается, не распухая в память."""
+        S = server
+        c = mock.Mock()
+        c.q = lambda k, d="": ""
+        c.obj = lambda: {"name": "a.ttf", "b64": "QUFB" * (fonts.MAX_UPLOAD // 16)}   # ~5x лимита шрифта
+        with self.assertRaises(ValueError):
+            S.post_font(c)
 
     def test_hub_guest_cannot_upload_and_folder_has_a_cap(self):
         """Аудит 12.10.2026, находка 5: гость совместного сайта шрифты не добавляет; у своих шрифтов общий предел."""

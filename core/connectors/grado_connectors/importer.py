@@ -34,8 +34,10 @@ def import_snapshot(store, sid, project, session, layer_code,
     store.verify(sid)
 
     codes = [info["code"] for info in project.layers()]
-    layer = project.layer(layer_code) if layer_code in codes \
-        else project.add_layer(layer_code)
+    if layer_code in codes:
+        project.layer(layer_code)
+    else:
+        project.add_layer(layer_code)
     cls = project.classifier.get(layer_code)
     attr_types = {a["id"]: a["type"] for a in cls.attrs}
     # по умолчанию — свойства с именами атрибутов классификатора
