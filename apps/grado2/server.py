@@ -82,6 +82,7 @@ AUTOSAVE = ".autosave"
 
 # ---------- Источники данных: ключ слоя → (вид, параметр, название) ----------
 # ключ → (коннектор, параметр, название слоя)
+_SOURCES_LOCK = threading.Lock()                       # слои ogd.* добавляются из fetch() под замком (аудит 06.11, находка 9)
 SOURCES = {
     "nspd.parcels": ("nspd", [36368], "Земельные участки (ЕГРН)"),
     "nspd.buildings": ("nspd", [36369], "Здания (ЕГРН)"),
@@ -1004,16 +1005,20 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
     Кроме ключей SOURCES — любой слой каталога ГИС ОГД ключом «ogd.<код слоя>» (окно «Исходные данные»).
     _gate — владелец очереди к порталам (portalgate.py) у вложенной выгрузки частей: она идёт как часть этой же выгрузки."""
     gate_token = _gate or object()
-    for k in keys:
-        if k.startswith("ogd.") and k not in SOURCES:
+    additions = {}                                     # к SOURCES добавляем одним куском под замком (аудит 06.11, находка 9):
+    for k in keys:                                     # два запроса совместного режима добавляют один слой одновременно
+        if k.startswith("ogd.") and k not in SOURCES and k not in additions:
             try:
                 it = next((x for x in ogd_catalog() if x.get("code") == k[4:] and x.get("type") in ("layer", "virtual")), None)
             except ConnectorError:
                 it = None
             if it:
-                SOURCES[k] = ("gisogd", {it["code"]: None}, f"{it['name']} (ОГД)")
+                additions[k] = ("gisogd", {it["code"]: None}, f"{it['name']} (ОГД)")
             elif (twin := next((x for x in SOURCES if x != k and source_ogd_code(x) == k[4:]), None)):
-                SOURCES[k] = ("gisogd", {k[4:]: None}, SOURCES[twin][2])      # каталог не ответил — тот же слой по названию подборки
+                additions[k] = ("gisogd", {k[4:]: None}, SOURCES[twin][2])    # каталог не ответил — тот же слой по названию подборки
+    if additions:
+        with _SOURCES_LOCK:
+            SOURCES.update(additions)
     # ключ, которого нет ни в SOURCES, ни в каталоге ГИС ОГД, раньше пропадал молча: ни слоя, ни ошибки (#51, пункт 2)
     layers, errors = {}, {k: "нет такого источника данных" for k in keys if k not in SOURCES}
     keys = [k for k in keys if k in SOURCES]
@@ -1420,6 +1425,16 @@ def _rail_nodes(raw):
 WALK_HW = ("footway|path|pedestrian|living_street|residential|service|unclassified|tertiary|tertiary_link|secondary|"
            "secondary_link|primary|primary_link|steps|cycleway|track|corridor|crossing")
 _ROUTE_MEMO = {}
+MAX_ROUTE_MEMO = 256                   # последних маршрутов K1 в памяти (аудит 06.11, находка 11: без лимита сайт тек)
+_ROUTE_LOCK = threading.Lock()
+
+
+def _route_memo_put(key, value):
+    """Результат Дейкстры в память: под замком и с потолком, как _PLACE_MEMO (самый старый — первый)."""
+    with _ROUTE_LOCK:
+        _ROUTE_MEMO[key] = value
+        while len(_ROUTE_MEMO) > MAX_ROUTE_MEMO:
+            del _ROUTE_MEMO[next(iter(_ROUTE_MEMO))]
 
 
 def rail_route(lon, lat, radius=2400):
@@ -1435,7 +1450,7 @@ def rail_route(lon, lat, radius=2400):
     raw = json.loads((CACHE / "place" / f"{key[0]}_{key[1]}.json").read_text("utf-8"))
     rail = _rail_nodes(raw)
     if not rail:
-        _ROUTE_MEMO[key] = None
+        _route_memo_put(key, None)
         return None
     cache = CACHE / "place" / f"walk_{key[0]}_{key[1]}_{radius}.json.gz"
     ways = None
@@ -1468,7 +1483,7 @@ def rail_route(lon, lat, radius=2400):
             adj[i].append((j, d))
             adj[j].append((i, d))
     if not pts:
-        _ROUTE_MEMO[key] = None
+        _route_memo_put(key, None)
         return None
     nearest = lambda q: min(range(len(pts)), key=lambda i: (pts[i][0] - q[0]) ** 2 + (pts[i][1] - q[1]) ** 2)
     start = nearest((0.0, 0.0))
@@ -1494,7 +1509,7 @@ def rail_route(lon, lat, radius=2400):
         if best is None or route < best["route_m"]:
             best = {"route_m": round(route), "straight_m": round(math.dist(q, (0.0, 0.0))),
                     "station": e["tags"].get("name") or (f"вход {e['tags']['ref']}" if e["tags"].get("ref") else "вход")}
-    _ROUTE_MEMO[key] = best
+    _route_memo_put(key, best)
     return best
 
 
