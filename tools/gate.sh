@@ -27,13 +27,18 @@ step connectors env PYTHONPATH="$PP" "$PY" $T core/connectors/tests
 step core       bash -c "set -e; for m in compute geom layout model reactive render; do PYTHONPATH='$PP' '$PY' $T core/\$m/tests; done"
 # правки интерфейса в рабочем дереве? без node_modules проверка типов и сборки молча пропускалась (аудит 06.11, 1.4)
 UI_TOUCHED=$(git diff HEAD --name-only -- apps/grado2/ui "apps/grado2/web/*.js" | wc -l | tr -d ' ')
-if [ -x tools/node_modules/.bin/tsc ]; then  # files with // @ts-check in apps/grado2/web; install: (cd tools && npm ci)
+HAVE_NODE=0; command -v node >/dev/null 2>&1 && HAVE_NODE=1
+if [ -x tools/node_modules/.bin/tsc ] && [ "$HAVE_NODE" = 1 ]; then  # files with // @ts-check in apps/grado2/web; install: (cd tools && npm ci)
   step types    tools/node_modules/.bin/tsc -p tools/ts/tsconfig.json
+elif [ "$HAVE_NODE" = 0 ] && [ -x tools/node_modules/.bin/tsc ]; then
+  echo "skip types — node_modules есть, но node не в PATH"
 elif [ "$UI_TOUCHED" != 0 ]; then
   echo "FAIL types — правки интерфейса есть, а tools/node_modules нет: (cd tools && npm ci)"; fail+=(types)
 else echo "skip types — no tools/node_modules (cd tools && npm ci)"; fi
-if [ -d apps/grado2/ui/node_modules ]; then  # новый интерфейс: собранное совпадает с исходниками; install: (cd apps/grado2/ui && npm ci)
+if [ -d apps/grado2/ui/node_modules ] && [ "$HAVE_NODE" = 1 ]; then  # новый интерфейс: собранное совпадает с исходниками; install: (cd apps/grado2/ui && npm ci)
   step ui       tools/ui_check.sh
+elif [ "$HAVE_NODE" = 0 ] && [ -d apps/grado2/ui/node_modules ]; then
+  echo "skip ui — node_modules есть, но node не в PATH"
 elif [ "$UI_TOUCHED" != 0 ]; then
   echo "FAIL ui — правки интерфейса есть, а apps/grado2/ui/node_modules нет: (cd apps/grado2/ui && npm ci)"; fail+=(ui)
 else echo "skip ui — no apps/grado2/ui/node_modules (cd apps/grado2/ui && npm ci)"; fi
