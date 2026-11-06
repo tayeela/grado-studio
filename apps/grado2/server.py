@@ -1177,7 +1177,7 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
         после реформы ТиНАО, каждый район целиком в одном округе, округ — ровно сумма его районов, районы покрывают
         Москву без щелей и наложений. В ГИС ОГД округа ТиНАО собраны из старых поселений, а новые районы нарисованы
         схематично — собирать из них границы не получилось (v0.65.4–0.65.6)."""
-        doc = json.loads(ADMIN_FILE.read_text(encoding="utf-8"))
+        doc = _admin_doc()
         cx, cy = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
         home, feats = None, []
         for f in doc["features"]:
@@ -1526,14 +1526,22 @@ OKRUG_FULL = {"ЦАО": "Центральный", "САО": "Северный", 
               "НАО": "Новомосковский", "ТАО": "Троицкий"}
 MAX_PLACE_VERTICES = 100000
 _ADMIN_DIST = {}
+_ADMIN_DOC = {}
+
+
+def _admin_doc():
+    """Эталон адмделения целиком (docs/standards/admin/moscow-adm.geojson): читается один раз.
+    Аудит 06.11, находка 0.5: run_admin парсил 2,9 МБ на каждый запрос слоя."""
+    if ADMIN_FILE not in _ADMIN_DOC:
+        _ADMIN_DOC[ADMIN_FILE] = json.loads(ADMIN_FILE.read_text(encoding="utf-8"))
+    return _ADMIN_DOC[ADMIN_FILE]
 
 
 def _admin_districts():
     """Районы из эталона (docs/standards/admin/moscow-adm.geojson): [(название, код округа, полигоны, bbox)]; читается один раз."""
     if ADMIN_FILE not in _ADMIN_DIST:
-        doc = json.loads(ADMIN_FILE.read_text(encoding="utf-8"))
         out = []
-        for f in doc["features"]:
+        for f in _admin_doc()["features"]:
             pr, g = f["properties"], f["geometry"]
             if pr.get("Уровень") != "район":
                 continue
