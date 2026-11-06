@@ -1670,13 +1670,16 @@ _SAVE_LOCK = threading.Lock()
 # ---------- Проекты на диске: запись, версии, размер папки ----------
 def atomic_write(path, body):
     """Запись файла целиком или никак: свой временный файл рядом + os.replace. Общий «.tmp» на всех писателей
-    давал при двух одновременных сохранениях (две вкладки, автосейв) склейку чужих хвостов — битый JSON."""
+    давал при двух одновременных сохранениях (две вкладки, автосейв) склейку чужих хвостов — битый JSON.
+    flush+fsync перед заменой — как в hub.py: без них «мигнул свет» оставлял пустой файл проекта (аудит 06.11, дефект 3)."""
     import tempfile
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix="." + path.stem[:40] + ".", suffix=".part")
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(body)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, path)
     except BaseException:
         try:

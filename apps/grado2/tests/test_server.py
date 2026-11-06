@@ -498,6 +498,20 @@ class Projects(unittest.TestCase):
             S.save_project("x", b"{not json")
         self.assertFalse(S.project_path("x").exists())
 
+    def test_atomic_write_fsyncs_before_replace(self):
+        # аудит 06.11, дефект 3: без flush+fsync «мигнул свет» оставлял пустой файл проекта
+        import tempfile
+        order = []
+        real_replace = S.os.replace
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "Проект.grado2"
+            with mock.patch.object(S.os, "fsync", side_effect=lambda fd: order.append("fsync")), \
+                 mock.patch.object(S.os, "replace",
+                                   side_effect=lambda a, b: (order.append("replace"), real_replace(a, b))[1]):
+                S.atomic_write(path, b'{"format": "grado2"}')
+            self.assertEqual(order, ["fsync", "replace"])
+            self.assertEqual(path.read_bytes(), b'{"format": "grado2"}')
+
 
 if __name__ == "__main__":
     unittest.main()
