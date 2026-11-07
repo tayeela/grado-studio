@@ -16,7 +16,7 @@ class RowsGeomJs(unittest.TestCase):
     def test_rows_geom(self):
         r = subprocess.run(["node", "--test", str(TEST)], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
-        self.assertIn("# fail 0", r.stdout)
+        self.assertRegex(r.stdout, r"(?:#|ℹ) fail 0")   # TAP (#) у старых node, spec-reporter (ℹ) у новых
 
 
 if __name__ == "__main__":

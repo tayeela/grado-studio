@@ -85,7 +85,7 @@ const num = s => +String(s).replace(/\s| /g, "").replace(",", ".");
 
 async function download(page, item) {
   const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 30000 }),
-    (async () => { await page.locator("header.top wa-button[slot=trigger]", { hasText: "Выгрузка" }).click(); await page.locator(`header.top wa-dropdown-item[value=${item}]`).click(); })()]);
+    (async () => { await page.locator("header.top wa-button[slot=trigger]", { hasText: "Выгрузка" }).click(); await page.locator(`header.top .exportdd wa-dropdown-item[value=${item}]`).click(); })()]);
   return { name: dl.suggestedFilename(), body: readFileSync(await dl.path()) };
 }
 
@@ -129,7 +129,7 @@ try {
     check(/выбрано 1/.test(await tblTitle()), "строка таблицы выбрала здание", await tblTitle());
     await layerRow("Улицы (OSM)");
     await mapClick();
-    const note = await page.evaluate(() => document.querySelector("button.note")?.textContent || "");
+    const note = await page.evaluate(() => [...document.querySelectorAll(".toasts .toast .tx")].map(e => e.textContent).join(" | "));   // подсказки — тостами (2.1)
     check(/Здания \(ЕГКО\)/.test(note), "щелчок по зданию при текущем слое улиц: подсказка про слой зданий", note);
     await layerRow("Здания (ЕГКО)"); await showWin(page, "Таблица атрибутов");
     check(!/выбрано/.test(await tblTitle()), "здание не выбрано, пока текущий слой — улицы", await tblTitle());
@@ -231,6 +231,39 @@ try {
     const after = await layout();
     const same = before.length === after.length && before.every((g, i) => { const [a, wa] = g.split("@"), [b, wb] = after[i].split("@"); return a === b && Math.abs(wa - wb) <= 4; });
     check(same, "окна, вкладки и размеры вернулись после перезагрузки", JSON.stringify(before) + " → " + JSON.stringify(after));
+  });
+
+  // Узкий экран 840 px (владелец, docs/ux/grado2-ux.md «Every scenario: … and at 840 px wide — the ribbon wraps into two rows»):
+  // лента переносится на два ряда, шапка не режется — «Выгрузка» и «Листы и альбом» собраны в «Ещё ▾»; окна в границах экрана
+  await scenario("840 узкий экран", page, async () => {
+    await page.setViewportSize({ width: 840, height: 600 });
+    await page.waitForTimeout(400);
+    const geo = await page.evaluate(() => {
+      const cut = el => el.scrollWidth > el.clientWidth + 1;
+      const vis = sel => { const e = document.querySelector(sel); return !!e && !!e.offsetParent; };
+      const ribbon = document.querySelector(".ribbon"), group = document.querySelector(".ribbon .tgroup"), top = document.querySelector(".top");
+      return { rows: ribbon.getBoundingClientRect().height / (group.getBoundingClientRect().height + 4), topCut: cut(top), ribbonCut: cut(ribbon),
+        more: vis(".top > .more"), exportGone: !vis(".top > .exportdd"), albumGone: !vis(".top > .albumbtn") };
+    });
+    check(geo.rows > 1.5, "лента на 840 px в два ряда", JSON.stringify(geo));
+    check(!geo.topCut && !geo.ribbonCut, "шапка и лента не режутся на 840 px", JSON.stringify(geo));
+    check(geo.more && geo.exportGone && geo.albumGone, "перелив шапки — в «Ещё ▾»: Выгрузка и Листы и альбом спрятаны", JSON.stringify(geo));
+    const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 30000 }), (async () => {
+      await page.locator(".top > .more wa-button[slot=trigger]").click();
+      await page.locator(".top > .more wa-dropdown-item[value=dxf]").click();
+    })()]);
+    check(dl.suggestedFilename() === "grado2-dxf.zip", "DXF скачивается из «Ещё ▾» на 840 px", dl.suggestedFilename());
+    await page.keyboard.press("F1"); await page.waitForTimeout(500);   // плавающая «Справка»: fit() и boundedWithinViewport удерживают её на экране
+    const fl = await page.evaluate(() => [...document.querySelectorAll(".dv-resize-container")].map(f => f.getBoundingClientRect())
+      .map(b => ({ right: Math.round(b.right), bottom: Math.round(b.bottom), W: innerWidth, H: innerHeight }))
+      .find(b => b.right > b.W + 1 || b.bottom > b.H + 1) || null);
+    check(fl === null, "плавающие окна в границах экрана на 840 px", JSON.stringify(fl));
+    await page.locator(".dv-tab", { hasText: "Справка" }).locator(".dv-default-tab-action").click({ timeout: 5000 }).catch(() => {});   // закрыть «Справку», чтобы не висела над картой в следующих сценариях
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForTimeout(300);
+    const back = await page.evaluate(() => { const vis = sel => { const e = document.querySelector(sel); return !!e && !!e.offsetParent; };
+      return { exp: vis(".top > .exportdd"), more: vis(".top > .more") }; });
+    check(back.exp && !back.more, "на 1440 «Выгрузка» вернулась, «Ещё ▾» скрыт", JSON.stringify(back));
   });
 
   // N. Анализ и виды: блок «Радиусы обслуживания» по соцобъектам пишет «вне радиуса … га», «В слой» сохраняет его слоем;

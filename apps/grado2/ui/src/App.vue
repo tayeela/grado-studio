@@ -13,7 +13,7 @@
       <input v-if="!shared && titleEdit" ref="titleInput" class="project ptitle-in" :value="project.name" maxlength="120" aria-label="Название проекта"
              placeholder="Название проекта" @keydown.enter.prevent="titleDone($event.target.value)" @keydown.esc.prevent="titleEdit = false" @blur="titleDone($event.target.value)">
       <button v-else-if="!shared" type="button" class="project ptitle" :class="{ none: !project.name }" :title="projTitle" @click="editTitle">
-        {{ project.name || "Без названия" }}<span v-if="dirty" class="dot" aria-label="есть несохранённые изменения"> •</span><Pencil class="pen" :size="13" /></button>
+        {{ project.name || "Без названия" }}<span v-if="dirty || autoFail" class="dot" :class="{ fail: autoFail }" :aria-label="dotLabel"> •</span><Pencil class="pen" :size="13" /></button>
 
       <HubBar v-if="shared" />
       <wa-dropdown @wa-select="onProject">
@@ -47,24 +47,28 @@
         <wa-dropdown-item value="reset">Раскладка по умолчанию</wa-dropdown-item>
       </wa-dropdown>
 
-      <wa-dropdown @wa-select="onExport">
+      <wa-dropdown class="exportdd" @wa-select="onExport">
         <wa-button slot="trigger" size="s" appearance="plain" :disabled="busy">Выгрузка</wa-button>
-        <h4 class="menu-h">Данные</h4>
-        <wa-dropdown-item value="dxf">Чертёж DXF — слои проекта, МСК<span slot="details">МГГТ</span></wa-dropdown-item>
-        <wa-dropdown-item value="geojson">GeoJSON для QGIS<span slot="details">МСК</span></wa-dropdown-item>
-        <wa-dropdown-item value="shp">SHP как в ГИС ОГД<span slot="details">МСК</span></wa-dropdown-item>
-        <wa-dropdown-item value="xlsx">Excel: показатели ТЭП и листы<span slot="details">XLSX</span></wa-dropdown-item>
-        <wa-divider></wa-divider>
-        <h4 class="menu-h">Листы</h4>
-        <wa-dropdown-item value="sheets" :disabled="!project.layouts?.length">Все листы в PDF<span slot="details">{{ project.layouts?.length ? plural(project.layouts.length, ["лист", "листа", "листов"]) : "нет листов" }}</span></wa-dropdown-item>
-        <wa-dropdown-item value="ogd">Слои порталов в DXF — по области<span slot="details">МСК</span></wa-dropdown-item>
-        <wa-divider></wa-divider>
-        <h4 class="menu-h">Альбом ППТ КРТ — во вкладке «Листы и альбом»</h4>
-        <wa-dropdown-item value="pdf" :disabled="!album.sheets">PDF альбома<span slot="details">{{ album.sheets ? "все листы" : "альбом не собран" }}</span></wa-dropdown-item>
-        <wa-dropdown-item value="pptx" :disabled="!album.sheets">PPTX альбома<span slot="details">PowerPoint</span></wa-dropdown-item>
+        <template v-for="(sec, i) in EXPORTS" :key="sec.h">
+          <wa-divider v-if="i"></wa-divider>
+          <h4 class="menu-h">{{ sec.h }}</h4>
+          <wa-dropdown-item v-for="it in sec.items" :key="it.v" :value.attr="it.v" :disabled="offOf(it)">{{ it.t }}<span slot="details">{{ detOf(it) }}</span></wa-dropdown-item>
+        </template>
       </wa-dropdown>
-      <wa-button size="s" appearance="plain" title="Листы и альбом (Ctrl+P): сборка альбома ППТ КРТ, штамп, листы, PDF и PPTX — вкладкой справа от карты"
+      <wa-button size="s" appearance="plain" class="albumbtn" title="Листы и альбом (Ctrl+P): сборка альбома ППТ КРТ, штамп, листы, PDF и PPTX — вкладкой справа от карты"
                  @click="winApi.open('album')"><Printer slot="start" :size="16" />Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
+      <!-- узкий экран (панель владельца, 840 px, docs/ux/grado2-ux.md): «Выгрузка» и «Листы и альбом» собраны в «Ещё ▾» —
+           те же команды, тот же обработчик; на широком экране меню скрыто, шапка как была -->
+      <wa-dropdown class="more" @wa-select="onMore">
+        <wa-button slot="trigger" size="s" appearance="plain" with-caret>Ещё</wa-button>
+        <template v-for="(sec, i) in EXPORTS" :key="sec.h">
+          <wa-divider v-if="i"></wa-divider>
+          <h4 class="menu-h">{{ sec.h }}</h4>
+          <wa-dropdown-item v-for="it in sec.items" :key="it.v" :value.attr="it.v" :disabled="offOf(it)">{{ it.t }}<span slot="details">{{ detOf(it) }}</span></wa-dropdown-item>
+        </template>
+        <wa-divider></wa-divider>
+        <wa-dropdown-item value="album">Листы и альбом…<span slot="details">Ctrl+P</span></wa-dropdown-item>
+      </wa-dropdown>
 
       <span class="grow"></span>
       <wa-button size="s" appearance="plain" :disabled="!history.undo" aria-label="Отменить" :title.attr="'Отменить (Ctrl+Z)'" @click="undo"><Undo2 :size="16" /></wa-button>
@@ -149,8 +153,6 @@
     <footer class="status">
       <CadModes class="mapbit" />
       <span class="cmdnow mapbit">{{ toolTitle }}</span>
-      <!-- сообщение слева, в свободной части строки: появляясь и исчезая, оно не сдвигает слой, координаты и масштаб справа -->
-      <button class="note" type="button" :aria-label="noteText || 'Сообщений нет'" :title="noteText ? noteText + ' — щелчок: показать целиком' : ''" @click="noteOpen = !noteOpen">{{ noteText }}</button>
       <span class="grow"></span>
       <span class="lay mapbit" :title="current?.title">Слой: {{ current?.title }}</span>
       <wa-dropdown class="mapbit" placement="top-end" @wa-select="e => setBasemap(e.detail.item.value)">
@@ -172,8 +174,10 @@
           </wa-dropdown>
         </span>
       </span>
-      <div v-if="noteOpen && noteText" class="notefull" @click="noteOpen = false">{{ noteText }}</div>
     </footer>
+
+    <!-- сообщения — тостами вместо серой строки: ошибка стоит с «Повторить», успех и действие уходят сами (toasts.js) -->
+    <Toasts />
   </div>
 </template>
 
@@ -183,9 +187,11 @@ import { DockviewVue, themeLight } from "dockview-vue";
 import { ChevronDown, Undo2, Redo2, CircleHelp, Pencil, Printer, SquareDashedMousePointer, Sun, Moon } from "@lucide/vue";
 import ProjectCatalog from "./panels/ProjectCatalog.vue";
 import CadModes from "./panels/CadModes.vue";
+import Toasts from "./panels/Toasts.vue";
 import HubBar from "./panels/HubBar.vue";
 import HubLogin from "./panels/HubLogin.vue";
 import HubWindows from "./panels/HubWindows.vue";
+import { toast } from "./toasts.js";
 import { flush as hubFlush, hub, openWin } from "./hub.js";
 import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
 import { exportDxf, exportGeojson, exportShp, exportXlsx } from "./exports.js";
@@ -198,7 +204,7 @@ import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
 import { BASEMAPS, basemapId, current, cursor, mapOnly, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
 import {
-  busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, retitle, saveProject, shared,
+  autoFail, busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, retitle, saveProject, say, shared,
 } from "./project.js";
 
 const dockTheme = { ...themeLight, className: "dockview-theme-grado", gap: 8 };   // окна — карточки на сером столе с зазором 8 px («Синька»)
@@ -260,19 +266,8 @@ function setScale(e) {
 }
 function setScaleTo(d) { const v = mapApi.view; if (v && scale.value && d) v.setResolution(v.getResolution() * d / scale.value); }
 
-/* Сообщение строки состояния: длинное обрезается многоточием, щелчок показывает его целиком над строкой.
-   «Восстановлена последняя работа» — только несколько секунд после открытия или до первого действия. */
-const restored = ref(false), noteOpen = ref(false);
-let restoredTimer = 0;
-function dropRestored() { restored.value = false; clearTimeout(restoredTimer); removeEventListener("pointerdown", dropRestored, true); removeEventListener("keydown", dropRestored, true); }
-watch(() => project.raw, () => {
-  dropRestored();
-  if (project.source !== "autosave") return;
-  restored.value = true; restoredTimer = setTimeout(dropRestored, 6000);
-  addEventListener("pointerdown", dropRestored, true); addEventListener("keydown", dropRestored, true);
-});
-const noteText = computed(() => busy.value ? "Записываю…" : notice.value || (restored.value ? "Восстановлена последняя работа" : ""));
-watch(noteText, () => { noteOpen.value = false; });
+/* «Восстановлена последняя работа» — коротким тостом после открытия, как тост рабочей страницы (web/app.js) */
+watch(() => project.raw, () => { if (project.source === "autosave") toast("Восстановлена последняя работа", { timeout: 2500 }); });
 
 const LAYOUT_KEY = "grado-next-layout";
 let api = null;
@@ -385,7 +380,33 @@ function onExport(e) {
   const v = e.detail.item.value;
   if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "shp") exportShp(); else if (v === "xlsx") exportXlsx();
   else if (v === "pdf" || v === "pptx") albumFile(v); else if (v === "ogd") ogdDxf();
-  else if (v === "sheets") printAll(JSON.parse(JSON.stringify(project.layouts)), project.raw?.album?.meta || {}, project.name || "листы").catch(e => { notice.value = "PDF не собран: " + e.message; });
+  else if (v === "sheets") printSheets();
+}
+
+/* Меню «Выгрузка» и его узкоэкранная копия в «Ещё ▾» — один список, чтобы команды не разъезжались.
+   off и d могут быть функциями: отключение и подпись листов зависят от проекта и альбома. */
+const EXPORTS = [
+  { h: "Данные", items: [
+    { v: "dxf", t: "Чертёж DXF — слои проекта, МСК", d: "МГГТ" },
+    { v: "geojson", t: "GeoJSON для QGIS", d: "МСК" },
+    { v: "shp", t: "SHP как в ГИС ОГД", d: "МСК" },
+    { v: "xlsx", t: "Excel: показатели ТЭП и листы", d: "XLSX" }] },
+  { h: "Листы", items: [
+    { v: "sheets", t: "Все листы в PDF", d: () => project.layouts?.length ? plural(project.layouts.length, ["лист", "листа", "листов"]) : "нет листов", off: () => !project.layouts?.length },
+    { v: "ogd", t: "Слои порталов в DXF — по области", d: "МСК" }] },
+  { h: "Альбом ППТ КРТ — во вкладке «Листы и альбом»", items: [
+    { v: "pdf", t: "PDF альбома", d: () => album.sheets ? "все листы" : "альбом не собран", off: () => !album.sheets },
+    { v: "pptx", t: "PPTX альбома", d: "PowerPoint", off: () => !album.sheets }] },
+];
+const detOf = it => typeof it.d === "function" ? it.d() : it.d;
+const offOf = it => typeof it.off === "function" ? it.off() : false;
+/* «Ещё ▾» (узкий экран): те же выгрузки и вкладка альбома */
+function onMore(e) { e.detail.item.value === "album" ? winApi.open("album") : onExport(e); }
+
+/* Все листы в PDF: не собрался — тост-ошибка с «Повторить» (сборка повторяема) */
+function printSheets() {
+  const layouts = JSON.parse(JSON.stringify(project.layouts)), meta = project.raw?.album?.meta || {}, name = project.name || "листы";
+  printAll(layouts, meta, name).catch(e => say("PDF не собран: " + e.message, { level: "error", retry: printSheets }));
 }
 
 winApi.open = id => { const p = api?.getPanel(id); if (p) p.api.setActive(); else if (api) addOne(id); syncOpen(); };
@@ -440,13 +461,16 @@ function onWindow(e) {
 const openDlg = ref(false), saveDlg = ref(false), saveName = ref(""), clash = ref(null), ask = ref(null);
 const fileInput = ref(null), nameInput = ref(null);
 const projTitle = computed(() => (project.file ? `Проект «${project.file}» в папке проектов` : "Проект ещё не сохранён под именем")
-  + (dirty.value ? " · есть несохранённые изменения (автосохранение держит их до сохранения)" : "") + ". Щёлкните, чтобы изменить название");
+  + (dirty.value ? " · есть несохранённые изменения (автосохранение держит их до сохранения)" : "")
+  + (autoFail.value ? " · автосохранение не прошло: нет связи с сервером, правки сохранятся, когда связь вернётся" : "") + ". Щёлкните, чтобы изменить название");
+/* точка у названия: серая — есть правки, красная — последняя попытка автосохранения не прошла (project.js autoFail) */
+const dotLabel = computed(() => autoFail.value ? "автосохранение не прошло: нет связи с сервером" + (dirty.value ? ", есть несохранённые изменения" : "") : "есть несохранённые изменения");
 const titleEdit = ref(false), titleInput = ref(null);
 async function editTitle() { titleEdit.value = true; await nextTick(); titleInput.value?.focus(); titleInput.value?.select(); }
 async function titleDone(v) {
   if (!titleEdit.value) return;
   titleEdit.value = false;
-  if (!(await retitle(v))) await editTitle();          // занято или недопустимо: причина в строке состояния, поле остаётся открытым
+  if (!(await retitle(v))) await editTitle();          // занято или недопустимо: причина — карточкой внизу справа, поле остаётся открытым
 }
 
 /* Действие, после которого открытая работа сменится: при несохранённых правках сначала спросить. */
@@ -530,8 +554,8 @@ openStartup();
   font-size: var(--wa-font-size-s); text-decoration: none; white-space: nowrap; }
 .skip a:focus { position: static; outline: 2px solid var(--wa-color-focus); outline-offset: 2px; }
 .top {
-  display: flex; align-items: center; gap: var(--wa-space-2xs);
-  padding: 2px var(--wa-space-s); background: var(--g-bar); border-bottom: 1px solid var(--g-line); min-height: 34px; min-width: 0; overflow: hidden;
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--wa-space-2xs);
+  padding: 2px var(--wa-space-s); background: var(--g-bar); border-bottom: 1px solid var(--g-line); min-height: 34px; min-width: 0;
 }
 .top .cnt { margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: var(--wa-font-size-2xs); line-height: 16px; background: var(--wa-color-neutral-fill-normal); }
 .brand { font-weight: 700; letter-spacing: .02em; margin-right: 12px; }
@@ -541,6 +565,8 @@ openStartup();
   padding: 2px 6px; margin-left: -6px; gap: 4px; max-width: 360px; cursor: text; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ptitle.none { color: var(--g-muted); }
 .ptitle .dot { color: var(--g-muted); }
+/* автосохранение не прошло: точка у названия красная (цвет ошибок, как значки ошибок в окне «Данные») */
+.ptitle .dot.fail { color: var(--wa-color-danger-on-quiet); }
 .ptitle .pen { flex: none; color: var(--g-muted); opacity: 0; transition: opacity .12s; }
 .ptitle:hover, .ptitle:focus-visible { border-color: var(--g-line); background: var(--wa-color-surface-default); outline: none; }
 .ptitle:hover .pen, .ptitle:focus-visible .pen { opacity: 1; }
@@ -549,10 +575,17 @@ openStartup();
 /* строка меню как в QGIS и macOS: пункты без стрелок, ровный шаг, одна высота и одна линия текста (владелец 09.10.2026, снимок) */
 .top > wa-dropdown > wa-button::part(base), .top > wa-button::part(base) { padding-inline: 8px; height: 28px; font-size: var(--wa-font-size-m); }   /* тот же кегль, что у названия: одна линия текста */
 .top > wa-dropdown, .top > wa-button { display: inline-flex; align-items: center; }
+/* узкий экран (панель владельца, 840 px, docs/ux/grado2-ux.md): «Выгрузка» и «Листы и альбом» — в «Ещё ▾», шапка остаётся одним рядом;
+   на широком экране «Ещё» скрыт. flex-wrap выше — страховка: даже если что-то не влезло, это переносится, а не режется */
+.top > .more { display: none; }
+@media (max-width: 899px) {
+  .top > .more { display: inline-flex; }
+  .top > .exportdd, .top > .albumbtn { display: none; }
+}
 .grow { flex: 1; }
 .menu-h { margin: 6px 12px 2px; font-size: var(--wa-font-size-2xs); color: var(--g-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .ribbon {
-  display: flex; gap: 0; padding: 2px var(--wa-space-xs) 0; background: var(--g-bar); border-bottom: 1px solid var(--g-line);
+  display: flex; flex-wrap: wrap; gap: 4px 0; padding: 2px var(--wa-space-xs) 0; background: var(--g-bar); border-bottom: 1px solid var(--g-line);
 }
 .tgroup { display: flex; flex-direction: column; align-items: center; padding: 0 var(--wa-space-s); border-right: 1px solid var(--g-line); }
 .tgroup:last-child { border-right: 0; }
@@ -582,15 +615,6 @@ wa-dropdown-item .ci { width: 16px; height: 16px; }
 @media (max-width: 1180px) {
   .status { gap: var(--wa-space-s); }
   .status > .lay, .status .scl .lbl { display: none; }
-}
-/* длинное сообщение («Эскиз сохранён слоем…») не ломает строку: обрезается многоточием, целиком — в подсказке и по щелчку */
-.status { position: relative; }
-.status > .note { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; font: inherit; line-height: 20px; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
-.status > .note:empty { display: none; }
-.status > .notefull {
-  position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(100% + 4px); z-index: 20; max-width: min(560px, calc(100% - 32px)); padding: 6px 10px;
-  white-space: normal; color: var(--wa-color-text-normal); background: var(--wa-color-surface-raised); border: 1px solid var(--g-line);
-  border-radius: 8px; box-shadow: var(--g-shadow-2); cursor: pointer;
 }
 .status > .scl { display: inline-flex; align-items: center; gap: 6px; }
 .status > .scl { margin-right: 2px; }
