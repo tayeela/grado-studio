@@ -17,7 +17,13 @@
           <button v-for="t in types" :key="t" :title="'Добавить блок «' + TYPES[t].title + '» в середину окна'" @click="add(t)">{{ t.split("/")[1] }}</button>
         </template>
       </div>
-      <div ref="box" class="gcanvas"></div>
+      <div class="gwrap">
+        <div ref="box" class="gcanvas"></div>
+        <!-- пусто и ошибка — первоклассным содержимым (аудит 2.6), как .empty «Объёма»; библиотека слева остаётся рабочей -->
+        <div v-if="syncErr" class="empty err" role="alert"><b>Схема не открылась</b><span>{{ syncErr }}</span>
+          <wa-button size="s" appearance="outlined" @click="requestSync">Ещё раз</wa-button></div>
+        <div v-else-if="noNodes" class="empty" role="status"><b>Схема пуста</b><span>Соберите её из блоков слева или постройте эскиз в окне «Эскиз».</span></div>
+      </div>
     </div>
   </div>
 </template>
@@ -78,7 +84,11 @@ async function sync() {
     }
   } finally { syncing = false; }
 }
-const requestSync = () => (chain = chain.then(sync).catch(e => console.warn("[схема]", e)));
+const syncErr = ref("");                 // схема не перестроилась: показываем состоянием окна с «Ещё раз»
+const requestSync = () => (chain = chain.then(sync).then(() => { syncErr.value = ""; })
+  .catch(e => { console.warn("[схема]", e); syncErr.value = String(e?.message || e); }));
+/* пустая схема — объяснение вместо тихого холста (аудит 2.6); structRev — узлы добавили или удалили */
+const noNodes = computed(() => { void structRev.value; return !(graph()?.nodes || []).length; });
 
 /* «Вся схема»; пока вид не трогали руками, окно при смене размера вписывает схему заново (как fitUntouched рабочей страницы) */
 let fitSig = "";
@@ -172,6 +182,13 @@ onBeforeUnmount(() => { off?.dispose?.(); ro?.disconnect(); preview.graph = fals
 .graphp .glib .cat { font-weight: 600; margin: 6px 0 2px; color: var(--g-muted); font-size: var(--wa-font-size-xs); text-transform: uppercase; letter-spacing: .03em; }
 .graphp .glib button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 3px 6px; border-radius: 4px; cursor: pointer; color: inherit; font: inherit; }
 .graphp .glib button:hover { background: var(--wa-color-neutral-fill-quiet); }
+.graphp .gwrap { flex: 1; position: relative; display: flex; min-width: 0; }
 .graphp .gcanvas { flex: 1; position: relative; overflow: hidden; background: var(--g-canvas);
   background-image: radial-gradient(var(--g-line) 1px, transparent 1px); background-size: 20px 20px; }
+/* пустая схема и ошибка загрузки — по центру холста, как .empty «Объёма»; пустое состояние пропускает щелчки к холсту */
+.graphp .empty { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center;
+  text-align: center; padding: 20px; font-size: var(--wa-font-size-s); color: var(--g-muted); pointer-events: none; }
+.graphp .empty b { color: var(--wa-color-text-normal); font-size: var(--wa-font-size-m); }
+.graphp .empty.err { pointer-events: auto; color: var(--wa-color-danger-on-quiet); }
+.graphp .empty.err b { color: var(--wa-color-danger-on-quiet); }
 </style>

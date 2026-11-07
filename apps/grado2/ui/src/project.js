@@ -13,6 +13,10 @@ export const projects = ref([]);      // [{name, modified, size, album_n, star, 
 export const trash = ref({ n: 0, items: [] });   // корзина папки проектов: сколько и что в ней (catalog.py)
 export const projDir = ref("");
 export const loadError = ref("");
+/* Стартовый экран-состояние (App.vue): проект не открылся при первом показе — карточка поверх стола с причиной и
+   действиями («Повторить», «Новый проект», «Совместные проекты»). Один канал на обе причины: и loadError от openStartup,
+   и тост «Проект не открылся: …» от openProject при старте. Проект загрузился — null: карточка исчезает. */
+export const startup = ref(null);     // { head, text, retry?, shared? }; shared — общий сервер, вместо «Повторить» — «Совместные проекты»
 export const dirty = ref(false);      // есть правки, не записанные под именем проекта (автосохранение их держит)
 export const busy = ref(false);
 /* Канал сообщений — карточка внизу справа (toasts.js, panels/Toasts.vue): «Проект сохранён», «Не сохранён: …». */
@@ -31,6 +35,7 @@ export const appVersion = ref("");
 
 const FORMAT = "grado2", VERSION = 2;
 let quiet = true;                     // открытие проекта — не правка
+let starting = false;                 // идёт первый показ: неудача открытия питает стартовый экран (App.vue), а не тост
 let tick = 0, autoTick = 0, lastEdit = 0, pendingSince = 0;
 /* время файла проекта, каким его видело это окно (заголовок X-Grado-Modified, ответ записи): с ним запись не затрёт
    правки другой вкладки — сервер ответит 409 (server.py save_project) */
@@ -80,6 +85,7 @@ async function load(p, name, source) {
   normGraph(p);                       // схема расчёта: по умолчанию, если её нет; новые поля узлов старой версии
   setProject(p, name, source);
   setSel([]); resetHistory();
+  startup.value = null;               // проект открыт — стартовый экран больше не нужен (App.vue прячет его и реактивно)
   dirty.value = !!p.dirty; autoTick = tick; autoFail.value = false;   // новый проект — чистая точка у названия
   await nextTick();                   // наблюдатели за слоями отработали на открытии — дальше всё правки
   quiet = false;
@@ -167,30 +173,48 @@ export async function openProject(name) {
     say(`Открыт проект «${name}»`, { level: "success" });
     autosave();
   } catch (e) {
-    say("Проект не открылся: " + e.message, { level: "error", retry: () => openProject(name) });
+    // при первом показе причина уходит на стартовый экран (App.vue) — карточка на столе вместо тоста, «Повторить»
+    // запускает openStartup() заново; дальше (из каталога, при повторном открытии) — тост с «Повторить», как раньше
+    if (starting) {
+      loadError.value = "Проект не открылся: " + e.message;
+      startup.value = { head: "Проект не открылся", text: e.message + ". Попробуйте ещё раз — или начните новый проект.", retry: () => openStartup() };
+    }
+    else say("Проект не открылся: " + e.message, { level: "error", retry: () => openProject(name) });
   } finally { busy.value = false; }
 }
 
-/* Первый показ: последнее автосохранение (то, что было открыто в рабочей странице), иначе самый свежий проект. */
+/* Первый показ: последнее автосохранение (то, что было открыто в рабочей странице), иначе самый свежий проект.
+   Не получилось — причина уходит и в loadError (окно «Слои»), и на стартовый экран (App.vue): карточка поверх стола. */
 export async function openStartup() {
+  starting = true; startup.value = null;
   try {
-    const h = await getJSON("/api/health");
-    shared.value = !!h.hub; appVersion.value = h.version || "";
-  } catch { /* старый сервер без версии — работаем как с локальным */ }
-  if (shared.value) { loadError.value = "Общий сервер: войдите и откройте проект в окне «Совместные проекты»"; hooks.shared(); return; }
-  try {
+    try {
+      const h = await getJSON("/api/health");
+      shared.value = !!h.hub; appVersion.value = h.version || "";
+    } catch { /* старый сервер без версии — работаем как с локальным */ }
+    if (shared.value) {
+      loadError.value = "Общий сервер: войдите и откройте проект в окне «Совместные проекты»";
+      startup.value = { head: "Это общий сервер", text: "Войдите и откройте проект в окне «Совместные проекты».", shared: true };
+      hooks.shared(); return;
+    }
     const j = await listProjects();
     if (j.autosave) {
       const p = await getJSON("/api/project?autosave=1");
       await load(p, p.name || "", "autosave");
       fileBase = projects.value.find(q => q.name === project.file)?.modified ?? null;
+      loadError.value = "";
       return;
     }
     if (projects.value.length) await openProject(projects.value[0].name);
-    else { loadError.value = "В папке проектов пока нет ни одного проекта"; quiet = false; }
+    else {
+      loadError.value = "В папке проектов пока нет ни одного проекта";
+      startup.value = { head: "В папке проектов пока пусто", text: "Ни одного проекта ещё нет. Начните новый — или откройте проект с диска через меню «Проект».", retry: () => openStartup() };
+      quiet = false;
+    }
   } catch (e) {
     loadError.value = "Проект не загрузился: " + e.message;
-  }
+    startup.value = { head: "Проект не загрузился", text: e.message + ". Проверьте, что сервер работает, и попробуйте ещё раз.", retry: () => openStartup() };
+  } finally { starting = false; }
 }
 
 /* ---------- файл проекта ---------- */

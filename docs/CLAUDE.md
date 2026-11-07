@@ -25,7 +25,8 @@
 3. **Страницы `docs/wiki/*.md` с пометкой «генерируется» руками не правят**: `python3 tools/wiki.py` (его же запускают pre-commit и CI).
    Руками пишутся `architecture.md`, `recipes.md`, `files.md`, `conventions.md`, `howto.md`, `album-rules.md`, `glossary.md`.
 4. **Журналы только дописываются сверху** (`grado2-changelog.md`, `team/PROGRESS.md`, `team/DECISIONS.md`); задачи и слова владельца живут в
-   GitHub Issues, а не в файлах.
+   GitHub Issues, а не в файлах. Каждая новая запись `grado2-changelog.md` начинается с блока «Владелец: …» — 2–4 строки по-человечески,
+   что изменится в работе владельца, без внутренних имён модулей и путей (правило — [team/CYCLE.md](team/CYCLE.md), шаг Work 5).
 5. **Слова владельца** по альбому: сначала правило в [standards/albums/label-rules.md](standards/albums/label-rules.md) и
    [wiki/album-rules.md](wiki/album-rules.md), потом код (навык `owner-remark`).
 6. **Документ не копирует код и числа**: ссылается на файл и на страницу вики. Факт, который нужен в двух местах, пишется в одном.

@@ -18,7 +18,9 @@ datas = [(str(APP / "web"), "web"),
          (str(ROOT / "core/compute/grado_compute/regulations"), "core/compute/grado_compute/regulations"),
          (str(ROOT / "docs/standards/redln97"), "docs/standards/redln97"),
          (str(ROOT / "docs/standards/admin"), "docs/standards/admin"),           # районы для долей площади (server.district_shares)
-         (str(ROOT / "docs/standards/albums/pptkrt-header.jpg"), "docs/standards/albums")]   # шапка слайдов альбома (album_io)
+         (str(ROOT / "docs/standards/albums/pptkrt-header.jpg"), "docs/standards/albums"),   # шапка слайдов альбома (album_io)
+         (str(ROOT / "docs/guides"), "docs/guides"),                             # руководства рядом с программой: на них ссылается окно «Помощь» (HelpPanel)
+         (str(ROOT / "docs/wiki"), "docs/wiki")]                                 # вики: словарь, правила альбома, как устроена программа (тоже «Помощь»)
 datas += collect_data_files("certifi") + collect_data_files("ezdxf") + collect_data_files("grado_compute") + collect_data_files("grado_render")
 
 hiddenimports = ["server", "catalog", "portalgate", "dxf_io", "file_io", "print_io", "export_io", "fonts", "shapefile"]

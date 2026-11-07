@@ -3,6 +3,10 @@
      слои группы «Ограничения» в окне «Слои». -->
 <template>
   <div class="pane cons">
+    <!-- расчёт упал — ошибкой окна с «Ещё раз», не только тостом (аудит 2.6) -->
+    <div v-if="CONS.error" class="err" role="alert">{{ CONS.error }}
+      <div><wa-button size="s" appearance="outlined" @click="computeConstraints">Ещё раз</wa-button></div>
+    </div>
     <p class="hint">Запреты вычитаются из пятна застройки; предельная высота ограничивает высоту корпусов. Всё строится из
       загруженных данных и появляется в группе слоёв «Ограничения»: выключите слой — генерация перестанет его учитывать.</p>
     <div class="sect">Что учитывать</div>
@@ -60,6 +64,8 @@ function setNum(n, el) {
 
 <style>
 .cons wa-checkbox { display: block; margin: 2px 0 !important; font-size: var(--wa-font-size-s); }
+.cons .err { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border: 1px solid var(--wa-color-danger-border-loud, #c92a2a);
+  border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; background: var(--wa-color-danger-fill-quiet); color: var(--wa-color-danger-on-quiet); font-size: var(--wa-font-size-xs); }
 .cons .grid { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 3px 8px; align-items: center; margin-bottom: var(--wa-space-s); font-size: var(--wa-font-size-s); }
 .cons .grid wa-number-input { margin: 0 !important; }
 .cons .busy { color: var(--wa-color-brand-on-quiet); font-size: var(--wa-font-size-xs); }

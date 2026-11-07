@@ -103,7 +103,9 @@ For each task taken from the open issues (label `задача`, the owner's rank
 4. Two FAILs in a row on the same task: stop it, mark `[!]`, write what was tried. Do not try a third time.
 5. Accepted: bump `apps/grado2/web/version.json`, add an entry on top of `docs/grado2-changelog.md` (and UX items in
    `docs/ux/grado2-ux.md`), commit in the worktree as `grado2 vX.Y.Z: …` with the attribution line, push the branch:
-   `git push origin team/t60`. Give the issue the label `готово к выкладке` and one line in plain Russian on what the owner will see.
+   `git push origin team/t60`. The changelog entry starts with a «Владелец: что нового» block — the first bullet,
+   2–4 lines in plain Russian on what changes in the owner's work, without internal module names or file paths
+   (example: «Владелец: сохранение проекта переживает выключение света»). Give the issue the label `готово к выкладке` and one line in plain Russian on what the owner will see.
    A lesson that the next tasks must follow goes into PROGRESS.md as `RULE: …`.
 
 ## 4. Finish

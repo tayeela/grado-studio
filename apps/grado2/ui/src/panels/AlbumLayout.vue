@@ -15,8 +15,8 @@
       <wa-button size="s" appearance="plain" title="Лист целиком" aria-label="Лист целиком" @click="fit"><Maximize :size="15" /></wa-button>
       <wa-button size="s" appearance="plain" title="Крупнее (Ctrl + колесо)" aria-label="Крупнее" @click="zoomAt(1.25)"><ZoomIn :size="15" /></wa-button>
       <span class="sep"></span>
-      <wa-button size="s" appearance="plain" :disabled="!hist.u.length" title="Отменить (Ctrl+Z)" aria-label="Отменить" @click="undo(-1)"><Undo2 :size="15" /></wa-button>
-      <wa-button size="s" appearance="plain" :disabled="!hist.r.length" title="Вернуть (Ctrl+Shift+Z)" aria-label="Вернуть" @click="undo(1)"><Redo2 :size="15" /></wa-button>
+      <wa-button size="s" appearance="plain" :disabled="!hist.u.length" :title="undoT ? `Отменить: ${undoT} (Ctrl+Z)` : 'Отменить (Ctrl+Z)'" aria-label="Отменить" @click="undo(-1)"><Undo2 :size="15" /></wa-button>
+      <wa-button size="s" appearance="plain" :disabled="!hist.r.length" :title="redoT ? `Вернуть: ${redoT} (Ctrl+Shift+Z)` : 'Вернуть (Ctrl+Shift+Z)'" aria-label="Вернуть" @click="undo(1)"><Redo2 :size="15" /></wa-button>
       <span class="sep"></span>
       <wa-button size="s" :appearance="adding ? 'filled' : 'outlined'" :variant="adding ? 'brand' : 'neutral'" :disabled="!ready || viewer" title="Своя надпись: затем щёлкните место на листе" @click="adding = !adding"><Type :size="15" /> Текст</wa-button>
       <wa-button size="s" appearance="outlined" :disabled="!ready || viewer" title="Вернуть на лист все скрытые надписи" @click="showHidden"><Eye :size="15" /> Скрытые</wa-button>
@@ -107,6 +107,7 @@ import FontPicker from "./FontPicker.vue";
 
 const Snap = globalThis.Snap;
 const PT = 25.4 / 72;                                // 1 пт в мм: кегль — в пунктах, как в QGIS
+const PROP_T = { text: "Текст надписи", size: "Кегль", angle: "Поворот", color: "Цвет текста" };   // подписи отмены для setProp
 const RULER = 22;
 const FONTS = [["ui", "PT Sans"], ["ui-bold", "PT Sans полужирный"], ["serif", "PT Serif"], ["serif-bold", "PT Serif полужирный"], ["sans", "Montserrat"], ["sans-bold", "Montserrat полужирный"]];
 const ALIGN = [["left", "По левому краю", AlignStartVertical], ["hcenter", "По середине по ширине", AlignCenterVertical], ["right", "По правому краю", AlignEndVertical],
@@ -271,10 +272,11 @@ function smart(list) {
 
 /* ---------- правки: в листе альбома, с историей ---------- */
 const snap = () => JSON.stringify({ edits: sheet.value?.edits || {}, items: sheet.value?.items || [], layGuides: sheet.value?.layGuides || null });
-function remember(tag) {
+/* запись истории помнит, что сделано (как в «Макете листа», SheetEditor.vue): «Отменить: Сдвиг надписи» у кнопки */
+function remember(tag, what) {
   const now = Date.now();
   if (tag && tag === hist.tag && now - hist.t < 1500) { hist.t = now; return; }
-  hist.u.push(snap()); if (hist.u.length > 100) hist.u.shift(); hist.r = []; hist.tag = tag; hist.t = now;
+  hist.u.push({ s: snap(), t: what || "Правка надписи" }); if (hist.u.length > 100) hist.u.shift(); hist.r = []; hist.tag = tag; hist.t = now;
 }
 function save(patch, rerender = true) {
   const sh = sheet.value; if (!sh) return;
@@ -284,9 +286,11 @@ function save(patch, rerender = true) {
 function undo(dir) {
   const from = dir < 0 ? hist.u : hist.r, to = dir < 0 ? hist.r : hist.u;
   if (!from.length) return;
-  to.push(snap()); const x = JSON.parse(from.pop()); hist.tag = null;
+  const e = from.pop(); to.push({ s: snap(), t: e.t }); hist.tag = null;
+  const x = JSON.parse(e.s);
   save({ edits: x.edits, items: x.items, layGuides: x.layGuides || undefined });
 }
+const undoT = computed(() => hist.u.at(-1)?.t || ""), redoT = computed(() => hist.r.at(-1)?.t || "");
 // запись правки надписи: у своей надписи — сама надпись (x, y), у надписи листа — edits[key] (dx, dy)
 function editOf(key, make = true) {
   const sh = sheet.value; if (!sh) return null;
@@ -297,22 +301,22 @@ function editOf(key, make = true) {
 function setProp(name, v) {
   const key = selKeys.value[0]; if (!key || viewer.value) return;
   if (name === "text" && isItem(key) && !String(v).trim()) return;   // пустая своя надпись пропала бы — её удаляют кнопкой
-  remember(name + ":" + key); const e = editOf(key);
+  remember(name + ":" + key, PROP_T[name] || "Свойство надписи"); const e = editOf(key);
   if (v === "" || v == null) delete e[name]; else e[name] = v;
   save({ edits: sheet.value.edits, items: sheet.value.items });
 }
 /* шрифт надписи: готовый или любой «f:<id>[-bold]» (FontPicker); имя любого — рядом, для показа там, где шрифта нет */
 function setFont(v, name) {
   const key = selKeys.value[0]; if (!key || viewer.value) return;
-  remember("font:" + key); const e = editOf(key);
+  remember("font:" + key, "Шрифт надписи"); const e = editOf(key);
   if (!v || v === "base") delete e.font; else e.font = v;
   if (String(v).startsWith("f:") && name) e.fontName = name; else delete e.fontName;
   save({ edits: sheet.value.edits, items: sheet.value.items });
 }
-function setHalo(h) { const key = selKeys.value[0]; if (!key) return; remember("halo:" + key); editOf(key).halo = h; save({ edits: sheet.value.edits, items: sheet.value.items }); }
+function setHalo(h) { const key = selKeys.value[0]; if (!key) return; remember("halo:" + key, "Обводка надписи"); editOf(key).halo = h; save({ edits: sheet.value.edits, items: sheet.value.items }); }
 function moveKeys(keys, dx, dy, tag) {
   if (viewer.value || !keys.length || (!dx && !dy)) return;
-  remember(tag);
+  remember(tag, keys.length > 1 ? "Сдвиг надписей" : "Сдвиг надписи");
   keys.forEach(key => { const e = editOf(key); if (!e) return;
     if (isItem(key)) { e.x = r2(e.x + dx); e.y = r2(e.y + dy); } else { e.dx = r2((e.dx || 0) + dx); e.dy = r2((e.dy || 0) + dy); } });
   // надпись сразу на новом месте, лист перерисуется следом
@@ -322,17 +326,19 @@ function moveKeys(keys, dx, dy, tag) {
 }
 function moveTo(x, y) { const b = selBox.value; moveKeys(selKeys.value, x == null ? 0 : x - b.x0, y == null ? 0 : y - b.y0); }
 function hideSel() {
-  if (!selKeys.value.length || viewer.value) return; remember(); const sh = sheet.value;
+  if (!selKeys.value.length || viewer.value) return;
+  remember(null, selKeys.value.length > 1 ? "Скрыть надписи" : isItem(selKeys.value[0]) ? "Удалить надпись" : "Скрыть надпись");
+  const sh = sheet.value;
   selKeys.value.forEach(key => { if (isItem(key)) sh.items = (sh.items || []).filter(x => "item:" + x.id !== key); else editOf(key).hide = true; });
   selKeys.value = []; save({ edits: sh.edits, items: sh.items });
 }
-function resetSel() { const key = selKeys.value[0]; if (!key || !sheet.value.edits) return; remember(); delete sheet.value.edits[key]; save({ edits: sheet.value.edits }); }
+function resetSel() { const key = selKeys.value[0]; if (!key || !sheet.value.edits) return; remember(null, "Сбросить правку надписи"); delete sheet.value.edits[key]; save({ edits: sheet.value.edits }); }
 function showHidden() {
-  const e = sheet.value?.edits || {}; let n = 0; remember();
+  const e = sheet.value?.edits || {}; let n = 0; remember(null, "Вернуть скрытые надписи");
   Object.values(e).forEach(x => { if (x.hide) { delete x.hide; n++; } });
   notice.value = n ? `Возвращено надписей: ${n}` : "Скрытых надписей нет"; if (n) save({ edits: e });
 }
-function resetAll() { askReset.value = false; remember(); selKeys.value = []; save({ edits: {}, items: [] }); }
+function resetAll() { askReset.value = false; remember(null, "Сбросить все правки листа"); selKeys.value = []; save({ edits: {}, items: [] }); }
 function alignSel(mode) {
   const keys = selKeys.value, bs = keys.map(key => ({ key, b: keyBox(key) })).filter(x => x.b); if (!bs.length) return;
   const to = bs.length === 1 ? { x0: 0, y0: 0, x1: view.w, y1: view.h } : union(bs.map(x => x.b)), out = [];
@@ -347,7 +353,7 @@ function alignSel(mode) {
     const dy = { top: to.y0 - b.y0, vcenter: (to.y0 + to.y1 - h) / 2 - b.y0, bottom: to.y1 - b.y1 }[mode] || 0;
     out.push([key, dx, dy]);
   });
-  remember();
+  remember(null, "Выровнять надписи");
   out.forEach(([key, dx, dy]) => { if (Math.abs(dx) < .01 && Math.abs(dy) < .01) return; const e = editOf(key);
     if (isItem(key)) { e.x = r2(e.x + dx); e.y = r2(e.y + dy); } else { e.dx = r2((e.dx || 0) + dx); e.dy = r2((e.dy || 0) + dy); } });
   save({ edits: sheet.value.edits, items: sheet.value.items });
@@ -369,7 +375,7 @@ function down(e) {
   const p = toMM(e);
   if (adding.value) {
     if (viewer.value) return;
-    const sh = sheet.value, id = Date.now().toString(36); remember();
+    const sh = sheet.value, id = Date.now().toString(36); remember(null, "Новая надпись");
     sh.items = [...(sh.items || []), { id, x: r2(p.x), y: r2(p.y), text: "Надпись", size: 3.5, font: "ui", color: "#1a1a1a" }];
     adding.value = false; selKeys.value = ["item:" + id]; save({ items: sh.items }); return;
   }
@@ -424,16 +430,16 @@ function rulerDown(ax, e) {
   track(e, ev => { const q = toMM(ev); G[ax][i] = r1(q[ax]); sheet.value.layGuides = G; overlay(); cursor.value = q; }, ev => {
     const v = r1(toMM(ev)[ax]), lim = ax === "x" ? view.w : view.h;
     G[ax].splice(i, 1); sheet.value.layGuides = { x: [...G.x], y: [...G.y] };
-    if (v > 0 && v < lim) { remember(); const N = { x: [...G.x], y: [...G.y] }; N[ax].push(v); save({ layGuides: N }, false); } else overlay();
+    if (v > 0 && v < lim) { remember(null, "Направляющая"); const N = { x: [...G.x], y: [...G.y] }; N[ax].push(v); save({ layGuides: N }, false); } else overlay();
   });
 }
 function guideDrag(e, ax, i) {
   if (viewer.value) return;
   i = +i; const G = { x: [...(guides().x || [])], y: [...(guides().y || [])] }, was = G[ax][i];
-  if (e.detail === 2) { remember(); G[ax].splice(i, 1); save({ layGuides: G }, false); return; }   // двойной щелчок — убрать
+  if (e.detail === 2) { remember(null, "Убрать направляющую"); G[ax].splice(i, 1); save({ layGuides: G }, false); return; }   // двойной щелчок — убрать
   track(e, ev => { const q = toMM(ev); G[ax][i] = r1(q[ax]); sheet.value.layGuides = G; overlay(); cursor.value = q; }, () => {
     const v = G[ax][i], lim = ax === "x" ? view.w : view.h;
-    sheet.value.layGuides = { x: [...G.x], y: [...G.y] }; G[ax][i] = was; remember(); G[ax][i] = v;
+    sheet.value.layGuides = { x: [...G.x], y: [...G.y] }; G[ax][i] = was; remember(null, "Направляющая"); G[ax][i] = v;
     if (!(v > 0 && v < lim)) G[ax].splice(i, 1);           // на линейку или за лист — убрать
     save({ layGuides: G }, false);
   });

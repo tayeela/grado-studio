@@ -9,7 +9,7 @@ import { markRaw, reactive, ref } from "vue";
 import * as turf from "@turf/turf";
 import "../../web/roles.js";
 import { currentId, project } from "./store.js";
-import { lyr, mapApi, normGroups, touchData } from "./edit.js";
+import { lyr, mapApi, normGroups, setLabel, touchData } from "./edit.js";
 import { busy, markDirty, notice, say } from "./project.js";
 import { setSel, sizeOf } from "./features.js";
 import { CAT, assignCats, fullStyle } from "./symbology.js";
@@ -51,12 +51,14 @@ export const terrArea = () => project.territory ? sizeOf(project.territory)[1] :
 /* opt.keep — правка вершин: вид карты остаётся. Граница хранится в файле как GeoJSON Feature без свойств. */
 export function setTerritory(feature, opt = {}) {
   if (!feature?.geometry) return;
+  setLabel("Изменить границу территории");   // конкретные пути ставят свою подпись раньше (честнее)
   project.territory = markRaw({ type: "Feature", properties: {}, geometry: feature.geometry });
   if (!opt.keep) mapApi.fitExtent?.(turf.bbox(project.territory));
 }
 
 export const EXAMPLE = [[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]];
 export function exampleTerritory() {
+  setLabel("Поставить границу-пример");
   setTerritory(turf.polygon([EXAMPLE]));
   notice.value = `Граница-пример: ${fmt(terrArea() / 1e4, 2)} га`;
 }
@@ -72,7 +74,8 @@ export function unionAll(fs) {
 export function territoryFromSelection(items) {
   const u = unionAll(items.map(s => s.f));
   if (!u) { notice.value = "Среди выбранных нет площадных объектов — граница не изменена"; return false; }
-  setTerritory(u); notice.value = `Граница — по выбранным объектам (${items.length}): ${fmt(terrArea() / 1e4, 2)} га`;
+  setLabel("Граница по выбранным объектам"); setTerritory(u);
+  notice.value = `Граница — по выбранным объектам (${items.length}): ${fmt(terrArea() / 1e4, 2)} га`;
   return true;
 }
 
@@ -99,7 +102,8 @@ export async function territoryByNumbers(text) {
     finally { busy.value = false; }
   }
   const u = unionAll(feats); if (!u) { notice.value = "Участки не объединились — граница не изменена"; return false; }
-  setTerritory(u); notice.value = `Граница — по участкам (${want.length}): ${fmt(terrArea() / 1e4, 4)} га`;
+  setLabel("Граница по участкам"); setTerritory(u);
+  notice.value = `Граница — по участкам (${want.length}): ${fmt(terrArea() / 1e4, 4)} га`;
   return true;
 }
 /* участки, найденные по номерам, ложатся в слой «Земельные участки (ЕГРН)» без повторов (web/app.js addParcels) */
@@ -109,6 +113,7 @@ export function addParcels(feats) {
   const add = feats.filter(f => { const a = [f.properties?._key, cadOf(f)].filter(Boolean); if (a.some(x => seen.has(x))) return false; a.forEach(x => seen.add(x)); return true; })
     .map(f => cadOf(f) ? { ...f, properties: { ...f.properties, _key: cadOf(f) } } : f);
   if (!add.length && prev) return;
+  setLabel("Загрузить участки");
   const title = prev?.title || SOURCES[k]?.title || "Земельные участки (ЕГРН)";
   project.data[k] = { ...(prev || {}), title, source: prev?.source || "НСПД (nspd.gov.ru), поиск по кадастровому номеру", fetched_at: prev?.fetched_at || today(),
     fc: { type: "FeatureCollection", features: [...have, ...add] }, original: { type: "FeatureCollection", features: [...(prev?.original?.features || prev?.fc?.features || []), ...add] }, history: prev?.history || [] };
@@ -136,7 +141,7 @@ export async function importBoundary(files) {
     });
     if (!polys.length) throw new Error("в файле нет замкнутых контуров");
     polys.sort((a, b) => turf.area(b) - turf.area(a));
-    setTerritory(polys[0]);
+    setLabel("Граница из файла"); setTerritory(polys[0]);
     notice.value = `Граница из файла «${files[0].name}»: ${fmt(terrArea() / 1e4, 2)} га${polys.length > 1 ? `; взят самый большой из ${polys.length} контуров` : ""}`;
     return true;
   } catch (e) { notice.value = "Граница не прочитана: " + e.message; return false; }
@@ -235,6 +240,7 @@ const rank = k => { const i = PREFERRED.indexOf(k); return i < 0 ? -1 : i; };
    были), из нескольких слоёв застройки остаётся видимым один. Ничего не удаляется. */
 const BUILDINGS = ["egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings"];
 export function tidyLayers() {
+  setLabel("Упорядочить слои");
   const L = project.layers, order = L.map((l, i) => [l, i]).sort((a, b) => (rank(a[0].key) - rank(b[0].key)) || (a[1] - b[1])).map(x => x[0]);
   L.splice(0, L.length, ...order);
   const on = BUILDINGS.map(k => lyr(k)).filter(l => l?.visible), hidden = on.slice(1).map(l => { l.visible = false; return l.title; });
@@ -361,6 +367,7 @@ export async function loadKeys(keys, bb) {
     try {
       const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: part, ...(terr ? { territory: terr } : {}) });
       if (my !== project.raw) { dropped = true; return; }
+      setLabel("Загрузить данные");
       Object.assign(ERRORS, r.errors || {});
       for (const [k, v] of Object.entries(r.layers || {})) {
         if (ERRORS[k] && !v.features.features.length) continue;          // портал не ответил — это не «пусто» (ниже: «ошибка»)
@@ -423,6 +430,7 @@ export async function importFiles(files) {
   busy.value = true;
   try {
     const j = await api("/api/import/files", await filesBody(files));
+    setLabel("Импорт файлов");
     const imports = project.raw.imports ||= {}, msgs = [], keys = [];
     for (const lay of j.layers) {
       let key = "import:" + lay.name + "." + lay.format.toLowerCase(), title = `${lay.name} (${lay.format})`, n = 2;
@@ -491,6 +499,7 @@ export async function fgLoad() {
   try {
     const r = await api("/api/fgistp/fetch", { uin: FG.uin, classids: [...FG.sel], bbox: bb });
     if (my !== project.raw) { FG.msg = "Выгрузка для прежнего проекта отброшена."; return; }
+    setLabel("Загрузить слои ФГИС ТП");
     let n = 0; const reps = [], vals = Object.entries(r.layers || {}), empty = vals.filter(([, v]) => !v.features.features.length).map(([, v]) => v.title.replace("ФГИС ТП: ", ""));
     for (const [k, v] of vals) {
       if (!v.features.features.length) continue;                 // пустой в этой области слой не засоряет список

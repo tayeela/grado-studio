@@ -8,7 +8,7 @@ import { reactive, ref, shallowReactive, watch } from "vue";
 import * as turf from "@turf/turf";
 import "../../web/roles.js";
 import { project, shown, currentId } from "./store.js";
-import { dataRev, graphRev, graphHooks, lyr, touchData } from "./edit.js";
+import { dataRev, graphRev, graphHooks, lyr, setLabel, touchData } from "./edit.js";
 import { markDirty, notice } from "./project.js";
 import { SOURCES, ensureLayer } from "./data.js";
 import { CK, CONS } from "./constraints.js";
@@ -305,12 +305,12 @@ watch([dataRev, graphRev, () => CONS.floorH, () => project.layers.map(l => [l.ke
 graphHooks.restored = () => { RT.clear(); structRev.value++; schedule(); };
 
 /* ---------- правка схемы ---------- */
-export function edited(structure) { graphRev.value++; markDirty(); if (structure) structRev.value++; schedule(); }
+export function edited(structure) { setLabel("Правка схемы расчёта"); graphRev.value++; markDirty(); if (structure) structRev.value++; schedule(); }
 export const structRev = ref(0);             // узлы или связи изменились: окно схемы перестраивает картинку
 export function setWidget(id, i, v) { const n = nodeById(id); if (!n) return; n.widgets_values ||= []; if (n.widgets_values[i] === v) return; n.widgets_values[i] = v; edited(); }
 export function setProp(id, k, v) { const n = nodeById(id); if (!n) return; (n.properties ||= {})[k] = v; edited(); }
 export function renameNode(id, title) { const n = nodeById(id); if (!n) return; if (title && title !== TYPES[n.type]?.title) n.title = title; else delete n.title; edited(true); }
-export function moveNode(id, x, y) { const n = nodeById(id); if (!n) return; n.pos = [Math.round(x), Math.round(y)]; graphRev.value++; markDirty(); }
+export function moveNode(id, x, y) { const n = nodeById(id); if (!n) return; setLabel("Сдвинуть узел схемы"); n.pos = [Math.round(x), Math.round(y)]; graphRev.value++; markDirty(); }
 export function addNode(type, pos) {
   const g = graph(), t = TYPES[type]; if (!g || !t) return null;
   const id = ++g.last_node_id, ins = t.inputs || [], outs = t.outputs || [];
@@ -357,6 +357,7 @@ export function bakeNode(id) {
   const r = RT.get(n.id), out = (n.outputs || []).findIndex(o => o.type === "geom"), g = out >= 0 ? r?.out[out] : null;
   const feats = r?.fc?.length ? r.fc : g ? [turf.feature(g.geometry, { "Узел": nodeTitle(n) })] : [];
   if (!feats.length) { notice.value = "У блока нет геометрии на выходе"; return; }
+  setLabel(`Запечь «${nodeTitle(n)}» в слой`);
   const key = "user:" + Date.now().toString(36), title = `Анализ: ${nodeTitle(n)}`, fc = turf.featureCollection(feats.map(f => turf.feature(f.geometry, { ...f.properties })));
   project.data[key] = { title, source: "выход блока схемы, " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc };
   const l = ensureLayer(key, title); l.style = fullStyle({ ...l.style, label: "Пояснение", opacity: .35 });

@@ -4,7 +4,7 @@
    и цель плотности по ПЗЗ. Правки идут в схему проекта (graph.js) — та же схема, что в рабочей странице. */
 import * as turf from "@turf/turf";
 import { project, currentId } from "./store.js";
-import { touchData, newGroup } from "./edit.js";
+import { setLabel, touchData, newGroup } from "./edit.js";
 import { notice } from "./project.js";
 import { ensureLayer } from "./data.js";
 import { fullStyle } from "./symbology.js";
@@ -89,6 +89,7 @@ function addLayer(title, fc, style) {
 /* skIn — сохранённый вариант (T59): корпуса без участков и улиц схемы, typIn и titleIn — его типология и название слоя */
 export function bakeSketch(skIn, typIn, titleIn) {
   const own = Array.isArray(skIn), sk = own ? skIn : RESULT.sketch || []; if (!sk.length) { notice.value = "Эскиз пуст: сначала «Построить эскиз»"; return null; }
+  setLabel("Сохранить эскиз слоями");
   const typ = (own && typIn) || wv(RESULT.placeNode, "типология") || "", t = typ.toLowerCase(), fl = [...new Set(sk.map(b => b.floors))];
   const resP = own ? [] : reserveState().plots, plots = [...(sk.plots || []), ...resP], keys = [];
   // новые слои встают наверх: сначала улицы, затем участки, корпуса — сверху

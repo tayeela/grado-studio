@@ -9,7 +9,13 @@
       <wa-input size="s" placeholder="Поиск по полям" with-clear :value="q" @input="e => (q = e.target.value)"></wa-input>
       <wa-checkbox size="s" :checked="selOnly" @change="e => (selOnly = e.target.checked)">только выбранные</wa-checkbox>
     </div>
-    <div ref="el" class="grid" @keydown.capture="onKey"></div>
+    <div class="gwrap">
+      <div ref="el" class="grid" @keydown.capture="onKey"></div>
+      <!-- слой не выбран или пуст — объяснение вместо тихого плейсхолдера Tabulator (аудит 2.6), как .empty «Объёма»;
+           случаи разные — и советы разные: не выбран — куда идти, пуст — что объектов в слое нет -->
+      <div v-if="noLayer" class="empty" role="status"><b>Таблица пуста</b><span>Выберите слой в окне «Слои» — таблица покажет его объекты.</span></div>
+      <div v-else-if="emptyLayer" class="empty" role="status"><b>Таблица пуста</b><span>В слое нет объектов.</span></div>
+    </div>
     <p class="sr-only" aria-live="polite">{{ said }}</p>
   </div>
 </template>
@@ -27,6 +33,9 @@ const el = ref(null), q = ref(""), selOnly = ref(false), said = ref("");
 let table = null, ready = false, shownKey = "", shownFc = null, shownCols = "";
 
 const fc = computed(() => (dataRev.value, project.data[current.value?.key]?.fc));
+/* слой не выбран или выбран, но без объектов — над таблицей объяснение (аудит 2.6), у двух случаев свой совет */
+const noLayer = computed(() => !current.value);
+const emptyLayer = computed(() => !!current.value && !fc.value?.features?.length);
 const nSel = computed(() => sel.filter(s => s.key === current.value?.key).length);
 const title = computed(() => {
   const l = current.value; if (!l) return "Выберите слой в окне «Слои»";
@@ -127,7 +136,11 @@ watch([q, selOnly], () => ready && applyFilter());
 .tbl .bar .t { flex: 1; font-size: var(--wa-font-size-s); color: var(--g-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tbl .bar wa-input, .tbl .bar wa-checkbox { margin: 0 !important; }
 .tbl .bar wa-input { width: 180px; }
+.tbl .gwrap { flex: 1; position: relative; display: flex; min-height: 0; }
 .tbl .grid { flex: 1; min-height: 0; font-size: var(--wa-font-size-s); }
+.tbl .empty { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center;
+  text-align: center; padding: 20px; font-size: var(--wa-font-size-s); color: var(--g-muted); }
+.tbl .empty b { color: var(--wa-color-text-normal); font-size: var(--wa-font-size-m); }
 .tbl .tabulator { background: var(--wa-color-surface-default); border: 0; color: inherit; }
 .tbl .tabulator .tabulator-header, .tbl .tabulator .tabulator-header .tabulator-col { background: var(--g-bar); color: var(--g-muted); border-color: var(--g-line); }
 .tbl .tabulator .tabulator-tableholder .tabulator-table { background: var(--wa-color-surface-default); color: inherit; }

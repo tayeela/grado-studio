@@ -87,7 +87,7 @@ import { ALB, NEW, captureView, frameFromExtent, newViewBySelection, vframes, vi
 import { album } from "../albumhost.js";
 import { project, setBasemap, viewCur } from "../store.js";
 import LayerSwatch from "./LayerSwatch.vue";
-import { dataRev, grp, mapApi } from "../edit.js";
+import { dataRev, grp, mapApi, setLabel } from "../edit.js";
 import { notice } from "../project.js";
 import { fullStyle, legendItems, okn } from "../symbology.js";
 import { plural } from "../geom.js";
@@ -99,6 +99,7 @@ const nOn = v => v.layers.filter(x => x.visible).length;
 const capture = captureView;
 function add() {
   const t = name.value.trim() || `Вид ${project.views.length + 1}`, v = capture(t, withExt.value);
+  setLabel(`Создать вид «${t}»`);
   project.views.push(v); viewCur.value = v.id; name.value = "";
   notice.value = `Вид «${t}» сохранён`;
 }
@@ -106,6 +107,7 @@ function add() {
 // строку вида тянут на лист «Макета листа»: туда уходит id вида
 function dragOut(v, e) { e.dataTransfer.setData(VIEW_MIME, v.id); e.dataTransfer.setData("text/plain", v.name); e.dataTransfer.effectAllowed = "copy"; }
 function show(v) {
+  setLabel(`Включить вид «${v.name}»`);
   const by = new Map(v.layers.map(x => [x.key, x]));
   project.layers.forEach(l => {
     const x = by.get(l.key); if (!x) { l.visible = false; return; }
@@ -117,6 +119,7 @@ function show(v) {
   viewCur.value = v.id; confirmId.value = ""; vframes.sel = v.id;
 }
 function update(v) {
+  setLabel(`Обновить вид «${v.name}»`);
   const i = project.views.indexOf(v);
   project.views.splice(i, 1, { ...capture(v.name, !!v.extent), id: v.id, ...(v.frame ? { frame: v.frame } : {}) }); viewCur.value = v.id;   // рамка остаётся
   notice.value = `Вид «${v.name}» обновлён`;
@@ -127,6 +130,7 @@ const usedBy = id => sheets().filter(s => s.view === id);
    на текущую карту (album.sheets[].view = ""), как в web/views.js. */
 function remove(v) {
   if (confirmId.value !== v.id) { confirmId.value = v.id; return; }
+  setLabel(`Удалить вид «${v.name}»`);
   const used = usedBy(v.id);
   used.forEach(s => { s.view = ""; });
   project.views.splice(project.views.indexOf(v), 1);

@@ -13,19 +13,19 @@
         <label>Район</label><div><b>{{ tp.district || (rtBusy ? "определяется…" : "не определён") }}</b> <small v-if="tp.insideTtk">внутри ТТК</small>
           <small v-if="(tp.districts || []).length > 1" class="sub" title="Район, зона образования, K2 и ТиНАО взяты у района с наибольшей долей площади границы">{{ shares }}</small></div>
         <label title="2151-ПП п. 1.3.2: нормы ДОО и школ">Образование</label>
-        <select :value="String(tp.zone)" aria-label="Образовательная зона" @change="e => setTp('zone', +e.target.value)"><option value="1">зона 1 — 44 / 90</option><option value="2">зона 2 — 63 / 124</option></select>
+        <wa-select size="s" :value="String(tp.zone)" aria-label="Образовательная зона" @change="e => setTp('zone', +e.target.value)"><wa-option value="1">зона 1 — 44 / 90</wa-option><wa-option value="2">зона 2 — 63 / 124</wa-option></wa-select>
         <label title="945-ПП прил. 6: пешая доступность входа в метро, МЦК, МЦД">K1</label>
-        <div><select :value="String(tp.k1)" aria-label="K1" @change="e => setTp('k1', +e.target.value)"><option value="0.75">0,75 · до 1200 м</option><option value="0.9">0,9 · 1200–2200 м</option><option value="1">1,0 · дальше</option></select>
+        <div><wa-select size="s" :value="String(tp.k1)" aria-label="K1" @change="e => setTp('k1', +e.target.value)"><wa-option value="0.75">0,75 · до 1200 м</wa-option><wa-option value="0.9">0,9 · 1200–2200 м</wa-option><wa-option value="1">1,0 · дальше</wa-option></wa-select>
           <small v-if="tp.walk != null" class="sub" :title="tp.walkRoute ? 'пешеходный маршрут по улицам и дорожкам OSM от центра территории' : 'прямое расстояние до ближайшего входа или станции метро, МЦК, МЦД × 1,3 (маршрут по улицам считается)'">{{ walkLine }}</small></div>
         <label title="945-ПП прил. 3: деловая активность района">K2</label>
-        <div class="inl"><select :value="String(tp.k2)" aria-label="K2" @change="e => setTp('k2', +e.target.value)"><option v-for="v in [0.2, 0.5, 0.7, 0.9]" :key="v" :value="String(v)">{{ fmt(v, 1) }}</option></select>
-          <label title="Отметьте, если территория в Троицком или Новомосковском округе: от этого зависит расчёт показателей"><input type="checkbox" :checked="!!tp.tinao" @change="e => setTp('tinao', e.target.checked ? 1 : 0)"> ТиНАО</label></div>
+        <div class="inl"><wa-select size="s" :value="String(tp.k2)" aria-label="K2" @change="e => setTp('k2', +e.target.value)"><wa-option v-for="v in [0.2, 0.5, 0.7, 0.9]" :key="v" :value="String(v)">{{ fmt(v, 1) }}</wa-option></wa-select>
+          <wa-checkbox size="s" title="Отметьте, если территория в Троицком или Новомосковском округе: от этого зависит расчёт показателей" :checked="!!tp.tinao" @change="e => setTp('tinao', e.target.checked ? 1 : 0)">ТиНАО</wa-checkbox></div>
         <label title="2152-ПП табл. 1.4.2">Жилые территории</label>
-        <select :value="String(tp.mode)" aria-label="Тип территории" @change="e => setTp('mode', +e.target.value)"><option v-for="(l, v) in MODES" :key="v" :value="v">{{ l }}</option></select>
+        <wa-select size="s" :value="String(tp.mode)" aria-label="Тип территории" @change="e => setTp('mode', +e.target.value)"><wa-option v-for="(l, v) in MODES" :key="v" :value="v">{{ l }}</wa-option></wa-select>
         <label title="Доля встроенно-пристроенных нежилых помещений в МКД; по умолчанию 94 / 6">Нежилое в МКД, %</label>
-        <input type="number" min="0" max="100" aria-label="Нежилое в МКД, %" :value="Number(tp.nonres)" @change="e => setTp('nonres', clamp(e.target, 0, 100))">
+        <wa-input size="s" type="number" min="0" max="100" aria-label="Нежилое в МКД, %" :value="Number(tp.nonres)" @change="e => setTp('nonres', clamp(e.target, 0, 100))"></wa-input>
         <label title="Незастраиваемая территория в составе жилой (баланс территории)">Незастраиваемая, %</label>
-        <input type="number" min="0" max="90" aria-label="Незастраиваемая, %" :value="Number(tp.unbuilt)" @change="e => setTp('unbuilt', clamp(e.target, 0, 90))">
+        <wa-input size="s" type="number" min="0" max="90" aria-label="Незастраиваемая, %" :value="Number(tp.unbuilt)" @change="e => setTp('unbuilt', clamp(e.target, 0, 90))"></wa-input>
         <label title="Нормы расчёта: 2151-ПП, 2152-ПП, 1557-ПП, 945-ПП. Поля уже заполнены действующими значениями; их можно изменить до расчёта">Нормативы</label>
         <div><wa-button size="s" appearance="outlined" title="Открыть окно «Нормативы расчёта»" @click="winApi.open('norms')">Нормативы…</wa-button></div>
         <template v-if="pz">
@@ -111,12 +111,14 @@ function resetTp() { Object.assign(tepParams(tn.value), { mode: 1, nonres: 6, un
 .tep td { padding: 2px 6px; border-bottom: 1px solid var(--g-line); text-align: left; }
 .tep td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tep td.good { color: var(--wa-color-success-on-quiet); } .tep td.bad { color: var(--wa-color-danger-on-quiet); } .tep td.warnc { color: var(--wa-color-warning-on-quiet); }
-.tep .tp { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 4px 8px; align-items: center; font-size: var(--wa-font-size-s); }
+.tep .tp { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 2px 8px; align-items: center; font-size: var(--wa-font-size-s); }
 .tep .tp > label { color: var(--g-muted); }
-.tep .tp select, .tep .tp input[type=number] { justify-self: start; font: inherit; padding: 1px 4px; border: 1px solid var(--g-line); border-radius: 4px; background: var(--wa-color-surface-default); color: inherit; max-width: 100%; }
-.tep .tp input[type=number] { width: 64px; }
-.tep .tp .inl { display: flex; align-items: center; gap: 10px; }
-.tep .tp .inl label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+/* Web Awesome вместо нативных select/checkbox/number (аудит 2.7): без своих отступов, компактно у левого края ячейки;
+   шаг строк 2 px — поля WA выше нативных, окно не разъезжается */
+.tep .tp wa-select, .tep .tp wa-input, .tep .tp wa-checkbox { margin: 0 !important; }
+.tep .tp wa-select, .tep .tp wa-input { justify-self: start; max-width: 100%; }
+.tep .tp wa-input[type=number] { width: 76px; }
+.tep .tp .inl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tep .tp .sub { display: block; color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 .tep .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
 .tep .warn { color: var(--wa-color-warning-on-quiet); font-size: var(--wa-font-size-xs); margin: 3px 0; }
