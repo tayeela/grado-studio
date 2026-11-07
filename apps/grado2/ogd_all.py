@@ -37,6 +37,7 @@ from grado_connectors.crs import transform_geom
 from grado_connectors.gisogd_api import GisogdApi, catalog
 
 import dxf_io
+import gravlog                                          # журнал сервера (gravlog.py): сбои слоёв и готовые выгрузки — в него, не в stdout
 
 # ---------- Пределы AutoCAD и память о слоях, которые портал не отдаёт ----------
 _BAD = dxf_io._ACAD_BAD                 # те же запрещённые знаки, что у acad_name (с запятой)
@@ -882,7 +883,7 @@ class Job:
                     failed[it["code"]] = {"at": time.time(), "why": str(e)[:80]}
                     _save_failed(self.cache_dir, failed)
                 except Exception as e:                  # один битый слой не останавливает остальные
-                    print(f"ogd_all: слой {it['code']}: {type(e).__name__}: {e}", flush=True)       # подробности — только в журнал сервера
+                    gravlog.get("ogd").error(f"слой {it['code']}: {type(e).__name__}: {e}")       # подробности — только в журнал сервера
                     st["errors"].append(f"{it['title']}: сбой при разборе слоя (подробности в журнале сервера)")
                 st["done"] += 1
             _save_failed(self.cache_dir, failed)
@@ -933,8 +934,9 @@ class Job:
             path.write_bytes(body)
             self.file = path
             st.update(running=False, file=path.name, dwg=dwg, message="Готово.")
+            gravlog.get("ogd").info(f"выгрузка готова: {path.name}, {gravlog.human(len(body))}")   # успехи тоже не молчат (аудит 06.11, п. 4.2)
         except ConnectorError as e:                # текст коннектора — для пользователя
             st.update(running=False, message=f"Выгрузка не удалась: {e}")
         except Exception as e:                     # пути и типы исключений клиенту не уходят — только в журнал сервера
-            print(f"ogd_all: выгрузка не удалась: {type(e).__name__}: {e}", flush=True)
+            gravlog.get("ogd").error(f"выгрузка не удалась: {type(e).__name__}: {e}")
             st.update(running=False, message="Выгрузка не удалась: внутренняя ошибка (подробности в журнале сервера)")

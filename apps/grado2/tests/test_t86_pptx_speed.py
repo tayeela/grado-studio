@@ -46,13 +46,14 @@ class EgkoCache(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_second_call_uses_cache(self):
+        import json
         e = FakeEgko()
         a = print_io.egko_ops(self.tr, self.rect, MASK, e)
         n = e.calls
         self.assertEqual(n, len(print_io.EGKO_BASE))
         b = print_io.egko_ops(self.tr, self.rect, MASK, e)
         self.assertEqual(e.calls, n, "ЕГКО второй раз не запрашивается")
-        self.assertEqual(a, b)
+        self.assertEqual(json.loads(json.dumps(a)), b)      # JSON-кэш: кортежи стали списками, содержимое то же
         self.assertGreater(len(a), 2)
 
     def test_other_scale_is_other_key(self):
@@ -65,7 +66,22 @@ class EgkoCache(unittest.TestCase):
     def test_failed_layer_not_cached(self):
         e = FakeEgko(fail=True)
         print_io.egko_ops(self.tr, self.rect, MASK, e)
-        self.assertEqual(list(Path(self.tmp.name).glob("*.pkl")), [])
+        self.assertEqual(list(Path(self.tmp.name).glob("*.json")), [])
+
+    def test_json_round_trip_and_old_pickle_ignored(self):
+        # JSON вместо pickle (аудит 06.11, п. 4.3): put→get возвращает то же с точностью кортеж→список;
+        # прежний .pkl — просто промах, а при следующей записи осиротевшие .pkl убираются
+        import json
+        import pickle
+        ops = [{"op": "clip", "rings": [[(0, 0), (1, 0), (1, 1)]]},
+               {"op": "path", "rings": [[(1.5, 2.5), (3, 4)]], "closed": True, "fill": (0.1, 0.2, 0.3),
+                "stroke": None, "width": 0.35, "dash": [1.0, 0.5]}]
+        print_io.ops_cache_put("egko-test", ops)
+        self.assertEqual(print_io.ops_cache_get("egko-test"), json.loads(json.dumps(ops)))
+        (Path(self.tmp.name) / "egko-old.pkl").write_bytes(pickle.dumps(ops))
+        self.assertIsNone(print_io.ops_cache_get("egko-old"))          # старый формат — промах кэша, не ошибка
+        print_io.ops_cache_put("egko-next", ops)
+        self.assertEqual(list(Path(self.tmp.name).glob("*.pkl")), [])  # осиротевший .pkl удалён
 
     def test_tiny_polygons_skipped(self):
         e = FakeEgko()

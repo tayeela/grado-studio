@@ -27,6 +27,7 @@ import json
 import math
 import os
 import re
+import secrets
 import sys
 import threading
 import time
@@ -42,7 +43,7 @@ from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import FileResponse, Response, StreamingResponse
 from starlette.routing import Route
 from starlette.staticfiles import StaticFiles
 
@@ -69,6 +70,7 @@ import hub as hubmod                                               # noqa: E402 
 import catalog as catmod                                           # noqa: E402  каталог проектов: превью, избранное, корзина (SQLite)
 import tglogin                                                     # noqa: E402  вход на сайт через Telegram (OIDC)
 import portalgate                                                  # noqa: E402  очередь к порталам: одно место за раз (#51)
+import gravlog                                                     # noqa: E402  журнал сервера: файл с ротацией + stderr (gravlog.py)
 
 WEB = ROOT / "web" if FROZEN else Path(__file__).resolve().parent / "web"
 CACHE = Path.home() / ".grado2" / "cache"
@@ -797,8 +799,8 @@ def layout_qa_headers(spec):
 
 
 def _log_portal(where, text):
-    if sys.stderr and text:
-        sys.stderr.write(f"[portal] {where}: {text}\n")
+    if text:
+        gravlog.get("portal").warning(f"{where}: {text}")
 
 
 
@@ -1714,21 +1716,34 @@ def atomic_write(path, body):
 
 VERSIONS_KEEP = 40                                    # прежних версий на проект (сжатых, ~3 МБ каждая)
 VERSIONS_EVERY = {True: 3600, False: 600}             # не чаще: автосохранение — раз в час, «Сохранить» — раз в 10 мин
+VERSIONS_LAST = ".last"                               # маркер времени последней копии (epoch-секунды) в папке версий проекта
+
+
+def _versions_last(d):
+    """Время последней копии из маркера .last; нет или битый — None. Время искали в mtime gz-файла, но перенос папки
+    (копирование, синхронизация) менял mtime и открывал окно заново — версии сыпались подряд (аудит 06.11, п. 4.1)."""
+    try:
+        return float((d / VERSIONS_LAST).read_text("utf-8").strip())
+    except (OSError, ValueError):
+        return None
 
 
 def keep_version(path, auto):
     """Прежний файл проекта перед перезаписью — в .versions/<проект>/ГГГГММДД-ЧЧММ.grado2.gz (последние 40).
-    Защита от ошибки в работе: удалённый слой, испорченная правка, чужая вкладка. С сервера копия не уходит."""
+    Защита от ошибки в работе: удалённый слой, испорченная правка, чужая вкладка. С сервера копия не уходит.
+    Окно троттлинга — по типу текущего сохранения (автосейв после ручного в пределах часа молчит); маркера нет
+    (первое сохранение или папку принесли без него) — копия делается всегда."""
     import gzip
     import time as _t
     if not path.exists():
         return
     d = PROJECTS / ".versions" / path.stem
-    old = sorted(d.glob("*.grado2.gz")) if d.exists() else []
-    if old and _t.time() - old[-1].stat().st_mtime < VERSIONS_EVERY[auto]:
+    last = _versions_last(d)
+    if last is not None and _t.time() - last < VERSIONS_EVERY[auto]:
         return
     stamp = _t.strftime("%Y%m%d-%H%M", _t.localtime(path.stat().st_mtime))
     atomic_write(d / f"{stamp}.grado2.gz", gzip.compress(path.read_bytes(), 6))
+    atomic_write(d / VERSIONS_LAST, f"{_t.time():.3f}".encode())   # после копии: сорванная запись не откроет окно
     for p in sorted(d.glob("*.grado2.gz"))[:-VERSIONS_KEEP]:
         p.unlink(missing_ok=True)
 
@@ -1796,6 +1811,7 @@ def save_project(name, body, base=None, replace=False):
     replace=True — он заменяется (файл сначала переименовывается в новое название, как rename_project: Mac регистр не различает)."""
     obj = json.loads(body)                            # в файл идёт только целый JSON
     path = project_path(name)
+    started = time.perf_counter()
     with _SAVE_LOCK:                                  # два сохранения подряд — по очереди
         if name != AUTOSAVE:
             other = _clash(name, path)
@@ -1808,6 +1824,7 @@ def save_project(name, body, base=None, replace=False):
         if isinstance(obj, dict) and "layouts" not in obj and path.exists():
             body = with_layouts(body, split_layouts(path.read_bytes())[1])   # листы макета, о которых страница не знает, остаются
         _write_project(path, name, body)
+    gravlog.get("save").info(f'проект «{name}» записан: {gravlog.human(len(body))}, {time.perf_counter() - started:.2f} с')
     return path
 
 
@@ -1988,6 +2005,25 @@ def same_token(a, b):
     return hmac.compare_digest(str(a).encode("utf-8", "replace"), str(b).encode("utf-8", "replace"))
 
 
+def rotated_cookie():
+    """Значение куки входа: <nonce>.<hmac_sha256(TOKEN, nonce)> (аудит 06.11, п. 4.5) — в браузере лежит подпись,
+    а не сам ключ: чтение куки (расширение, чужой скрипт) не даёт ключа для заголовка X-Grado-Token и скриптов."""
+    nonce = secrets.token_urlsafe(16)
+    return f"{nonce}.{hmac.new(TOKEN.encode('utf-8'), nonce.encode('ascii'), hashlib.sha256).hexdigest()}"
+
+
+def cookie_token_ok(value):
+    """Кука входа верна: сам ключ (прежние сессии и скрипты, назад совместимость) или подписанная пара nonce-подпись."""
+    if not TOKEN:
+        return False
+    if same_token(value, TOKEN):
+        return True
+    nonce, _, sig = value.partition(".")
+    return bool(nonce and sig) and hmac.compare_digest(
+        hmac.new(TOKEN.encode("utf-8"), nonce.encode("utf-8", "replace"), hashlib.sha256).hexdigest().encode("ascii"),
+        sig.encode("utf-8", "replace"))                                # по байтам: кука может быть любая, сравнение не падает
+
+
 # ---------- HTTP: Starlette (BSD) под uvicorn (BSD); тела запросов проверяет pydantic (MIT) ----------
 # Порядок для каждого запроса: Guard (чужой Host или Origin → 403, ключ доступа или сессия хаба, заголовки защиты на любом
 # ответе) → маршрут из ROUTES → функция маршрута в пуле нитей (диск, порталы и печать — блокирующие). Чего нет в ROUTES,
@@ -2140,12 +2176,13 @@ class Ctx:
         return ""
 
     def authed(self):
-        """Есть ключ доступа: кука grado_token или заголовок X-Grado-Token (для скриптов)."""
+        """Есть ключ доступа: кука grado_token (ротированная подпись или сам ключ — прежние сессии) или
+        заголовок X-Grado-Token (для скриптов)."""
         if same_token(self.headers.get(TOKEN_HEADER) or "", TOKEN):
             return True
         for part in (self.headers.get("Cookie") or "").split(";"):
             k, _, v = part.strip().partition("=")
-            if k == TOKEN_COOKIE and same_token(unquote(v), TOKEN):
+            if k == TOKEN_COOKIE and cookie_token_ok(unquote(v)):
                 return True
         return False
 
@@ -2211,7 +2248,9 @@ class Ctx:
         return _json(401, {"error": "нужен вход"})
 
     def tls(self):
-        return "https" in (self.headers.get("X-Forwarded-Proto") or "").lower()
+        """Снаружи https — только со слов своего прокси на loopback (тот же повод, что у client_ip: X-Forwarded-*
+        пишет прокси, а чужой пир подделывает заголовок и снимает или ставит Secure как ему удобно)."""
+        return self.peer in ("127.0.0.1", "::1") and "https" in (self.headers.get("X-Forwarded-Proto") or "").lower()
 
     def cookie(self, value, max_age):
         """Set-Cookie с ключом; Secure — когда прокси сообщил, что снаружи https."""
@@ -2249,13 +2288,14 @@ class Ctx:
         return AUTOSAVE if self.query.get("autosave") else self.q("name")
 
     def log_fail(self, e):
-        """Причина сбоя — в журнал сервера (stderr), клиенту она не уходит."""
+        """Причина сбоя — в журнал сервера (gravlog), клиенту она не уходит."""
         _log_line(f"{self.method} {self.route}: {type(e).__name__}: {e}")
 
 
-def _log_line(text):
-    if sys.stderr:
-        sys.stderr.write(f"[{time.strftime('%d/%b/%Y %H:%M:%S')}] {text}\n")
+def _log_line(text, warn=False):
+    """Строка в журнал сервера (gravlog: файл с ротацией + stderr): отказы маршрутов и причины сбоев."""
+    log = gravlog.get("http")
+    log.warning(text) if warn else log.error(text)
 
 
 def client_ip(peer, headers):
@@ -2320,7 +2360,10 @@ def get_ogd_file(c):
     job = OGD_JOB[0] if OGD_JOB else None
     if not job or not job.file or not job.file.exists():
         return _json(404, {"error": "Файла выгрузки нет — запустите выгрузку заново"})
-    r = _file(job.file.read_bytes(), "application/zip")
+    # FileResponse отдаёт файл с диска потоками: прежде zip (десятки МБ) читался в память целиком второй раз (аудит 06.11, п. 4.4).
+    # stat заранее: файл мог исчезнуть между проверкой и отдачей в event loop — тогда штатная ошибка обработчика, а не 500 uvicorn
+    st = job.file.stat()
+    r = FileResponse(job.file, media_type="application/zip", stat_result=st)
     # имя с названием листа — по-русски; заголовок HTTP — только латиница
     r.headers["Content-Disposition"] = f"attachment; filename=\"gisogd.zip\"; filename*=UTF-8''{quote(job.file.name)}"
     return r
@@ -2445,7 +2488,7 @@ GET_ROUTES = {
 # ----- POST -----
 
 def post_login(c):
-    """POST /api/login {"token": …}: верный ключ → кука на 30 дней; неверный → 401, 10 промахов за минуту → 429."""
+    """POST /api/login {"token": …}: верный ключ → ротированная кука на 30 дней; неверный → 401, 10 промахов за минуту → 429."""
     if len(c.body) > 4096:
         return _json(413, {"error": "запрос слишком велик"})
     token = c.obj().get("token")
@@ -2460,7 +2503,7 @@ def post_login(c):
             _LOGIN_FAILS[ip] = fails + [now]
             return _json(401, {"error": "неверный ключ"})
         _LOGIN_FAILS.pop(ip, None)
-    return _json(200, {"ok": True}, {"Set-Cookie": c.cookie(token, 2592000)})
+    return _json(200, {"ok": True}, {"Set-Cookie": c.cookie(rotated_cookie(), 2592000)})
 
 
 def post_logout(c):
@@ -2536,10 +2579,13 @@ def _album(kind, render, ctype):
         import print_io
         req = c.obj()
         prog = lambda got, total: PRINT_PROGRESS.update(kind=kind, got=got, total=total)
+        started = time.perf_counter()
         try:
             body = getattr(print_io, render)(req, REDLN, LGR_DASH, esri_tile, prog)
         finally:
             PRINT_PROGRESS.clear()
+        gravlog.get("print").info(f"альбом {kind}: листов {len(req.get('sheets') or [])}, "
+                                  f"{gravlog.human(len(body))} за {time.perf_counter() - started:.1f} с")
         return _file(body, ctype, f"grado2-album.{kind}", not_ready_headers(req))   # листы «не готов»: номера и причины (ASCII)
     return post
 
@@ -2927,7 +2973,7 @@ def site_call(c):
     except Exception as e:                             # сеть до Telegram и прочее: причина в журнале
         c.log_fail(e)
         return _site_back(c, "net")
-    _log_line(f"вход через Telegram: {person['id']} @{person['username']} роль {role}")
+    gravlog.get("auth").info(f"вход через Telegram: {person['id']} @{person['username']} роль {role}")
     r = Response(b"", 302, headers={"Location": "/next/"})
     r.headers.append("Set-Cookie", _tg_cookie(c, "", 0))
     r.headers.append("Set-Cookie", c.site_cookie(tglogin.site_cookie(cfg, person, role), tglogin.SITE_TTL))
@@ -3166,7 +3212,7 @@ class Guard:
                 h["X-Frame-Options"] = "SAMEORIGIN"
                 h["Content-Security-Policy"] = CSP
                 if msg["status"] >= 400:
-                    _log_line(f'{c.peer} "{c.method} {c.route}" {msg["status"]}')
+                    _log_line(f'{c.peer} "{c.method} {c.route}" {msg["status"]}', warn=msg["status"] < 500)   # 5xx — ошибка сервера, 4xx — шум клиента
             await send(msg)
         if c.foreign():
             return await _deny()(scope, receive, send_safe)

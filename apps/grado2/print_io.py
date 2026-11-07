@@ -10,7 +10,6 @@
 import math
 import os
 import re
-import sys
 import time
 from pathlib import Path
 
@@ -22,6 +21,7 @@ from grado_render import PdfBackend, hex_to_rgb, render_svg
 from grado_render.scene import hatch_ops
 
 import fonts
+import gravlog                                                  # журнал сервера: сбои самопроверки оформления — в него, не в stderr печатями
 
 fonts.install()                                     # любой шрифт в печати: семейство «f:<id>» (fonts.py)
 
@@ -165,28 +165,32 @@ PRINT_OPS_KEEP = 6
 
 
 def ops_cache_get(key):
-    """Операции рамки из кэша на диске (PDF и PPTX одного альбома считают одну и ту же основу ЕГКО, 3,5 минуты на лист)."""
-    import pickle
+    """Операции рамки из кэша на диске (PDF и PPTX одного альбома считают одну и ту же основу ЕГКО, 3,5 минуты на лист).
+    JSON вместо pickle (аудит 06.11, п. 4.3): кортежи точек станут списками — рендеры читают их индексами и итерацией,
+    на список реагируют так же. Прежние .pkl — чужой формат, просто промах кэша."""
+    import json as _json
     import time
-    p = PRINT_OPS_CACHE / f"{key}.pkl"
+    p = PRINT_OPS_CACHE / f"{key}.json"
     try:
         if time.time() - p.stat().st_mtime < PRINT_OPS_TTL:
-            return pickle.loads(p.read_bytes())
-    except (OSError, pickle.PickleError, EOFError, AttributeError, ValueError):
+            return _json.loads(p.read_text("utf-8"))
+    except (OSError, ValueError):                                       # нет файла, битый JSON — считаем заново
         pass
     return None
 
 
 def ops_cache_put(key, ops):
+    import json as _json
     import os
-    import pickle
     try:
         PRINT_OPS_CACHE.mkdir(parents=True, exist_ok=True)
         tmp = PRINT_OPS_CACHE / f"{key}.{os.getpid()}.tmp"
-        tmp.write_bytes(pickle.dumps(ops, protocol=pickle.HIGHEST_PROTOCOL))
-        os.replace(tmp, PRINT_OPS_CACHE / f"{key}.pkl")
-        old = sorted(PRINT_OPS_CACHE.glob("*.pkl"), key=lambda q: q.stat().st_mtime, reverse=True)[PRINT_OPS_KEEP:]
+        tmp.write_text(_json.dumps(ops, ensure_ascii=False), "utf-8")   # ensure_ascii=False: русские подписи читаются в файле
+        os.replace(tmp, PRINT_OPS_CACHE / f"{key}.json")
+        old = sorted(PRINT_OPS_CACHE.glob("*.json"), key=lambda q: q.stat().st_mtime, reverse=True)[PRINT_OPS_KEEP:]
         for q in old:
+            q.unlink(missing_ok=True)
+        for q in PRINT_OPS_CACHE.glob("*.pkl"):                          # осиротевший pickle-кэш прежних версий — в расход
             q.unlink(missing_ok=True)
     except OSError:                                                      # кэш — ускорение, не условие: диск занят — считаем заново
         pass
@@ -2186,7 +2190,7 @@ def layout_qa(spec, pages):
             sh["_labelQA"] = [label_qa.phrase(r) for r in label_qa.page_conflicts(ops)]
         except Exception as e:                                          # noqa: BLE001 — отчёт, не печать
             sh["_labelQA"] = []
-            sys.stderr.write(f"[label_qa] {e.__class__.__name__}: {e}\n")
+            gravlog.get("print").error(f"label_qa: {e.__class__.__name__}: {e}")
 
 
 def render_pdf(spec, lib, lgr_dash, tiles=None, progress=None):
