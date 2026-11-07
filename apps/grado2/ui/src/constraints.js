@@ -10,7 +10,7 @@ import * as turf from "@turf/turf";
 import * as insolModule from "../../web/insol.js";
 import "../../web/roles.js";
 import { project, shown } from "./store.js";
-import { lyr, newGroup, normGroups, touchData } from "./edit.js";
+import { lyr, newGroup, normGroups, setLabel, touchData } from "./edit.js";
 import { busy, markDirty, notice } from "./project.js";
 import { ensureLayer } from "./data.js";
 import { catValues, fullStyle, symbolOf } from "./symbology.js";
@@ -21,7 +21,7 @@ globalThis.INSOL ||= INSOL;     // web/blocks.js (урбан-блоки) чит�
 export { INSOL };
 
 export const CONS = reactive({ waterLine: 5, norm: 2, z: 2, step: 4, reveal: 0, cell: 8, floorH: 3, redline: 5, cap: 150,
-  use: { zouit: true, red: true, fire: true, pzz: true, gp: true, insol: true }, log: null, running: "" });
+  use: { zouit: true, red: true, fire: true, pzz: true, gp: true, insol: true }, log: null, running: "", error: "" });
 try {
   const saved = JSON.parse(localStorage.getItem("grado2.cons") || "{}");
   Object.keys(CONS).forEach(k => { if (!["use", "log", "running"].includes(k) && saved[k] != null && Number.isFinite(Number(saved[k]))) CONS[k] = Number(saved[k]); });
@@ -30,7 +30,7 @@ try {
 if (!(CONS.step >= 2 && CONS.step <= 20)) CONS.step = 4;
 if (!(CONS.cell >= 4 && CONS.cell <= 20)) CONS.cell = 8;
 export function keepCons() {
-  try { const { log, running, ...rest } = CONS; void log; void running; localStorage.setItem("grado2.cons", JSON.stringify(rest)); } catch { /* частный режим браузера */ }
+  try { const { log, running, error, ...rest } = CONS; void log; void running; void error; localStorage.setItem("grado2.cons", JSON.stringify(rest)); } catch { /* частный режим браузера */ }
 }
 
 export const CONS_GROUP = "Ограничения";
@@ -114,7 +114,7 @@ export async function computeConstraints() {
   await R().ready();
   setFrame(turf.centroid(TERR).geometry.coordinates);
   const Rp = protectR(TERR), zone = buf(TERR, Rp), log = [], tick = () => new Promise(r => setTimeout(r, 0));
-  busy.value = true; CONS.running = "Расчёт…";
+  busy.value = true; CONS.running = "Расчёт…"; CONS.error = "";
   try {
     if (CONS.use.zouit) {
       const out = [], add = (f, L, why) => { if (!why) return; const c = clip(f, TERR); if (c) out.push(turf.feature(c.geometry, { "Причина": why, "Источник": L.title, "Наименование": f.properties["Наименование"] || f.properties["Название"] || "" })); };
@@ -192,9 +192,9 @@ export async function computeConstraints() {
       const north = pts.filter(p => p.orient).length, bad = pts.filter(p => !p.orient && !p.worst.ok).length;
       log.push(`инсоляция: ${pts.length} расчётных точек на ${resid.length} жилых домах в ${Rp} м от границы (дома дальше полосы выгрузки 60 м не загружены и не защищены); ${north} на северных фасадах (не нормируются), ${bad} не выполняют норму уже сейчас — для них «не ухудшать»; ${Math.round(performance.now() - t0)} мс`);
     }
-    touchData(); markDirty(); import("./graph.js").then(m => m.ensureConsNode());   // блок «Ограничения» в схеме расчёта, как web/constraints.js
+    setLabel("Рассчитать ограничения"); touchData(); markDirty(); import("./graph.js").then(m => m.ensureConsNode());   // блок «Ограничения» в схеме расчёта, как web/constraints.js
     CONS.log = log; notice.value = "Ограничения рассчитаны. Выключенный слой группы «Ограничения» генерация не учитывает";
-  } catch (e) { console.error(e); notice.value = "Ограничения не рассчитаны: " + e.message; }
+  } catch (e) { console.error(e); CONS.error = "Ограничения не рассчитаны: " + e.message; notice.value = CONS.error; }   // ConsPanel покажет ошибку с «Ещё раз»
   finally { busy.value = false; CONS.running = ""; }
 }
 
@@ -258,7 +258,7 @@ async function checkNorms(sk, title) {
   const key = "cons:check", fc = turf.featureCollection(out);
   const l = consLayer(key, `Проверка норм: ${title}`, fc, "point", { mode: "cat", width: 2.5, cat: { field: "Нарушение", colors: {}, off: [] } });
   l.style.cat.colors = Object.fromEntries(catValues(fc, "Нарушение").map(([v]) => [v, /инсоляция/.test(v) ? "#eda100" : "#b3261e"]));
-  touchData();
+  setLabel("Проверить нормы"); touchData();
   return { n: out.length, own: ownN.length ? Math.round((ownN.length - ownBad.length) / ownN.length * 100) : 100, lost: lost.length, text: out.length ? `нарушений: ${out.length}` : "нарушений нет" };
 }
 const OIDS = new WeakMap(); let oidN = 0;

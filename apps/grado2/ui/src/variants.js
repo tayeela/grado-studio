@@ -6,7 +6,7 @@
 import { reactive, shallowRef, watch } from "vue";
 import * as turf from "@turf/turf";
 import { project, currentId } from "./store.js";
-import { dataRev, lyr, touchData } from "./edit.js";
+import { dataRev, lyr, setLabel, touchData } from "./edit.js";
 import { notice, busy } from "./project.js";
 import { CHECK, ownInsolation } from "./constraints.js";
 import { floorsOf, m2 } from "./geom.js";
@@ -131,12 +131,14 @@ export function svCommit() {
   const rec = { id: "sv" + Date.now().toString(36), name, at: new Date().toISOString().slice(0, 10), typ: c.typ, n: c.sk.length, avg: fp ? spp / fp : 0, spp, cover: TM ? fp / TM : 0,
     density: t.density, pop: t.m?.population ?? null, doo: t.m?.doo_places ?? null, own: CHECK.last?.own ?? null, sig: svSig(c.sk),
     sk: c.sk.map(b => ({ g: svRound(b.f.geometry), floors: b.floors, ...(b.kind ? { kind: b.kind } : {}), ...(b.grp ? { grp: b.grp } : {}) })) };
+  setLabel(`Сохранить вариант «${name}»`);
   ((RESULT.tepNode.properties ||= {}).saved ||= []).push(rec);
   SV.ask = ""; edited(); notice.value = `Вариант «${name}» сохранён вместе с показателями. Он в окне «Варианты», группа «Сохранённые»`;
 }
 /* «Открыть»: вариант становится текущим эскизом — один слой «Вариант: …» на все открытия, показатели — по нынешним нормативам */
 function svOpen(id) {
   const r = savedList().find(x => x.id === id); if (!r) return;
+  setLabel(`Открыть вариант «${r.name}»`);
   const sk = r.sk.map(b => { const f = turf.feature(b.g, {}); return { f, m2: m2(f), floors: b.floors, kind: b.kind, grp: b.grp }; });
   const P = RESULT.tepNode.properties, vk = P.svLayer, old = P.baked, ol = old && old !== vk && lyr(old);
   if (ol) project.layers.filter(l => l === ol || (l.group && l.group === ol.group)).forEach(l => { l.visible = false; });      // принятый эскиз остаётся в проекте, но не рисуется поверх
@@ -157,10 +159,10 @@ export function svClick(id, act) {
   if (need && !armed(id, act)) { SV.arm = { id, act, t: Date.now() }; setTimeout(() => { if (SV.arm && Date.now() - SV.arm.t >= 3900) SV.arm = null; }, 4000);
     notice.value = act === "del" ? `Удалить вариант «${r.name}»? Нажмите «Удалить» ещё раз` : "Текущий эскиз не сохранён как вариант и будет заменён. Нажмите «Открыть» ещё раз, чтобы продолжить"; return; }
   SV.arm = null;
-  if (act === "del") { const L = RESULT.tepNode.properties.saved; L.splice(L.findIndex(x => x.id === id), 1); if (SV.cmp === id) SV.cmp = ""; edited(); notice.value = `Вариант «${r.name}» удалён`; }
+  if (act === "del") { setLabel(`Удалить вариант «${r.name}»`); const L = RESULT.tepNode.properties.saved; L.splice(L.findIndex(x => x.id === id), 1); if (SV.cmp === id) SV.cmp = ""; edited(); notice.value = `Вариант «${r.name}» удалён`; }
   else svOpen(id);
 }
 export function svRename(id, name) {
   const r = savedList().find(x => x.id === id); name = (name || "").trim(); SV.ren = null;
-  if (r && name && name !== r.name) { if (savedList().some(x => x.name === name)) notice.value = `Вариант «${name}» уже есть: имя не изменено`; else { r.name = name; edited(); } }
+  if (r && name && name !== r.name) { if (savedList().some(x => x.name === name)) notice.value = `Вариант «${name}» уже есть: имя не изменено`; else { setLabel(`Переименовать вариант в «${name}»`); r.name = name; edited(); } }
 }

@@ -45,6 +45,9 @@
         <wa-divider></wa-divider>
         <wa-dropdown-item value="maponly">{{ mapOnly ? "Вернуть окна" : "Только карта" }}<span slot="details">Ctrl+\</span></wa-dropdown-item>
         <wa-dropdown-item value="reset">Раскладка по умолчанию</wa-dropdown-item>
+        <!-- готовых раскладок под задачу и размера интерфейса в /next ещё нет (аудит 2.8) — они в прежней рабочей странице /old -->
+        <wa-divider></wa-divider>
+        <wa-dropdown-item value="oldpage">Готовые раскладки и размер — в рабочей странице →</wa-dropdown-item>
       </wa-dropdown>
 
       <wa-dropdown class="exportdd" @wa-select="onExport">
@@ -71,8 +74,8 @@
       </wa-dropdown>
 
       <span class="grow"></span>
-      <wa-button size="s" appearance="plain" :disabled="!history.undo" aria-label="Отменить" :title.attr="'Отменить (Ctrl+Z)'" @click="undo"><Undo2 :size="16" /></wa-button>
-      <wa-button size="s" appearance="plain" :disabled="!history.redo" aria-label="Вернуть" :title.attr="'Вернуть (Ctrl+Shift+Z)'" @click="redo"><Redo2 :size="16" /></wa-button>
+      <wa-button size="s" appearance="plain" :disabled="!history.undo" :aria-label="undoTip" :title.attr="undoTip" @click="undo"><Undo2 :size="16" /></wa-button>
+      <wa-button size="s" appearance="plain" :disabled="!history.redo" :aria-label="redoTip" :title.attr="redoTip" @click="redo"><Redo2 :size="16" /></wa-button>
       <wa-button size="s" appearance="plain" aria-label="Справка" :title.attr="'Справка и клавиши (F1)'" @click="showHelp"><CircleHelp :size="16" /></wa-button>
       <wa-button size="s" appearance="plain" @click="toggleTheme" :aria-label="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'" :title.attr="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'">
         <Sun v-if="theme === 'dark'" :size="16" /><Moon v-else :size="16" />
@@ -126,7 +129,22 @@
     </nav>
 
     <!-- плавающие окна двигаются за пустое место строки вкладок (без отдельной пустой полосы-шапки) и не уходят за край экрана -->
-    <DockviewVue class="grado-dock dock" :theme="dockTheme" floating-group-drag-handle="titlebar" floating-group-bounds="boundedWithinViewport" @ready="onReady" />
+    <div class="dockwrap">
+      <DockviewVue class="grado-dock dock" :theme="dockTheme" floating-group-drag-handle="titlebar" floating-group-bounds="boundedWithinViewport" @ready="onReady" />
+      <!-- стартовый экран-состояние (project.js startup): проект не открылся — карточка поверх стола с причиной и действиями;
+           исчезает, как только проект загружен (project.source), автосохранение при старте её не показывает -->
+      <div v-if="showStartup" class="startup" role="status">
+        <div class="card">
+          <b>{{ startup.head }}</b>
+          <p>{{ startup.text }}</p>
+          <div class="acts">
+            <wa-button v-if="startup.retry" size="s" appearance="outlined" :disabled="busy" @click="startup.retry()">Повторить</wa-button>
+            <wa-button v-if="startup.shared" size="s" variant="brand" @click="openWin('projects')">Совместные проекты</wa-button>
+            <wa-button v-else size="s" variant="brand" :disabled="busy" @click="newProject()">Новый проект</wa-button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <ProjectCatalog v-if="!shared" :open="openDlg" @close="openDlg = false" @open="choose" @file="fileInput.click()"
                     @new="openDlg = false; guard('Начать новый проект?', newProject)" />
@@ -204,7 +222,7 @@ import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
 import { BASEMAPS, basemapId, current, cursor, mapOnly, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
 import {
-  autoFail, busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, retitle, saveProject, say, shared,
+  autoFail, busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, retitle, saveProject, say, shared, startup,
 } from "./project.js";
 
 const dockTheme = { ...themeLight, className: "dockview-theme-grado", gap: 8 };   // окна — карточки на сером столе с зазором 8 px («Синька»)
@@ -250,6 +268,12 @@ const cmdTip = id => cad.ready ? `${cmdTitle(id)} — ${cadApi.CMDS[id].alias.jo
 function runCmd(id) { if (cad.cmd === id) cadApi.cancel(); else cadApi.start(id); }
 // идущая команда, её подсказка и сообщения — в командной строке над картой; здесь не повторяются (аудит 09.10.2026)
 const toolTitle = computed(() => cad.ready ? "" : "Черчение работает в окне «Карта»");
+
+/* подпись отмены в шапке: что именно отменит Ctrl+Z (edit.js history.label) — как в ленте «Макета листа» (Ribbon.vue) */
+const undoTip = computed(() => history.label ? `Отменить: ${history.label} (Ctrl+Z)` : "Отменить (Ctrl+Z)");
+const redoTip = computed(() => history.rlabel ? `Вернуть: ${history.rlabel} (Ctrl+Shift+Z)` : "Вернуть (Ctrl+Shift+Z)");
+/* стартовый экран (project.js startup): карточка поверх стола, пока проект не открыт, — причина и действия */
+const showStartup = computed(() => startup.value && !project.source);
 
 /* Масштаб в строке состояния вводится: «1:2000», «2000», «1 : 2 000» и Enter (как в QGIS); карта меняет разрешение
    в той же пропорции — пересчёт масштаба с поправкой на широту остаётся в MapPanel (scaleDen). */
@@ -452,6 +476,7 @@ function onWindow(e) {
   const v = e.detail.item.value;
   if (v === "reset") { winApi.mapOnly(false); defaultLayout(); return; }
   if (v === "maponly") { winApi.mapOnly(); return; }
+  if (v === "oldpage") { window.open("/old"); return; }   // прежняя рабочая страница — обычный URL, там же файл проекта
   const panel = api.getPanel(v);
   if (panel) panel.api.close(); else addOne(v);
   syncOpen();
@@ -538,7 +563,7 @@ addEventListener("keydown", e => {
   else if (e.code === "KeyO" && !e.shiftKey && !e.altKey) { e.preventDefault(); if (shared.value) openWin("projects"); else openCatalog(); }
   else if (e.code === "KeyP" && !e.shiftKey && !e.altKey) { e.preventDefault(); winApi.open("album"); }   // как в рабочей странице: листы вместо печати страницы
   else if (typing(e)) return;                       // в поле ввода Ctrl+Z правит текст поля
-  else if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); if (!undo()) notice.value = "Отменять нечего"; }
+  else if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); if (!undo()) notice.value = history.dropped ? "Отменять нечего: чужая правка сбросила историю" : "Отменять нечего"; }
   else if ((e.code === "KeyZ" && e.shiftKey) || e.code === "KeyY") { e.preventDefault(); redo(); }
 });
 watch(() => [project.name, dirty.value], () => { document.title = (project.name || "Без названия") + (dirty.value ? " •" : "") + " — ГРАДО 2"; });
@@ -599,7 +624,15 @@ wa-dropdown-item .ci { width: 16px; height: 16px; }
 .tbtns wa-button::part(base) { padding-inline: 6px; }
 .tbtns wa-button.on::part(base) { background: var(--wa-color-brand-fill-quiet); color: var(--wa-color-brand-on-quiet); }
 .tlabel { font-size: var(--wa-font-size-2xs); color: var(--g-muted); padding-bottom: 2px; }
-.dock { min-height: 0; }
+.dockwrap { position: relative; display: grid; min-height: 0; }
+.dockwrap > .dock { min-height: 0; }
+/* стартовый экран-состояние (аудит, п. 2.2): пока проекта нет — карточка по центру поверх стола, в стиле .empty панелей */
+.startup { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; background: var(--g-desk); }
+.startup .card { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 480px; margin: 0 16px; padding: 24px 28px;
+  text-align: center; background: var(--wa-color-surface-default); border: 1px solid var(--g-line); border-radius: 12px; box-shadow: 0 6px 24px rgba(11, 31, 51, .14); }
+.startup .card b { font-size: var(--wa-font-size-m); }
+.startup .card p { margin: 0; color: var(--g-muted); font-size: var(--wa-font-size-s); line-height: 1.45; }
+.startup .acts { display: flex; gap: 8px; justify-content: center; margin-top: 4px; }
 .save-dlg .warn { color: var(--wa-color-danger-on-quiet); font-size: var(--wa-font-size-s); }
 .status wa-dropdown { display: inline-flex; }
 .status .basebtn { font: inherit; font-size: var(--wa-font-size-xs); line-height: 20px; color: inherit; background: none; border: 0; padding: 0 2px; cursor: pointer; }

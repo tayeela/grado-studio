@@ -24,6 +24,7 @@ import { reactive, watch } from "vue";
 import * as mskMod from "../../web/msk.js";
 import { basemapId, project, viewCur, viewNow } from "./store.js";
 import { notice } from "./project.js";
+import { setLabel } from "./edit.js";
 import { cadApi } from "./cad.js";
 import { cornersM, fromCorners, frameLabel, ratioOf, sheetFromCorners } from "./viewframes.js";
 import { album, editSheet, wantFrames } from "./albumhost.js";
@@ -64,6 +65,7 @@ const newItem = () => ({ id: NEW, name: "новый вид", made: "",
   set frame(fr) {
     if (!fr?.center || this.made) return;
     const v = captureView(`Вид ${project.views.length + 1}`, false);
+    setLabel(`Создать вид «${v.name}»`);
     v.frame = fr; project.views.push(v); viewCur.value = v.id; this.made = v.id;
     notice.value = `Вид «${v.name}» готов: его можно поставить на лист. Переименовать — в окне «Виды»`;
   },
@@ -165,6 +167,7 @@ export function attachViewFrames(map) {
       const v = viewOf(d.id);
       if (d.moved && live && v && live.w > 1 && live.h > 1) {
         if (d.mode === "draw") v.frame = { aspect: vframes.aspect };
+        setLabel(d.mode === "draw" ? "Нарисовать рамку вида" : d.mode === "size" ? "Изменить рамку вида" : "Сдвинуть рамку вида");
         save(v, live);
         vframes.sel = v.made || v.id;
         if (d.mode === "draw") { vframes.draw = ""; vframes.msg = ""; }

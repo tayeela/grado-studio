@@ -6,7 +6,7 @@
 import { reactive } from "vue";
 import * as mskModule from "../../web/msk.js";
 import { project } from "./store.js";
-import { touchData } from "./edit.js";
+import { setLabel, touchData } from "./edit.js";
 
 export const sel = reactive([]);       // [{key, uid}] — выбранные объекты, в порядке выбора
 
@@ -75,6 +75,7 @@ const keepOriginal = d => typeof d.original === "object" && d.original ? { origi
 /* Новый fc слоя: fn(properties) у объектов с uid из списка; исходная выгрузка сохраняется при первой правке. */
 export function editFeatures(key, uids, fn) {
   const d = project.data[key]; if (!d?.fc) return;
+  setLabel("Правка объектов");
   const want = new Set(uids), fc = d.fc;
   const features = fc.features.map(f => {
     if (!want.has(f.properties?._uid)) return f;
@@ -86,13 +87,15 @@ export function editFeatures(key, uids, fn) {
 }
 
 export function setAttr(items, field, value) {
+  setLabel("Правка атрибутов");
   const by = new Map(); items.forEach(s => (by.get(s.key) || by.set(s.key, []).get(s.key)).push(s.uid));
   by.forEach((uids, key) => editFeatures(key, uids, p => { p[field] = numOrText(value); }));
 }
 
-export function addField(items, name) { setAttr(items.filter(s => !(name in (featureOf(s.key, s.uid)?.properties || {}))), name, ""); }
+export function addField(items, name) { setLabel("Новое поле"); setAttr(items.filter(s => !(name in (featureOf(s.key, s.uid)?.properties || {}))), name, ""); }
 
 export function deleteFeatures(items) {
+  setLabel("Удалить объекты");
   const by = new Map(); items.forEach(s => (by.get(s.key) || by.set(s.key, new Set()).get(s.key)).add(s.uid));
   by.forEach((uids, key) => {
     const d = project.data[key]; if (!d?.fc) return;

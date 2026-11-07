@@ -20,7 +20,7 @@
             <button class="tw" :title="b.group.open ? 'Свернуть группу' : 'Развернуть группу'" @click="b.group.open = !b.group.open">
               <ChevronDown v-if="b.group.open || q" :size="14" /><ChevronRight v-else :size="14" />
             </button>
-            <button class="eye" :title="b.group.visible ? 'Скрыть группу' : 'Показать группу'" @click="b.group.visible = !b.group.visible">
+            <button class="eye" :title="b.group.visible ? 'Скрыть группу' : 'Показать группу'" @click="setLabel(b.group.visible ? 'Скрыть группу' : 'Показать группу'); b.group.visible = !b.group.visible">
               <Eye v-if="b.group.visible" :size="15" /><EyeOff v-else :size="15" />
             </button>
             <input v-if="editing === 'g:' + b.group.id" class="ren" :value="b.group.title" @keydown.enter="e => e.target.blur()"
@@ -93,7 +93,7 @@ import LayerSwatch from "./LayerSwatch.vue";
 import { loadError, notice } from "../project.js";
 import {
   canRevert, copyStyle, groupKeys, grp, lyr, mapApi, moveLayer, newGroup, newLayer, pasteStyle, removeGroup, removeLayers,
-  renameLayer, reorder, revertLayer, setGroup, styleClip, ungroup,
+  renameLayer, reorder, revertLayer, setGroup, setLabel, styleClip, ungroup,
 } from "../edit.js";
 
 const q = ref("");
@@ -108,7 +108,7 @@ const LayerRow = defineComponent({
       const l = props.l, ed = editing.value === "l:" + l.key;
       const byGroup = l.visible && !shown(l);       // слой включён, но скрыт вместе с группой
       return [
-        h("button", { class: "eye", title: byGroup ? "Слой не виден на карте: скрыта его группа" : l.visible ? "Скрыть слой" : "Показать слой", onClick: e => { e.stopPropagation(); l.visible = !l.visible; } },
+        h("button", { class: "eye", title: byGroup ? "Слой не виден на карте: скрыта его группа" : l.visible ? "Скрыть слой" : "Показать слой", onClick: e => { e.stopPropagation(); setLabel(l.visible ? "Скрыть слой" : "Показать слой"); l.visible = !l.visible; } },
           [h(l.visible ? Eye : EyeOff, { size: 15 })]),
         h(LayerSwatch, { l, class: "sw" }),
         ed ? h("input", { class: "ren", value: l.title, onVnodeMounted: v => { v.el.focus(); v.el.select(); }, onClick: e => e.stopPropagation(),
@@ -138,7 +138,7 @@ function finishRename(kind, id, v) {
   if (editing.value !== kind + ":" + id) return;
   editing.value = "";
   if (!v.trim()) return;
-  if (kind === "l") renameLayer(id, v); else { const g = grp(id); if (g) g.title = v.trim(); }
+  if (kind === "l") renameLayer(id, v); else { const g = grp(id); if (g) { setLabel("Переименовать группу"); g.title = v.trim(); } }
 }
 
 /* ---------- перетаскивание: верхний уровень — группы и слои без группы, внутри группы — её слои ---------- */
@@ -156,7 +156,7 @@ function onListKey(e) {
   else if (e.key === "ArrowUp") go(i - 1);
   else if (e.key === "Home") go(0);
   else if (e.key === "End") go(rows.length - 1);
-  else if (e.key === " " && l) l.visible = !l.visible;
+  else if (e.key === " " && l) { setLabel(l.visible ? "Скрыть слой" : "Показать слой"); l.visible = !l.visible; }
   else if (e.key === "F2" && l) editing.value = "l:" + l.key;
   else if (e.key === "Enter" && l) currentId.value = l.key;
   else return;

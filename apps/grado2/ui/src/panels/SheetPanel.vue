@@ -34,6 +34,8 @@
       <wa-button slot="footer" size="s" variant="danger" @click="drop">Удалить</wa-button>
     </wa-dialog>
     <AlbumSheetView v-if="acur >= 0" :i="acur" class="spn-ed" />
+    <!-- листов нет — объяснение вместо молча пустого списка (аудит 2.6) -->
+    <div v-else-if="!sheets.length" class="spn-none" role="status">Листов нет: включите альбом кнопкой «Листы и альбом» или создайте лист в его окне.</div>
     <SheetEditor v-else :key="sheets[cur].id" v-model="sheets[cur]" :maps="maps" :meta="meta()"
       :page="{ page_no: cur + 1, page_total: sheets.length }" class="spn-ed" />
   </div>
@@ -118,6 +120,8 @@ watch(sheets, () => {
 <style scoped>
 .spn { display: flex; flex-direction: column; height: 100%; }
 .spn-ed { flex: 1; min-height: 0; }
+.spn-none { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px;
+  color: var(--wa-color-text-quiet, #66707c); font: 13px/1.45 var(--wa-font-family-body, system-ui), sans-serif; }
 .spn-bar { flex: none; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; font: 13px/1.3 var(--wa-font-family-body, system-ui), sans-serif;
   color: var(--wa-color-text-normal, #1f2328); background: var(--wa-color-surface-default, #fff); border-bottom: 1px solid var(--wa-color-surface-border, #e3e6ea); overflow: hidden; }
 .spn-cap { color: var(--wa-color-text-quiet, #66707c); }
