@@ -6,11 +6,14 @@
 import json
 import sys
 import os
+import tempfile
 import unittest
 from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# журнал сервера — во временную папку и в unittest-режиме (без pytest conftest.py не читается; до import server)
+os.environ.setdefault("GRADO2_LOG", str(Path(tempfile.mkdtemp(prefix="grado2-log-")) / "server.log"))
 import server as S  # noqa: E402
 
 # Папка «~/Documents/ГРАДО 2» — невосстановимые данные владельца. Без GRADO2_PROJECTS server.PROJECTS указывает на неё,
@@ -687,13 +690,35 @@ class ProjectVersions(unittest.TestCase):
             vs = list((Path(d) / ".versions" / "Участок").glob("*.grado2.gz"))
             self.assertEqual([gzip.decompress(v.read_bytes()) for v in vs], [b'{"v": 1}'])
             S.save_project("Участок", b'{"v": 3}')                        # 10 минут не прошло — новой версии нет
-            self.assertEqual(len(list((Path(d) / ".versions" / "Участок").glob("*"))), 1)
+            self.assertEqual(len(list((Path(d) / ".versions" / "Участок").glob("*.grado2.gz"))), 1)
             with mock.patch.object(S, "VERSIONS_EVERY", {True: 0, False: 0}), mock.patch.object(S, "VERSIONS_KEEP", 1):
                 os.utime(vs[0], (0, 0))
                 S.save_project("Участок", b'{"v": 4}')
             left = list((Path(d) / ".versions" / "Участок").glob("*.grado2.gz"))
             self.assertEqual(len(left), 1)
             self.assertEqual(gzip.decompress(left[0].read_bytes()), b'{"v": 3}')
+
+    def test_window_counts_from_marker_not_gz_mtime(self):
+        """Окно троттлинга — по маркеру .last, а не по mtime gz-файла (аудит 06.11, п. 4.1): перенос папки менял mtime
+        и открывал окно заново. Первой версии нет — копия всегда; две записи внутри окна — одна версия;
+        маркер постарел — следующая запись делает копию, даже когда mtime gz свежие."""
+        import gzip
+        import tempfile
+        import time
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(S, "PROJECTS", Path(d)):
+            vd = Path(d) / ".versions" / "Участок"
+            S.save_project("Участок", b'{"v": 1}')
+            S.save_project("Участок", b'{"v": 2}')                        # версий ещё не было — копия всегда
+            self.assertEqual(len(list(vd.glob("*.grado2.gz"))), 1)
+            S.save_project("Участок", b'{"v": 3}')                        # запись подряд внутри окна — копии нет
+            self.assertEqual(len(list(vd.glob("*.grado2.gz"))), 1)
+            (vd / S.VERSIONS_LAST).write_text(str(time.time() - S.VERSIONS_EVERY[False] - 1), "utf-8")   # окно истекло
+            for p in vd.glob("*.grado2.gz"):                              # свежий mtime gz — не якорь, копия всё равно идёт
+                os.utime(p, None)
+            os.utime(Path(d) / "Участок.grado2", (time.time() - 120,) * 2)  # другая минута в имени копии, файлы не столкнутся
+            S.save_project("Участок", b'{"v": 4}')
+            self.assertEqual({gzip.decompress(v.read_bytes()) for v in vd.glob("*.grado2.gz")},
+                             {b'{"v": 1}', b'{"v": 3}'})
 
 
 class AdminReference(unittest.TestCase):
@@ -978,12 +1003,16 @@ class AccessToken(unittest.TestCase):
             self.assertEqual(self.call("/api/login", {"token": 5})[0], 401)
             self.assertEqual(self.call("/api/login", {})[0], 401)
 
-    def test_right_token_sets_strict_httponly_cookie_which_passes(self):
+    def test_right_token_sets_rotated_cookie_which_passes(self):
+        # сама кука — не ключ, а пара nonce.подпись (аудит 06.11, п. 4.5): чтение куки не даёт ключа для заголовка
         with self.on():
             s, r, body = self.call("/api/login", {"token": self.TOKEN})
             self.assertEqual((s, body), (200, {"ok": True}))
             cookie = r.getheader("Set-Cookie")
-            self.assertIn(f"grado_token={self.TOKEN};", cookie)
+            value = cookie.split(";")[0].removeprefix("grado_token=")
+            self.assertNotEqual(value, self.TOKEN)
+            nonce, _, sig = value.partition(".")
+            self.assertTrue(nonce and sig and len(sig) == 64, cookie)     # token_urlsafe-нонс + hex-hmac-sha256
             for part in ("HttpOnly", "SameSite=Strict", "Max-Age=2592000", "Path=/"):
                 self.assertIn(part, cookie)
             self.assertNotIn("Secure", cookie)                          # прямое http без прокси
@@ -991,7 +1020,19 @@ class AccessToken(unittest.TestCase):
             self.assertEqual(self.call("/api/sources", headers=sent)[0], 200)
             self.assertEqual(self.call("/next/", headers=sent)[0], 200)
             self.assertEqual(self.call("/", headers=sent)[1].getheader("Location"), "/next/")
+
+    def test_rotated_cookie_with_wrong_signature_is_401(self):
+        with self.on():
+            nonce, _, sig = S.rotated_cookie().partition(".")
+            for bad in (f"{nonce}.{'0' * 64}", "no-sig-at-all", f".{sig}", f"{nonce}.{sig[:-1]}a"):
+                self.assertEqual(self.call("/api/sources", headers={"Cookie": f"grado_token={bad}"})[0], 401, bad)
             self.assertEqual(self.call("/api/sources", headers={"Cookie": "a=b; grado_token=wrong"})[0], 401)
+            self.assertFalse(S.cookie_token_ok(f"{nonce}.подпись"))     # не-ASCII подпись — отказ, а не сбой сравнения
+
+    def test_old_cookie_with_bare_token_still_passes(self):
+        # прежние сессии и скрипты с кукой = самому ключу продолжают работать (назад совместимость)
+        with self.on():
+            self.assertEqual(self.call("/api/sources", headers={"Cookie": f"grado_token={self.TOKEN}"})[0], 200)
 
     def test_secure_flag_behind_tls_proxy(self):
         with self.on():
@@ -1033,6 +1074,61 @@ class AccessToken(unittest.TestCase):
         with self.on():
             self.assertEqual(self.call("/api/login", [1])[0], 400)
             self.assertEqual(self.call("/api/login", {"token": "x" * 5000})[0], 413)
+
+    def test_tls_trusts_forwarded_proto_only_from_loopback(self):
+        # X-Forwarded-Proto верим только своему прокси на loopback (как client_ip): чужой пир подделывает заголовок,
+        # а Secure-кука должна ставиться только при настоящем https (аудит 06.11, п. 4.5)
+        fake = mock.Mock(headers={"X-Forwarded-Proto": "https"})
+        for peer, want in (("127.0.0.1", True), ("::1", True), ("203.0.113.5", False)):
+            fake.peer = peer
+            self.assertEqual(S.Ctx.tls(fake), want, peer)
+
+
+class OgdFileResponse(unittest.TestCase):
+    """Файл выгрузки «Всё из ГИС ОГД» отдаётся с диска потоками (FileResponse), а не вторым чтением zip в память
+    (аудит 06.11, п. 4.4). Имя и заголовки — прежние."""
+
+    def setUp(self):
+        import tempfile
+        import threading
+        import types
+        self.tmp = tempfile.TemporaryDirectory()
+        self.zip = Path(self.tmp.name) / "Лист А3 М 1-2000-20261107.zip"
+        self.zip.write_bytes("PK\x03\x04сколько-то байт чертежа".encode("utf-8"))
+        self.job = types.SimpleNamespace(file=self.zip, state={"running": False})
+        self.srv = S.Server(("127.0.0.1", 0))
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.port = self.srv.server_address[1]
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+        self.tmp.cleanup()
+
+    def call(self):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("GET", "/api/ogd_all/file")
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r, body
+
+    def test_file_from_disk_with_same_bytes_and_headers(self):
+        from urllib.parse import quote
+        with mock.patch.object(S, "OGD_JOB", [self.job]):
+            r, body = self.call()
+        self.assertEqual(r.status, 200)
+        self.assertEqual(body, self.zip.read_bytes())                     # те же байты, что в файле на диске
+        self.assertEqual(r.getheader("Content-Type"), "application/zip")
+        self.assertEqual(r.getheader("Content-Length"), str(len(body)))
+        self.assertEqual(r.getheader("Content-Disposition"),
+                         f"attachment; filename=\"gisogd.zip\"; filename*=UTF-8''{quote(self.zip.name)}")
+
+    def test_no_file_is_404(self):
+        with mock.patch.object(S, "OGD_JOB", []):
+            r, body = self.call()
+        self.assertEqual(r.status, 404)
 
 
 class HubHttp(unittest.TestCase):
