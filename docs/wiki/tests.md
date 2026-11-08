@@ -27,7 +27,7 @@
 | `test_insol.py` | Insolation | 1 |
 | `test_label_qa.py` | LabelQA | 6 |
 | `test_labelfmt_js.py` | LabelFmtJs | 1 |
-| `test_layout_io.py` | LayoutPrint, LayoutsInProject | 13 |
+| `test_layout_io.py` | LayoutPrint, LayoutsInProject | 14 |
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
@@ -35,7 +35,7 @@
 | `test_ogd_all.py` | OgdAll, SheetValidation | 18 |
 | `test_ogd_warm.py` | Warm, WarmStart | 5 |
 | `test_portalgate.py` | PortalGate | 3 |
-| `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 56 |
+| `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 57 |
 | `test_railstations_js.py` | RailStationsJs | 1 |
 | `test_roadsrc_js.py` | RoadSrcJs | 2 |
 | `test_roles_js.py` | RolesJs, LayerRolesApi | 5 |
@@ -64,7 +64,7 @@
 | `railstations_test.js` | JS | 30 |
 | `roadclean_test.js` | JS | 27 |
 | `roadsrc_test.js` | JS | 15 |
-| `roles_test.js` | JS | 22 |
+| `roles_test.js` | JS | 24 |
 | `sheetlayout_test.js` | JS | 302 |
 | `snap_test.js` | JS | 11 |
 

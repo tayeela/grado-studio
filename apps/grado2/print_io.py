@@ -930,12 +930,17 @@ class SketchMapFrame(Frame):
                         # прозрачная заливка — не «белая»: в PDF-писателе ядра альфы нет, и полупрозрачный цвет смешивается
                         # с белым; на спутнике такая заливка закрыла бы снимок — там рисуется только контур
                         see_through = a is not None and (a <= .02 or (sh.get("basemap") == "sat" and a < .6))
-                        fill = None if f.get("hatch") or f.get("fill") is None or see_through else _mix(f["fill"], a)
+                        # свой цвет штриховки (hc, знак класса ГРАДО 2): под штриховкой остаётся заливка цветом класса
+                        under = f.get("hatch") and f.get("hc") and f.get("fill") and not see_through
+                        fill = _mix(f["fill"], a) if under else None if f.get("hatch") or f.get("fill") is None or see_through else _mix(f["fill"], a)
+                        if fill and f.get("hatch"):
+                            out.append({"op": "path", "rings": rings, "closed": True, "fill": fill, "stroke": None, "width": 0, "dash": None})
+                            fill = None
                         if f.get("hatch") and f.get("fill"):
                             # узор штриховки слоя: одно направление или сетка из двух; шаг — как на карте (Эталон ЛГР: 2 мм)
                             step = max(0.8, float(f["hs"]) * PX_MM) if f.get("hs") else 1.6
                             for ang in {"0": (0,), "90": (90,), "135": (135,), "x45": (45, 135), "x0": (0, 90)}.get(f.get("hp"), (45,)):
-                                out.extend(hatch_ops(rings, spacing=step, stroke=hex_to_rgb(f["fill"]), angle=ang, width=0.13))   # тонкая, как на карте
+                                out.extend(hatch_ops(rings, spacing=step, stroke=hex_to_rgb(f.get("hc") or f["fill"]), angle=ang, width=0.13))   # тонкая, как на карте
                         if fill or (stroke and f.get("w", 1) > 0):          # контур поверх штриховки, как на карте
                             out.append({"op": "path", "rings": rings, "closed": True, "fill": fill, "stroke": stroke if f.get("w", 1) > 0 else None,
                                         "width": w, "dash": dash})

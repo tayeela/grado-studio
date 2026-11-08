@@ -28,6 +28,18 @@ def sheet(**kw):
 
 
 class Print(unittest.TestCase):
+    def test_hatch_with_own_colour_keeps_class_fill_under_it(self):
+        """Свой цвет штриховки (hc): под штриховкой — заливка цветом класса, штрихи — цветом hc (знак из двух слоёв)."""
+        lon, lat = 37.525, 55.7925
+        g = {"type": "Polygon", "coordinates": [[[lon - .001, lat - .0006], [lon + .001, lat - .0006], [lon + .001, lat + .0006], [lon - .001, lat + .0006], [lon - .001, lat - .0006]]]}
+        f = {"g": g, "fill": "#ddebd3", "stroke": "#2e7d32", "w": 1, "a": 1, "hatch": True, "hp": "45", "hc": "#2e7d32"}
+        doc = print_io.build_document({"sheets": [sheet(layers=[{"title": "Зоны", "features": [f]}], legend=[], tep=[])]}, S.REDLN, S.LGR_DASH)
+        ops = next(fr for fr in doc.pages[0].frames if isinstance(fr, print_io.SketchMapFrame)).ops({})
+        fills = [o.get("fill") for o in ops if o.get("op") == "path" and o.get("fill")]
+        self.assertIn(print_io.hex_to_rgb("#ddebd3"), fills)
+        strokes = {o.get("stroke") for o in ops if o.get("op") == "path" and not o.get("closed")}
+        self.assertIn(print_io.hex_to_rgb("#2e7d32"), strokes)
+
     def test_plain_paper_sheet_fills_the_page_in_both_orientations(self):
         for orient, size in (("L", (420, 297)), ("P", (297, 420))):
             doc = print_io.build_document({"sheets": [sheet(size="BA3", orient=orient, title="Лист 1")]}, S.REDLN, S.LGR_DASH)

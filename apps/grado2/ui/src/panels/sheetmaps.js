@@ -8,7 +8,7 @@
    под масштаб, заданный числом, ownView() делает копию вида для одного листа; легенда с follow
    берёт строки из вида своей карты). */
 import { project, shown, scale, viewNow } from "../store.js";
-import { breaks, fullStyle, legendItems as classesOf, swatchColor, symbolOf } from "../symbology.js";
+import { breaks, classStyle, edgeColor, fullStyle, legendItems as classesOf, swatchColor, symbolOf } from "../symbology.js";
 import { blockBounds } from "../sheet/model.js";
 import { blockFromView, frameForScale } from "../viewframes.js";
 
@@ -24,7 +24,7 @@ function bboxOf(g) {
 }
 function indexed(fc) {
   let v = boxes.get(fc);
-  if (!v) { v = (fc.features || []).filter(f => f?.geometry).map(f => ({ g: f.geometry, b: bboxOf(f.geometry) })); boxes.set(fc, v); }
+  if (!v) { v = (fc.features || []).filter(f => f?.geometry).map(f => ({ g: f.geometry, b: bboxOf(f.geometry), p: f.properties || {} })); boxes.set(fc, v); }
   return v;
 }
 const meets = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
@@ -45,19 +45,29 @@ export function mapLayers(b) {
   [...layersOf(b.view)].reverse().forEach(({ l, style }) => {
     const fc = project.data[l.key]?.fc;
     if (!fc) return;
-    const s = fullStyle(style), feats = [], br = s.mode === "grad" ? breaks(s, fc) : null;
+    const s = fullStyle(style), feats = [], br = s.mode === "grad" ? breaks(s, fc) : null, effs = new Map();
     indexed(fc).forEach(({ g, b: fb, p }) => {
       if (!meets(fb, box)) return;
       if (s.mode === "lgr") { feats.push({ g, stroke: "#d7191c", w: Math.max(s.width, 1), a: 1 }); return; }
       const k = symbolOf(s, f => p[f], br);
       if (k.hide) return;
-      if (l.geom === "line") feats.push({ g, stroke: k.fill, w: s.width, a: 1 });          // у линии цвет — fill, как на карте
-      else if (l.geom === "point") feats.push({ g, fill: k.fill, stroke: s.stroke, w: (2 + s.width * 2) * PX_PT });
-      else feats.push({ g, fill: k.fill, stroke: s.width > 0 ? s.stroke : null, w: s.width, a: s.opacity });
+      let e = effs.get(k.id); if (!e) effs.set(k.id, e = classStyle(s, k.o));   // полный знак класса: контур, штрих, штриховка
+      feats.push(printFeature(g, l.geom, e, k));
     });
     if (feats.length) out.push({ title: l.title || l.key, features: feats });
   });
   return out;
+}
+
+/* Объект для печати (print_io.py: fill, stroke, w, a, dash, hatch, hp — узор, hs — шаг, hc — цвет штриховки) по стилю
+   e (слой с полями класса) и знаку k — так же, как карта (symbology.js symbolStyle). */
+export function printFeature(g, geom, e, k) {
+  const dash = e.dash?.length ? e.dash : undefined;
+  if (geom === "line") return { g, stroke: k.fill, w: e.width, a: 1, dash };              // у линии цвет — fill, как на карте
+  if (geom === "point") return { g, fill: k.fill, stroke: e.stroke, w: (2 + e.width * 2) * PX_PT };
+  const f = { g, fill: k.fill, stroke: e.width > 0 ? edgeColor(e, k) : null, w: e.width, a: e.opacity, dash };
+  if (k.hatch) Object.assign(f, { hatch: true, hp: e.hatchPat || "45", hs: e.hatchStep, hc: e.hatchColor });
+  return f;
 }
 
 /* Строки легенды из видимых слоёв проекта, сверху вниз, как в окне «Слои»; у слоя с категориями, диапазонами или
@@ -66,12 +76,25 @@ export function legendItems(viewId) {
   const out = [];
   layersOf(viewId).filter(({ l }) => project.data[l.key]).forEach(({ l, style }) => {
     const s = fullStyle(style), t = l.title || l.key, line = l.geom === "line" || s.mode === "lgr";
-    const row = (title, c) => out.push(line ? { t: title, s: "line", c } : { t: title, s: "fill", c: s.stroke, f: c });
+    const row = (title, c, o, h) => out.push(legendRow(title, line, classStyle(s, o), { fill: c, hatch: !!h }));
     const cls = s.mode === "single" || s.mode === "lgr" ? [] : classesOf(s, project.data[l.key].fc).filter(x => !x.off);
-    if (cls.length) cls.forEach(x => row(`${t}: ${x.v === "" ? "без значения" : x.v}`, x.c));
-    else row(t, swatchColor(s));
+    if (cls.length) cls.forEach(x => row(`${t}: ${x.v === "" ? "без значения" : x.v}`, x.c, x.o, x.h ?? (s.mode === "grad" && s.hatch)));
+    else row(t, swatchColor(s), null, s.mode === "single" && s.hatch);
   });
   return out;
+}
+
+/* Строка легенды: знак как на карте — заливка с прозрачностью, контур своей толщины и штриха, штриховка (layout_io.py _legend,
+   sheet/draw.js legendContent). */
+export function legendRow(t, line, e, k) {
+  const dash = e.dash?.length ? e.dash.map(v => +(v * 0.26).toFixed(2)) : undefined;   // штрих карты (пикс.) → мм листа, как print_io PX_MM
+  if (line) return { t, s: "line", c: k.fill, ...(dash ? { dash } : {}) };
+  const r = { t, s: "fill", c: edgeColor(e, k), f: k.fill };
+  if (e.opacity < 1 && !k.hatch) r.a = e.opacity;
+  if (e.width !== 1) r.w = e.width;
+  if (dash) r.dash = dash;
+  if (k.hatch) Object.assign(r, { h: e.hatchPat || "45", hc: e.hatchColor || k.fill, ...(e.hatchColor ? {} : { f: null }) });
+  return r;
 }
 
 /* ---------- картинки карт блоков ---------- */

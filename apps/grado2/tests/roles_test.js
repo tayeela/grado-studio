@@ -47,4 +47,7 @@ eq(Roles.keys("zouit").includes("empty"), false, "no data no role");
 Roles.use({ table: { codes: {} } });
 eq(Roles.keys("func_zones"), [], "without the code table ogd layers are not recognised");
 eq(Roles.keys("social"), ["osm.social"], "source keys work without the table");
+// граница территории — роль слоя (ui/src/data.js setTerritoryLayer): ручная, в список ролей входит
+eq(Roles.LABELS.territory, "Граница территории", "territory role label");
+eq(Roles.sane("territory"), "territory", "territory is a valid manual role");
 console.log(n + " checks ok");

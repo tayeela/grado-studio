@@ -69,7 +69,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_white`, `label_box`, `_corners`, `_aabb`, `_overlap`, `page_conflicts`, `_dedupe`, `phrase`, `_times`, `album_conflicts`
 
-### `apps/grado2/layout_io.py` — 387 стр.
+### `apps/grado2/layout_io.py` — 402 стр.
 
 Лист из нового редактора раскладки («Макет листа» в /next/, apps/grado2/ui/src/sheet) — в PDF и SVG.
 
@@ -95,7 +95,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `Busy`, `Gate`, `portals_of`
 
-### `apps/grado2/print_io.py` — 2598 стр.
+### `apps/grado2/print_io.py` — 2603 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 

@@ -133,7 +133,22 @@ def _legend(b):
             dash = [max(0.1, _num(d)) for d in it["dash"]] if isinstance(it.get("dash"), list) and it["dash"] else None
             out.append(_path([[(pad, y + sh / 2), (pad + sw, y + sh / 2)]], stroke=c, width=0.6, closed=False, dash=dash))
         else:
-            out.append(_path([_rect(pad, y, sw, sh)], fill=_rgb(it.get("f"), None), stroke=c, width=0.3))
+            # знак класса как на карте (ГРАДО 2 sheetmaps.js legendRow): прозрачность заливки a, штриховка h цветом hc,
+            # контур своей толщины w (пикс. карты) и штриха dash (мм)
+            box = [_rect(pad, y, sw, sh)]
+            f = _rgb(it.get("f"), None)
+            if f is not None and isinstance(it.get("a"), (int, float)) and 0 <= it["a"] < 1:
+                f = _fade(f, it["a"])
+            if f is not None:
+                out.append(_path(box, fill=f, width=0))
+            if it.get("h"):
+                hc = _rgb(it.get("hc"), None) or c
+                for ang in {"0": (0,), "90": (90,), "135": (135,), "x45": (45, 135), "x0": (0, 90)}.get(str(it["h"]), (45,)):
+                    out.extend(print_io.hatch_ops(box, spacing=1.2, stroke=hc, angle=ang, width=0.13))
+            dash = [max(0.1, _num(d)) for d in it["dash"]] if isinstance(it.get("dash"), list) and it["dash"] else None
+            if it.get("w") != 0:
+                w = max(0.1, _num(it.get("w"), 1) * print_io.PX_MM) if it.get("w") is not None else 0.3
+                out.append(_path(box, stroke=c, width=w, dash=dash))
         out.append(_text(pad + sw + 2.5, _baseline(y + .3, fs), _fit(str(it.get("t") or ""), "ui", fs, b["w"] - 2 * pad - sw - 2.5), fs))
     return out
 

@@ -34,17 +34,24 @@
       <label class="f">
         <span>Поле</span>
         <wa-select size="s" :value="st.cat.field" @change="e => { st.cat.field = e.target.value; assignCats(st, fc, false); }">
-          <wa-option v-for="k in (txtFields.length ? txtFields : fields)" :key="k" :value="k">{{ k }}</wa-option>
+          <wa-option v-for="k in catFields" :key="k" :value="k">{{ k }}</wa-option>
         </wa-select>
       </label>
       <wa-button size="s" appearance="outlined" class="wide" title="Как «Классифицировать» в QGIS: заново собрать значения поля и раздать цвета"
                  @click="assignCats(st, fc, false)">Классифицировать</wa-button>
       <table class="cl">
-        <tr v-for="[v, n] in cats" :key="v" :class="{ off: st.cat.off.includes(v) }">
-          <td><wa-checkbox size="s" :checked="!st.cat.off.includes(v)" :title="st.cat.off.includes(v) ? 'Показать' : 'Скрыть'" @change="e => catOff(v, !e.target.checked)"></wa-checkbox></td>
-          <td><wa-color-picker size="s" :aria-label="'Цвет: ' + (v || '—')" :label="'Цвет: ' + (v || '—')" :value="st.cat.colors[v] || OTHER" @change="e => (st.cat.colors[v] = e.target.value)"></wa-color-picker></td>
-          <td class="v" :title="v">{{ v || "—" }}</td><td class="n">{{ n }}</td>
-        </tr>
+        <template v-for="[v, n] in cats" :key="v">
+          <tr :class="{ off: st.cat.off.includes(v) }">
+            <td><wa-checkbox size="s" :checked="!st.cat.off.includes(v)" :title="st.cat.off.includes(v) ? 'Показать' : 'Скрыть'" @change="e => catOff(v, !e.target.checked)"></wa-checkbox></td>
+            <td><wa-color-picker size="s" :aria-label="'Цвет: ' + (v || '—')" :value="st.cat.colors[v] || OTHER" @change="e => (st.cat.colors[v] = e.target.value)"></wa-color-picker></td>
+            <td class="v" :title="v">{{ v || "—" }}</td><td class="n">{{ n }}</td>
+            <td><button class="symb" :aria-expanded="String(openCls === 'c:' + v)" :title="'Знак класса «' + (v || '—') + '»: штриховка, контур, линия, подпись'" @click="openCat(v)">
+              <LayerSwatch :l="l" :style="clsSwatch(st.cat.sym[v], st.cat.colors[v] || OTHER, st.cat.sym[v]?.hatch ?? !!st.hatch)" /></button></td>
+          </tr>
+          <tr v-if="openCls === 'c:' + v" class="open"><td colspan="5">
+            <ClassSymbol :st="st" :o="st.cat.sym[v]" :fill="st.cat.colors[v] || OTHER" :geom="l.geom" :fields="fields" />
+          </td></tr>
+        </template>
       </table>
       <p v-if="catsAll > cats.length" class="hint">Показаны 80 значений из {{ catsAll }}.</p>
     </template>
@@ -95,15 +102,18 @@
           <wa-input size="s" :value="r.val" placeholder="значение" aria-label="Значение" @change="e => (r.val = e.target.value)"></wa-input>
         </div>
         <div class="row">
-          <wa-color-picker size="s" aria-label="Цвет правила" label="Цвет правила" :value="r.fill" @change="e => (r.fill = e.target.value)"></wa-color-picker>
+          <wa-color-picker size="s" aria-label="Цвет правила" :value="r.fill" @change="e => (r.fill = e.target.value)"></wa-color-picker>
           <wa-checkbox v-if="l.geom === 'poly'" size="s" :checked="!!r.hatch" @change="e => (r.hatch = e.target.checked)">штриховка</wa-checkbox>
+          <button class="symb" :aria-expanded="String(openCls === 'r:' + i)" title="Знак правила: штриховка, контур, линия, подпись" @click="openCls = openCls === 'r:' + i ? '' : 'r:' + i">
+            <LayerSwatch :l="l" :style="clsSwatch(r, r.fill, !!r.hatch)" /></button>
           <span class="grow"></span><span class="n" title="Объектов, подходящих под правило">{{ plural(ruleCount(r, fc), ["объект", "объекта", "объектов"]) }}</span>
-          <wa-button aria-label="Удалить правило" size="s" appearance="plain" title="Удалить правило" @click="st.rules.list.splice(i, 1)"><X :size="14" /></wa-button>
+          <wa-button aria-label="Удалить правило" size="s" appearance="plain" title="Удалить правило" @click="st.rules.list.splice(i, 1); openCls = ''"><X :size="14" /></wa-button>
         </div>
+        <ClassSymbol v-if="openCls === 'r:' + i" :st="st" :o="r" :fill="r.fill" :geom="l.geom" :fields="fields" rule />
       </div>
       <div class="row rule">
         <span>Остальные</span>
-        <wa-color-picker size="s" aria-label="Цвет остальных" label="Цвет остальных" :value="st.rules.elseFill" @change="e => (st.rules.elseFill = e.target.value)"></wa-color-picker>
+        <wa-color-picker size="s" aria-label="Цвет остальных" :value="st.rules.elseFill" @change="e => (st.rules.elseFill = e.target.value)"></wa-color-picker>
         <wa-checkbox size="s" :checked="!!st.rules.elseHide" @change="e => (st.rules.elseHide = e.target.checked)">скрыть</wa-checkbox>
       </div>
       <wa-button size="s" appearance="outlined" class="wide" @click="st.rules.list.push({ field: fields[0] || '', op: '=', val: '', fill: CAT[st.rules.list.length % CAT.length] })"><Plus :size="14" /> Правило</wa-button>
@@ -124,7 +134,7 @@
       </div>
       <div class="f" v-else-if="st.mode === 'single'">
         <span>Цвет</span>
-        <div class="fc"><wa-color-picker size="s" aria-label="Цвет" label="Цвет" :value="st.fill" @change="e => (st.fill = e.target.value)"></wa-color-picker></div>
+        <div class="fc"><wa-color-picker size="s" aria-label="Цвет" :value="st.fill" @change="e => (st.fill = e.target.value)"></wa-color-picker></div>
       </div>
 
       <template v-if="l.geom === 'poly' && (st.mode !== 'rules' || hatched)">
@@ -148,7 +158,7 @@
         <span>Контур</span>
         <div class="fc">
           <span v-if="st.lgrLine" class="u">цвет знака ЛГР</span>
-          <wa-color-picker v-else size="s" aria-label="Цвет контура" label="Цвет контура" :value="edge" @change="e => { st.stroke = e.target.value; st.strokeOwn = true; }"></wa-color-picker>
+          <wa-color-picker v-else size="s" aria-label="Цвет контура" :value="edge" @change="e => { st.stroke = e.target.value; st.strokeOwn = true; }"></wa-color-picker>
           <template v-if="l.geom === 'poly'">
             <wa-number-input size="s" class="num" aria-label="Толщина контура, пикс." :value="st.width" step="0.1" min="0" max="10" @change="e => (st.width = num(e, 1))"></wa-number-input>
             <span class="u">пикс.</span>
@@ -193,7 +203,7 @@
     <div class="f" v-if="st.label">
       <span>Шрифт</span>
       <div class="fc">
-        <wa-color-picker size="s" aria-label="Цвет подписи" label="Цвет подписи" :value="st.labelColor || '#1d1d1f'" @change="e => (st.labelColor = e.target.value)"></wa-color-picker>
+        <wa-color-picker size="s" aria-label="Цвет подписи" :value="st.labelColor || '#1d1d1f'" @change="e => (st.labelColor = e.target.value)"></wa-color-picker>
         <wa-number-input size="s" class="num" aria-label="Кегль подписи, пт" :value="st.labelSize" min="7" max="24" @change="e => (st.labelSize = num(e, 11))"></wa-number-input>
         <span class="u">пт</span>
       </div>
@@ -219,9 +229,9 @@
         <wa-option v-for="d in DENS" :key="d" :value="String(d)">{{ d ? "крупнее 1:" + d.toLocaleString("ru-RU") : "всегда" }}</wa-option>
       </wa-select>
     </label>
-    <label class="f" title="Какие расчёты берут этот слой: ограничения, анализ, эскиз. «Авто» — по источнику слоя; ручная роль заменяет её.">
+    <label class="f" title="Какие расчёты берут этот слой: ограничения, анализ, эскиз. «Авто» — по источнику слоя; ручная роль заменяет её. «Граница территории» — граница проекта следует за полигонами этого слоя.">
       <span>Роль</span>
-      <wa-select size="s" :value="l.role || 'auto'" @change="e => setRole(e.target.value)">
+      <wa-select :key="roleKey" size="s" :value="l.role || 'auto'" @change="e => setRole(e.target.value)">
         <wa-option v-for="[v, t] in roles" :key="v" :value="v">{{ t }}</wa-option>
       </wa-select>
     </label>
@@ -235,10 +245,12 @@ import { Eye, EyeOff, Plus, X } from "@lucide/vue";
 import "../../../web/roles.js";
 import { current, project, shown } from "../store.js";
 import { dataRev } from "../edit.js";
+import { TERR_ROLE, setTerritoryLayer } from "../data.js";
 import { plural } from "../geom.js";
 import LayerSwatch from "./LayerSwatch.vue";
+import ClassSymbol from "./ClassSymbol.vue";
 import {
-  CAT, DASHES, DENS, HATCHES, LGR_LINES, OPS, OTHER, RAMPS, RAMP_TITLES, assignCats, breaks, catValues, edgeColor, fieldsOf, floorsDenOf, legendItems, loadLibs, numFields, okn, ruleCount,
+  CAT, DASHES, DENS, HATCHES, LGR_LINES, OPS, OTHER, RAMPS, RAMP_TITLES, assignCats, breaks, catValues, classStyle, edgeColor, fieldsOf, floorsDenOf, legendItems, loadLibs, numFields, okn, ruleCount,
 } from "../symbology.js";
 
 window.Roles.load();                                // таблица кодов каталога ГИС ОГД → роль (GET /api/layer_roles)
@@ -252,6 +264,8 @@ const nf = computed(() => numFields(fc.value));
 const txtFields = computed(() => fields.value.filter(k => !nf.value.includes(k)));
 const hasLgr = computed(() => st.value.mode === "lgr" || (fc.value?.features || []).some(f => f.properties?._lt));
 const modes = computed(() => [["single", "Единый цвет"], ["cat", "Категории по полю"], ["grad", "Диапазоны чисел"], ["rules", "Правила"]].concat(hasLgr.value ? [["lgr", "Знаки ЛГР"]] : []));
+/* поля категорий: текстовые; числовое поле, уже выбранное для категорий (этажность), тоже в списке */
+const catFields = computed(() => { const f = txtFields.value.length ? txtFields.value : fields.value, c = st.value.cat.field; return c && !f.includes(c) && fields.value.includes(c) ? [c, ...f] : f; });
 const allCats = computed(() => catValues(fc.value, st.value.cat.field));
 const cats = computed(() => allCats.value.slice(0, 80));
 const catsAll = computed(() => allCats.value.length);
@@ -278,15 +292,29 @@ function setDash(v) {
   if (v.startsWith("lgr:")) { s.lgrLine = +v.slice(4) * (s.lgrLine < 0 ? -1 : 1); delete s.dash; return; }   // знак ЛГР: сторона знаков сохраняется
   delete s.lgrLine; if (v === "solid") delete s.dash; else s.dash = v.split(",").map(Number);
 }
+/* знак класса (ClassSymbol.vue): открыт один класс за раз; образец — стиль слоя с полями класса, как на карте */
+const openCls = ref("");
+function openCat(v) {
+  const k = "c:" + v; if (openCls.value === k) { openCls.value = ""; return; }
+  st.value.cat.sym ||= {}; st.value.cat.sym[v] ||= {}; openCls.value = k;
+}
+const clsSwatch = (o, fill, hatch) => ({ ...classStyle(st.value, o), mode: "single", fill, hatch });
 function catOff(v, off) { const s = st.value; s.cat.off = off ? [...s.cat.off, v] : s.cat.off.filter(x => x !== v); }
 function setDen(d) { if (d) st.value.maxDen = d; else delete st.value.maxDen; }
 
 /* Роль слоя в расчётах (web/roles.js): «авто» — по источнику; поле role в файле — только при ручной роли. */
+/* «Граница территории» — только у площадного слоя и только у одного (data.js setTerritoryLayer): граница проекта
+   следует за его полигонами. Снять роль — граница остаётся прежней, пока роль не получит другой слой. */
 const roles = computed(() => {
   const R = window.Roles, a = R.autoRole(l.value.key);
-  return [["auto", "авто" + (a ? ": " + R.LABELS[a] : ": не участвует")], ...Object.entries(R.LABELS), ["none", "не участвует в расчётах"]];
+  const list = Object.entries(R.LABELS).filter(([v]) => v !== TERR_ROLE || l.value.geom === "poly" || l.value.role === TERR_ROLE);
+  return [["auto", "авто" + (a ? ": " + R.LABELS[a] : ": не участвует")], ...list, ["none", "не участвует в расчётах"]];
 });
-function setRole(v) { if (v === "auto") delete l.value.role; else l.value.role = window.Roles.sane(v); }
+function setRole(v) {
+  if (v === TERR_ROLE) { if (!setTerritoryLayer(l.value.key)) roleKey.value++; return; }
+  if (v === "auto") delete l.value.role; else l.value.role = window.Roles.sane(v);
+}
+const roleKey = ref(0);                              // отказ (в слое нет полигонов) — список перерисовывается с прежней ролью
 </script>
 
 <style>
@@ -318,4 +346,8 @@ function setRole(v) { if (v === "auto") delete l.value.role; else l.value.role =
 .props .rule { border: 1px solid var(--g-line); border-radius: var(--wa-border-radius-s); padding: 8px; margin-bottom: var(--wa-space-s); }
 .props .rule .row:last-child { margin-bottom: 0; }
 .props .grow { flex: 1; }
+.props button.symb { all: unset; display: inline-flex; padding: 3px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
+.props button.symb:hover, .props button.symb[aria-expanded="true"] { border-color: var(--g-line); background: var(--wa-color-neutral-fill-quiet); }
+.props button.symb:focus-visible { outline: 2px solid var(--wa-color-focus); }
+.props table.cl tr.open td { border-bottom: 1px solid var(--g-line); padding: 0 4px; }
 </style>

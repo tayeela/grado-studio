@@ -49,6 +49,24 @@ def spec(**sheet_kw):
 
 
 class LayoutPrint(unittest.TestCase):
+    def test_legend_row_draws_full_class_symbol(self):
+        """Знак класса в легенде (sheetmaps.js legendRow): полупрозрачная заливка, штриховка своим цветом, контур своей
+        толщины и штриха — а не только квадрат цвета заливки (Марат 08.11.2026)."""
+        b = {"w": 60, "h": 30, "title": "Зоны", "items": [
+            {"t": "Р1", "s": "fill", "c": "#2e7d32", "f": "#ddebd3", "a": .5, "h": "45", "hc": "#2e7d32", "w": 2, "dash": [1.04, .52]},
+            {"t": "Ж1", "s": "fill", "c": "#3c3c3c", "f": "#e8e8bb", "w": 0}]}
+        ops = layout_io._legend(b)
+        paths = [o for o in ops if o.get("op") == "path"]
+        fills = [o["fill"] for o in paths if o.get("fill")]
+        self.assertIn(layout_io._fade(layout_io._rgb("#ddebd3"), .5), fills)          # заливка класса с прозрачностью
+        hatch = [o for o in paths if not o.get("closed") and o.get("stroke") == layout_io._rgb("#2e7d32")]
+        self.assertTrue(hatch, "штриховка цветом hc")
+        edge = [o for o in paths if o.get("closed") and o.get("dash")]
+        self.assertEqual(len(edge), 1)
+        self.assertAlmostEqual(edge[0]["width"], 2 * 0.26)                              # толщина контура: пикс. карты → мм
+        no_edge = [o for o in paths if o.get("closed") and o.get("stroke") == layout_io._rgb("#3c3c3c")]
+        self.assertEqual(no_edge, [], "w = 0: без контура, как на карте")
+
     def test_sheet_renders_to_pdf_with_stamp_and_all_elements(self):
         pdf = layout_io.render_pdf(spec(), S.REDLN, S.LGR_DASH)
         self.assertTrue(pdf.startswith(b"%PDF"))
