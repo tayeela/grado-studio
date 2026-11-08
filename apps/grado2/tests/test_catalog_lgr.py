@@ -60,6 +60,8 @@ class Catalog(unittest.TestCase):
         other = {"geometry": {"type": "LineString", "coordinates": list(edge)}, "properties": {"linelineco": "1"}}
         feats = S.drop_guid_copies([copy17, copy18, other])
         self.assertEqual(feats, [copy17, other])
+        shp = [{"geometry": None, "properties": {"guid": "5dc0e6ec"}} for _ in range(3)]     # у shp поле — "guid"
+        self.assertEqual(len(S.drop_guid_copies(shp)), 1)
         api = mock.Mock()
         api.fetch.return_value = {"features": [{"geometry": SQ}]}
         S.orient_all_by_areas(api, (37.5, 55.7, 37.7, 55.8), feats)
