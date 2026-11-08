@@ -7,6 +7,8 @@
 линейка, рамка и основная надпись по ГОСТ Р 21.101 (рамка и штамп — фреймы ядра).
 """
 
+import base64
+import json
 import math
 import os
 import re
@@ -805,6 +807,7 @@ class SketchMapFrame(Frame):
         # СНТ, зоны) стоят на тех же местах — при пролистывании не прыгают (владелец 30.09.2026); другое место —
         # только если своё занято (выноска, номер), тогда подпись сдвигается или пропадает
         self.memo = memo if memo is not None else {}
+        self.album_sheet = None                                         # лист альбома: пустая карта — пометка «не готов» на нём
 
     def ops(self, ctx):
         sh, rect = self.sheet, self.rect
@@ -1587,6 +1590,10 @@ class SketchMapFrame(Frame):
         if late:                                                        # стрелки точек съёмки — поверх подписей: улица у
             out.append({"op": "layer", "name": "Точки съёмки"})          # территории подписана и стрелка видна (06.10.2026)
             out.extend(late)
+        if self.album_sheet is not None and map_is_empty(out, rect):   # карта альбома пропала — лист не готов, а не молча белый
+            reasons = self.album_sheet.setdefault("_notReady", [])
+            if EMPTY_MAP_NOTE not in reasons:
+                reasons.append(EMPTY_MAP_NOTE)
         out.append({"op": "layer", "name": "Рамка"})
         if sh.get("noFrame"):
             pass                                                        # карта без рамки (схемы Москвы в шаблоне ППТ КРТ)
@@ -2091,6 +2098,10 @@ def build_document(spec, lib, lgr_dash, tiles=None):
             page.frames = [PageBorder(page), SketchMapFrame(map_rect, sh, lib, lgr_dash), ColumnFrame(col_rect, sh), StampFrame(page)]
         doc.pages.append(page)
         doc.sheet_titles.append(sh.get("title", ""))
+    for page, sh in zip(doc.pages, spec["sheets"]):
+        for f in page.frames:
+            if isinstance(f, SketchMapFrame):
+                f.album_sheet = sh
     return doc
 
 
@@ -2408,7 +2419,8 @@ def _dash_runs(pts, dash):
 
 def pptx_rasterize(ops, dpi=PPTX_DPI):
     """Операции карты → список из одной картинки PNG (все контуры и снимки, с обрезкой) и поверх неё подписей и значков
-    векторно. Рамка — внешний clip карты; без него рисунок всей карты по охвату контуров."""
+    векторно. Рамка — внешний clip карты; без него рисунок всей карты по охвату контуров. С модулем grado_rs рисует
+    пластина на Rust (tiny-skia, сглаживание и штриховка как в PDF); без него — прежний растр PIL."""
     import io
     from PIL import Image, ImageChops, ImageDraw
     box = None
@@ -2423,6 +2435,12 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
             return ops
         box = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
     x0, y0, x1, y1 = box
+    if plate_on():
+        png, _drawn, _skipped, _ink = rust_plate()(plate_ops_json(shift_ops([o for o in ops if o["op"] in PLATE_OPS], -x0, -y0)),
+                                                   float(x1 - x0), float(y1 - y0), float(dpi), True)
+        return ([{"op": "clip", "rect": (x0, y0, x1 - x0, y1 - y0)}, {"op": "layer", "name": "Карта (растр)"},
+                 {"op": "image", "data": png, "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}]
+                + [o for o in ops if o["op"] in ("text", "circle")] + [{"op": "unclip"}])
     pmm = dpi / 25.4
     W, H = max(1, int(round((x1 - x0) * pmm))), max(1, int(round((y1 - y0) * pmm)))
     ss = 2 if W * H * 4 <= 36e6 else 1                               # сглаживание: рисуем вдвое крупнее и уменьшаем
@@ -2556,6 +2574,97 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
     img.save(buf, "PNG")
     return ([{"op": "clip", "rect": (x0, y0, x1 - x0, y1 - y0)}, {"op": "layer", "name": "Карта (растр)"},
              {"op": "image", "data": buf.getvalue(), "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}] + rest + [{"op": "unclip"}])
+
+
+# ---------- Пластина карты на Rust (rust/crates/plate, модуль grado_rs) ----------
+
+PLATE_OPS = {"path", "image", "clip", "unclip"}   # что уходит в растр слайда; тексты и кружки знаков остаются фигурами
+EMPTY_INK = 0.002                                 # доля закрашенного, ниже которой карта считается пустой
+EMPTY_DPI = 40                                    # проверке пустоты хватает грубой пластины
+EMPTY_MAP_NOTE = "карта пустая: на ней ничего не нарисовано (слои не загрузились или вне рамки)"
+
+
+def rust_plate():
+    """render_plate из модуля grado_rs или None (колесо не установлено — пластины нет, карта идёт векторной)."""
+    try:
+        import grado_rs
+        return getattr(grado_rs, "render_plate", None)
+    except ImportError:
+        return None
+
+
+def plate_on():
+    """Пластина на Rust: GRADO_PLATE=0 — выключить; иначе включена, если модуль grado_rs установлен."""
+    return os.environ.get("GRADO_PLATE", "").strip() != "0" and rust_plate() is not None
+
+
+def plate_ops_json(ops):
+    """Операции рендера → JSON для пластины: кортежи — списки, байты картинки — base64. Тексты уходят как есть:
+    пластина их пропускает, подписи остаются векторными поверх неё."""
+    def conv(o):
+        if o.get("op") == "image" and isinstance(o.get("data"), (bytes, bytearray)):
+            o = {**o, "data_b64": base64.b64encode(o["data"]).decode("ascii")}
+            o.pop("data")
+        return o
+    return json.dumps([conv(o) for o in ops], ensure_ascii=False, default=lambda v: list(v) if isinstance(v, (tuple, set)) else str(v))
+
+
+def shift_ops(ops, dx, dy):
+    """Операции, сдвинутые на (dx, dy) мм: карта листа → координаты своей пластины (левый верхний угол рамки — 0, 0)."""
+    mv = lambda p: (p[0] + dx, p[1] + dy)
+    out = []
+    for o in ops:
+        o = dict(o)
+        if o.get("rings"):
+            o["rings"] = [[mv(p) for p in r] for r in o["rings"]]
+        if o.get("rect"):
+            x, y, w, h = o["rect"]
+            o["rect"] = (x + dx, y + dy, w, h)
+        if o.get("quad"):
+            o["quad"] = [mv(p) for p in o["quad"]]
+        elif "x" in o and "y" in o:
+            o["x"], o["y"] = o["x"] + dx, o["y"] + dy
+        out.append(o)
+    return out
+
+
+def _rough_ink(ops, rect):
+    """Грубая доля закраски рамки без растра: охваты не белых заливок (обрезанные рамкой) и контуры (длина × толщина).
+    Перекрытия считаются дважды — годится только чтобы не рисовать пластину там, где карта заведомо не пустая."""
+    x, y, w, h = rect
+    area, white = 0.0, (1, 1, 1)
+    for o in ops:
+        if o["op"] != "path" or not o.get("rings"):
+            continue
+        if o.get("closed") and o.get("fill") is not None and tuple(o["fill"]) != white and float(o.get("alpha") if o.get("alpha") is not None else 1) > .05:
+            for r in o["rings"][:1]:
+                xs, ys = [p[0] for p in r], [p[1] for p in r]
+                area += max(0.0, min(max(xs), x + w) - max(min(xs), x)) * max(0.0, min(max(ys), y + h) - max(min(ys), y))
+        if o.get("stroke") is not None and tuple(o["stroke"]) != white and (o.get("width") or 0) > 0:
+            for r in o["rings"]:
+                area += float(o["width"]) * sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(r, r[1:])
+                                                if x <= a[0] <= x + w and y <= a[1] <= y + h)
+    return area / max(w * h, 1e-9)
+
+
+def map_is_empty(ops, rect):
+    """Карта рамки пустая: ни снимка подложки, ни закраски контурами (пластина EMPTY_DPI, доля меньше EMPTY_INK).
+    Без модуля grado_rs проверки нет (False). Подписи и рамка не в счёт — пропавшая карта Безобразово была белой
+    с подписями (выпуск 16: 9 листов из 12)."""
+    if not plate_on():
+        return False
+    if any(o["op"] == "image" for o in ops):
+        return False
+    x, y, w, h = rect
+    if _rough_ink(ops, rect) > 20 * EMPTY_INK:                         # закраски заведомо много — пластина не нужна
+        return False                                                    # (плотная карта: JSON сцены дороже самой печати)
+    geo = [o for o in ops if o["op"] in ("path", "circle", "clip", "unclip")]
+    try:
+        *_, ink = rust_plate()(plate_ops_json(shift_ops(geo, -x, -y)), float(w), float(h), float(EMPTY_DPI))
+    except ValueError as e:                                             # пластина не собралась — печать не останавливать
+        gravlog.get("print").error(f"map_is_empty: {e}")
+        return False
+    return ink < EMPTY_INK
 
 
 RASTER_NOTE = "Карта этого слайда вставлена картинкой (PNG, 200 dpi): векторных фигур было слишком много для PowerPoint. Подписи, легенда и рамка остались текстом и фигурами."

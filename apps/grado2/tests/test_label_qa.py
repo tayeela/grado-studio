@@ -51,6 +51,12 @@ class LabelQA(unittest.TestCase):
         self.assertEqual(self.kinds(ops), [("dup", "ЖК «Сиреневый парк»", "2")])
         self.assertEqual(Q.phrase(Q.page_conflicts(ops)[0]), "«ЖК «Сиреневый парк»» подписан 2 раза")
 
+    def test_ring_clip_does_not_break_the_check(self):
+        # обрезка по кольцам (маска территории) — без rect: самопроверка не падает (KeyError 'rect' в журнале, 08.11.2026)
+        ops = [{"op": "clip", "rings": [[(20, 20), (120, 20), (120, 90), (20, 90)]]}, {"op": "layer", "name": "Подписи"},
+               label("СНТ", 60, 50), label("СНТ", 90, 60), {"op": "unclip"}]
+        self.assertEqual(self.kinds(ops), [("dup", "СНТ", "2")])
+
     def test_covered_by_corner_note_and_plate(self):
         note = label("район Гольяново", 180, 140)
         plate = {"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": (0, 0, 0), "width": .3, "rings": [[(20, 20), (60, 20), (60, 40), (20, 40)]]}

@@ -94,5 +94,52 @@ class MapPlate(unittest.TestCase):
         self.assertTrue(layout_io.plate_on())
 
 
+
+@unittest.skipUnless(layout_io.rust_plate(), "модуль grado_rs не установлен")
+class AlbumPlate(unittest.TestCase):
+    """Альбом (print_io): пустая карта — лист «не готов», растр тяжёлой карты слайда PPTX — пластина на Rust."""
+
+    @staticmethod
+    def album(layers):
+        return {"sheets": [{"size": "A3", "title": "Лист", "scale": 2000, "center": [LON, LAT], "basemap": "none",
+                            "layers": layers, "legend": [], "tep": []}]}
+
+    def test_empty_album_map_marks_sheet_not_ready(self):
+        import print_io
+        spec_ = self.album([])
+        self.assertTrue(print_io.render_pdf(spec_, S.REDLN, S.LGR_DASH).startswith(b"%PDF"))
+        self.assertEqual(print_io.not_ready(spec_), [1])
+        self.assertIn(print_io.EMPTY_MAP_NOTE, spec_["sheets"][0]["_notReady"])
+
+    def test_drawn_album_map_is_not_empty(self):
+        import print_io
+        spec_ = self.album([{"title": "Квартал", "features": [{"g": square(.0005), "fill": "#cc0000", "stroke": "#000000", "w": 1, "a": 1}]}])
+        print_io.render_pdf(spec_, S.REDLN, S.LGR_DASH)
+        self.assertNotIn(print_io.EMPTY_MAP_NOTE, spec_["sheets"][0].get("_notReady") or [])
+
+    def test_pptx_raster_is_the_rust_plate_with_holes_and_texts_on_top(self):
+        import os
+        import print_io
+        from unittest import mock
+        from PIL import Image
+        outer, hole = [(10, 10), (210, 10), (210, 110), (10, 110)], [(90, 40), (130, 40), (130, 80), (90, 80)]
+        ops = [{"op": "clip", "rect": (10, 10, 200, 100)},
+               {"op": "path", "rings": [outer, hole], "closed": True, "fill": (1, 0, 0), "stroke": None, "width": 0, "dash": None},
+               {"op": "circle", "x": 20, "y": 20, "r": 1, "fill": (0, 0, 1), "stroke": None, "width": 0},
+               {"op": "text", "x": 50, "y": 50, "text": "Квартал", "size": 3}, {"op": "unclip"}]
+        res = print_io.pptx_rasterize(ops, dpi=100)
+        self.assertEqual([o["op"] for o in res], ["clip", "layer", "image", "circle", "text", "unclip"])
+        img = res[2]
+        self.assertEqual((img["x"], img["y"], img["w"], img["h"]), (10, 10, 200, 100))
+        im = Image.open(io.BytesIO(img["data"])).convert("RGBA")
+        k = im.width / 200
+        self.assertEqual(im.getpixel((int(20 * k), int(50 * k))), (255, 0, 0, 255))      # заливка
+        self.assertEqual(im.getpixel((int(100 * k), int(50 * k)))[3], 0)                 # дыра прозрачна: под ней слайд
+        with mock.patch.dict(os.environ, {"GRADO_PLATE": "0"}):                          # без пластины — прежний растр PIL
+            old = Image.open(io.BytesIO(print_io.pptx_rasterize(ops, dpi=100)[2]["data"])).convert("RGBA")
+        self.assertLessEqual(abs(old.width - im.width), 1)                               # пластина округляет вверх, PIL — до ближайшего
+        self.assertEqual(old.getpixel((int(20 * k), int(50 * k))), (255, 0, 0, 255))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -37,10 +37,13 @@ impl Plate {
     pub fn png(&self) -> Result<Vec<u8>, PlateError> {
         self.pixmap.encode_png().map_err(|e| PlateError(format!("PNG: {e}")))
     }
-    /// Доля закрашенных (не белых) пикселей: пустая или потерянная карта — около нуля.
+    /// Доля закрашенных (не белых и не прозрачных) пикселей: пустая или потерянная карта — около нуля.
     pub fn ink(&self) -> f64 {
         let px = self.pixmap.pixels();
-        let n = px.iter().filter(|p| p.red() < 250 || p.green() < 250 || p.blue() < 250).count();
+        let n = px
+            .iter()
+            .filter(|p| p.alpha() > 8 && { let c = p.demultiply(); c.red() < 250 || c.green() < 250 || c.blue() < 250 })
+            .count();
         n as f64 / px.len().max(1) as f64
     }
 }
@@ -106,9 +109,17 @@ fn stroke_of(o: &Value) -> Stroke {
     s
 }
 
-fn decode_jpeg(b64: &str) -> Option<Pixmap> {
+/// Картинка операции image: PNG (куски тайлов, повёрнутых по рамке) или JPEG (тайлы подложки).
+fn decode_image(b64: &str) -> Option<Pixmap> {
     let bytes = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
-    let mut dec = jpeg_decoder::Decoder::new(&bytes[..]);
+    if bytes.starts_with(b"\x89PNG") {
+        return Pixmap::decode_png(&bytes).ok();
+    }
+    decode_jpeg(&bytes)
+}
+
+fn decode_jpeg(bytes: &[u8]) -> Option<Pixmap> {
+    let mut dec = jpeg_decoder::Decoder::new(bytes);
     let data = dec.decode().ok()?;
     let info = dec.info()?;
     let (w, h) = (info.width as u32, info.height as u32);
@@ -132,13 +143,20 @@ fn decode_jpeg(b64: &str) -> Option<Pixmap> {
 
 /// Операции `ops` (JSON-массив) на лист `w_mm × h_mm` при `dpi` → пластина на белом фоне.
 pub fn render(ops: &Value, w_mm: f32, h_mm: f32, dpi: f32) -> Result<Plate, PlateError> {
+    render_on(ops, w_mm, h_mm, dpi, false)
+}
+
+/// То же; `transparent` — фон прозрачный (карта слайда PPTX поверх своих фигур, как прежний растр PIL).
+pub fn render_on(ops: &Value, w_mm: f32, h_mm: f32, dpi: f32, transparent: bool) -> Result<Plate, PlateError> {
     let k = dpi / 25.4;
     let (pw, ph) = ((w_mm * k).ceil().max(1.0) as u32, (h_mm * k).ceil().max(1.0) as u32);
     if (pw as u64) * (ph as u64) > 400_000_000 {
         return Err(PlateError(format!("пластина {pw}×{ph} слишком велика")));
     }
     let mut pm = Pixmap::new(pw, ph).ok_or_else(|| PlateError("пустой размер пластины".into()))?;
-    pm.fill(tiny_skia::Color::WHITE);
+    if !transparent {
+        pm.fill(tiny_skia::Color::WHITE);
+    }
     let tf = Transform::from_scale(k, k);
     let mut clips: Vec<Option<Mask>> = Vec::new();
     let (mut drawn, mut skipped) = (0usize, 0usize);
@@ -214,7 +232,7 @@ pub fn render(ops: &Value, w_mm: f32, h_mm: f32, dpi: f32) -> Result<Plate, Plat
                 drawn += 1;
             }
             "image" => {
-                let Some(img) = o["data_b64"].as_str().and_then(decode_jpeg) else {
+                let Some(img) = o["data_b64"].as_str().and_then(decode_image) else {
                     skipped += 1;
                     continue;
                 };
@@ -248,8 +266,13 @@ pub fn render(ops: &Value, w_mm: f32, h_mm: f32, dpi: f32) -> Result<Plate, Plat
 
 /// То же из строки JSON.
 pub fn render_json(ops_json: &str, w_mm: f32, h_mm: f32, dpi: f32) -> Result<Plate, PlateError> {
+    render_json_on(ops_json, w_mm, h_mm, dpi, false)
+}
+
+/// То же из строки JSON, фон прозрачный или белый.
+pub fn render_json_on(ops_json: &str, w_mm: f32, h_mm: f32, dpi: f32, transparent: bool) -> Result<Plate, PlateError> {
     let v: Value = serde_json::from_str(ops_json).map_err(|e| PlateError(format!("JSON: {e}")))?;
-    render(&v, w_mm, h_mm, dpi)
+    render_on(&v, w_mm, h_mm, dpi, transparent)
 }
 
 #[cfg(test)]
@@ -297,6 +320,23 @@ mod tests {
         let p = render(&ops, 40.0, 10.0, 100.0).unwrap();
         assert_eq!(px(&p, 2.0, 5.0, 100.0), (0, 0, 0));
         assert_eq!(px(&p, 6.0, 5.0, 100.0), (255, 255, 255));
+    }
+
+    #[test]
+    fn transparent_plate_and_png_image() {
+        let p = render_on(&json!([]), 20.0, 20.0, 72.0, true).unwrap();
+        assert_eq!(p.ink(), 0.0);
+        assert_eq!(p.pixmap.pixel(1, 1).unwrap().alpha(), 0);
+        // PNG 2×2 красный — картинкой на всю пластину
+        let mut src = Pixmap::new(2, 2).unwrap();
+        src.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 255));
+        let b64 = base64::engine::general_purpose::STANDARD.encode(src.encode_png().unwrap());
+        let ops = json!([{"op": "image", "data_b64": b64, "x": 0, "y": 0, "w": 20, "h": 20}]);
+        let p = render_on(&ops, 20.0, 20.0, 72.0, true).unwrap();
+        assert_eq!(p.drawn, 1);
+        let c = p.pixmap.pixel(10, 10).unwrap();
+        assert_eq!((c.red(), c.alpha()), (255, 255));
+        assert!(p.ink() > 0.9);
     }
 
     #[test]

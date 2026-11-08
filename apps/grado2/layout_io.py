@@ -9,9 +9,7 @@ map_svg — одна карта отдельной картинкой: её по
 
 import base64
 import io
-import json
 import math
-import os
 
 from grado_layout import Document, Page, PageBorder, StampFrame
 from grado_layout.compose import _ctx
@@ -257,10 +255,7 @@ PLATE_DPI = 300
 RASTER_OPS = {"path", "circle", "image", "clip", "unclip"}
 
 
-def plate_on():
-    """Карта листа пластиной на Rust: GRADO_PLATE=0 — выключить; иначе включена, если модуль grado_rs установлен."""
-    return os.environ.get("GRADO_PLATE", "").strip() != "0" and rust_plate() is not None
-
+plate_on = print_io.plate_on
 
 def _plated(b, ops, report):
     """Карта блока пластиной (rust/crates/plate): геометрия — одной картинкой PLATE_DPI в рамке блока, подписи — текстом
@@ -432,25 +427,9 @@ def _map_ops(spec, lib, lgr_dash, tiles=None):
     return b, print_io.SketchMapFrame((0, 0, b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({})
 
 
-def plate_ops_json(ops):
-    """Операции рендера → JSON для пластины на Rust (rust/crates/plate): кортежи — списки, байты картинки — base64.
-    Тексты уходят как есть: пластина их пропускает, подписи остаются векторными поверх неё."""
-    def conv(o):
-        if o.get("op") == "image" and isinstance(o.get("data"), (bytes, bytearray)):
-            o = {**o, "data_b64": base64.b64encode(o["data"]).decode("ascii")}
-            o.pop("data")
-        return o
-    return json.dumps([conv(o) for o in ops], ensure_ascii=False, default=lambda v: list(v) if isinstance(v, (tuple, set)) else str(v))
+plate_ops_json = print_io.plate_ops_json
 
-
-def rust_plate():
-    """render_plate из модуля grado_rs или None (колесо не установлено — пластины нет, карта идёт векторной)."""
-    try:
-        import grado_rs
-        return getattr(grado_rs, "render_plate", None)
-    except ImportError:
-        return None
-
+rust_plate = print_io.rust_plate
 
 def map_plate(spec, lib, lgr_dash, tiles=None, dpi=300):
     """Карта блока пластиной (PNG, dpi) на Rust: та же сцена, что map_svg и печать, без подписей (они векторные поверх).

@@ -25,11 +25,11 @@
 | `test_gravlog.py` | Gravlog | 5 |
 | `test_hub.py` | Base, Accounts, SplitJoin, Projects, Roles, PushConflict, History, Comments, Presence, Events, Teams, Hardening, Stage2, AlbumSection | 152 |
 | `test_insol.py` | Insolation | 1 |
-| `test_label_qa.py` | LabelQA | 6 |
+| `test_label_qa.py` | LabelQA | 7 |
 | `test_labelfmt_js.py` | LabelFmtJs | 1 |
 | `test_layout_io.py` | LayoutPrint, LayoutsInProject | 14 |
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
-| `test_map_plate.py` | MapPlate | 6 |
+| `test_map_plate.py` | MapPlate, AlbumPlate | 9 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
 | `test_next_ui.py` | NextUi | 24 |
