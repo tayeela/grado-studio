@@ -8,7 +8,7 @@
    под масштаб, заданный числом, ownView() делает копию вида для одного листа; легенда с follow
    берёт строки из вида своей карты). */
 import { project, shown, scale, viewNow } from "../store.js";
-import { breaks, classStyle, edgeColor, fullStyle, legendItems as classesOf, swatchColor, symbolOf } from "../symbology.js";
+import { breaks, classStyle, edgeColor, fullStyle, legendItems as classesOf, lgrLinePrint, lgrPrintParts, swatchColor, symbolOf } from "../symbology.js";
 import { blockBounds } from "../sheet/model.js";
 import { blockFromView, frameForScale } from "../viewframes.js";
 
@@ -48,7 +48,8 @@ export function mapLayers(b) {
     const s = fullStyle(style), feats = [], br = s.mode === "grad" ? breaks(s, fc) : null, effs = new Map();
     indexed(fc).forEach(({ g, b: fb, p }) => {
       if (!meets(fb, box)) return;
-      if (s.mode === "lgr") { feats.push({ g, stroke: "#d7191c", w: Math.max(s.width, 1), a: 1 }); return; }
+      // линии ЛГР — их знаками (зубцы, бергштрихи), как на карте, а не сплошной красной линией
+      if (s.mode === "lgr") { lgrPrintParts(p._lt, p._miss).forEach(x => feats.push({ g, w: Math.max(s.width, 1), a: 1, ...x })); return; }
       const k = symbolOf(s, f => p[f], br);
       if (k.hide) return;
       let e = effs.get(k.id); if (!e) effs.set(k.id, e = classStyle(s, k.o));   // полный знак класса: контур, штрих, штриховка
@@ -63,6 +64,13 @@ export function mapLayers(b) {
    e (слой с полями класса) и знаку k — так же, как карта (symbology.js symbolStyle). */
 export function printFeature(g, geom, e, k) {
   const dash = e.dash?.length ? e.dash : undefined;
+  if (e.lgrLine && geom !== "point") {                    // знак ЛГР слоя: у полигона — контуром, знаки внутрь (print_io lsign)
+    const z = lgrLinePrint(e.lgrLine), w = Math.max(1, e.width);
+    if (geom === "line") return { g, w, a: 1, ...z };
+    const f = { g, fill: k.fill, stroke: null, w, a: e.opacity, ...z };
+    if (k.hatch) Object.assign(f, { hatch: true, hp: e.hatchPat || "45", hs: e.hatchStep, hc: e.hatchColor });
+    return f;
+  }
   if (geom === "line") return { g, stroke: k.fill, w: e.width, a: 1, dash };              // у линии цвет — fill, как на карте
   if (geom === "point") return { g, fill: k.fill, stroke: e.stroke, w: (2 + e.width * 2) * PX_PT };
   const f = { g, fill: k.fill, stroke: e.width > 0 ? edgeColor(e, k) : null, w: e.width, a: e.opacity, dash };

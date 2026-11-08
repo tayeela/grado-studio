@@ -193,6 +193,19 @@ export function loadLibs() {
   })();
 }
 const ltCode = n => { const m = /^L(\d\d)s(\d\d)/i.exec(n) || /^L(\d\d)[bt](\d\d)/i.exec(n); return m ? (/^L\d\ds/i.test(n) ? +m[2] : +m[1]) : null; };
+/* Знаки ЛГР объекта для печати листа (print_io.py: lt — типы линий REDLN97, miss — [[код, сторона]] без своего типа линии):
+   по части на тип линии — каждая своим цветом Эталона, как на карте (redLineStyle). Ничего нет — серая линия. */
+export function lgrPrintParts(lt, miss) {
+  const out = [...(lt || []).map(n => ({ lt: [n], stroke: LGRC[ltCode(n)] || "#d7191c" })),
+    ...(miss || []).map(m => ({ miss: [m], stroke: LGRC[m[0]] || "#888888" }))];
+  return out.length ? out : [{ stroke: "#999999" }];
+}
+/* Знак ЛГР слоя (st.lgrLine, «Свойства» → «Линия») для печати: тип линии REDLN97 со стороной или штрих Эталона (miss). */
+export function lgrLinePrint(code) {
+  const c = Math.abs(code), sign = code < 0 ? -1 : 1;
+  const name = window.Linetypes?.lib?.lgr[String(c)] ? window.Linetypes.forCode(c, sign) : null;
+  return { ...(name ? { lt: [name] } : { miss: [[c, sign]] }), lsign: sign, stroke: lgrColor(code) };
+}
 const redLineStyle = (f, lat) => new Style({ renderer(coords, st) {
   const ctx = st.context, pr = st.pixelRatio, mpp = st.resolution * Math.cos(lat * Math.PI / 180), k = pr / mpp, plain = mpp / 0.000264583 > 10000;
   const lines = typeof coords[0][0] === "number" ? [coords] : coords, lt = f.get("_lt") || [], miss = f.get("_miss") || [];

@@ -455,6 +455,23 @@ LGR_COLORS = {int(v["lgr_code"]): v["stroke"] for v in _LGR if v.get("lgr_code")
 LGR_DASH = {int(v["lgr_code"]): [d * 2 for d in v["dash_mm"]] for v in _LGR if v.get("lgr_code") is not None and v.get("dash_mm")}   # мм на 1:2000 → метры
 
 
+def orient_by_areas(api, bbox, code, lines):
+    """Линии границ ПК (l18, l21) у портала местами с перепутанной стороной кода: знаки ЛГР смотрели наружу. Сторона
+    проверяется по полигонам того же объекта (ogd_all.AREA_OF, как в DXF); полигоны не пришли — линии как есть."""
+    import ogd_all
+    twin, lcode = ogd_all.AREA_OF[code]
+    try:
+        areas = api.fetch(bbox, twin)["features"]
+    except ConnectorError:
+        return 0
+    return ogd_all.orient_lines(lines, areas, lcode)
+
+
+def lgr_has_linetype(code):
+    """У кода ЛГР есть тип линии REDLN97 со знаками (бергштрихи, зубцы): им рисуется контур зоны."""
+    return bool(acad_lin.linetypes_for_codes([(int(code), 1)], REDLN["linetypes"], REDLN_IDX))
+
+
 def linetype_props(props):
     """LineCode of ГИС ОГД → linetypes REDLN97 (_lt) and codes without one (_miss: [[code, sign]])."""
     code = next((v for k, v in (props or {}).items() if k.lower() in ("linelineco", "linecode")), None)
@@ -1093,6 +1110,7 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
             raise ConnectorError("портал занят другой выгрузкой, повторите через минуту") from None
 
     def run_gisogd(k, nth=0, of=0):
+        import ogd_all
         feats, notes, doc = [], [], None
         def tell(code, got, total, stage):
             PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage, "nth": nth, "of": of}
@@ -1108,6 +1126,8 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
                 missed.append(f"{zone or code}: {e}")
                 continue
             doc, notes = res["source_doc"], notes + res["notes"]
+            if code in ogd_all.AREA_OF:                 # границы ПК: сторона знака — по полигонам того же объекта
+                orient_by_areas(api, bbox, code, res["features"])
             for f in res["features"]:
                 if zone:
                     f["_extra"] = {"Вид зоны": zone}
@@ -2708,6 +2728,9 @@ def post_ogd_styles(c):
                 out[code], rev[code] = ogd_all.layer_style(code, "", geom), ogd_all.OWN_STYLE[code]["rev"]
             elif lgr:
                 out[code], rev[code] = ogd_all.etalon_style(lgr, geom), ogd_all.ETALON_REV
+                lc = int(lgr["lgr_code"])
+                if geom == "poly" and lc not in ogd_all.RED_LINE_CODES and lgr_has_linetype(lc):
+                    out[code]["lgrLine"] = lc               # контур зоны — знаком ЛГР, знаки внутрь (symbology.js ownLgrStyle)
             else:
                 out[code], rev[code] = ogd_all.portal_style(styles(str(code)), geom), 1
         except (OSError, ValueError, ConnectorError):

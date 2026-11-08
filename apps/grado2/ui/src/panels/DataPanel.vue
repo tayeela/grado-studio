@@ -262,7 +262,14 @@ const isOgd = k => k.startsWith("ogd.");
 const presetKeys = p => p[3].filter(k => SOURCES[k]);
 const presetOn = p => { const ks = presetKeys(p); return ks.length > 0 && ks.every(k => pk.sel.has(k)); };
 function togglePreset(p) { const on = presetOn(p), s = new Set(pk.sel); presetKeys(p).forEach(k => on ? s.delete(k) : s.add(k)); pk.sel = s; }
-const ogdNode = n => n.code ? { key: "ogd." + n.code, num: n.num, name: n.name, path: n.path } : { num: "ogd:" + n.num, name: n.name, label: n.num, children: (n.children || []).map(ogdNode) };
+/* Линии границ, у которых есть полигоны того же объекта (ogd_all.INSTEAD: границы ПК → «Природные и озеленённые
+   территории», режимы ПК → полигоны режимов), выгружаются полигонами: у полигона знаки ЛГР всегда смотрят внутрь, у линий
+   портала сторона местами перепутана (владелец 08.11.2026). Флажок такой линии — тот же, что у её полигонов. */
+const ogdNode = n => n.code ? { key: "ogd." + (n.instead || n.code), num: n.num, name: n.instead ? n.name + " — полигонами" : n.name, path: n.path,
+  title: n.instead ? "Выгружается полигонами того же объекта: знаки ЛГР на контуре смотрят внутрь" : undefined }
+  : { num: "ogd:" + n.num, name: n.name, label: n.num, children: (n.children || []).map(ogdNode) };
+const insteadOf = computed(() => { const m = {}; const walk = ns => (ns || []).forEach(n => { if (n.instead) m[n.code] = n.instead; walk(n.children); }); walk(pk.ogd); return m; });
+const viaPolys = k => isOgd(k) && insteadOf.value[k.slice(4)] ? "ogd." + insteadOf.value[k.slice(4)] : k;
 const leaves = n => n.key ? [n] : n.children.flatMap(leaves);
 const cnt = k => isOgd(k) && pk.counts ? pk.counts[k.slice(4)] : undefined;
 const shownNode = n => {
@@ -276,7 +283,7 @@ const tree = computed(() => TREE_GROUPS.map(([g, name]) => {
   return { num: "g:" + g, name, children: ch, loading: g === "ogd" && !pk.ogd };
 }).filter(n => (n.children.length && shownNode(n)) || n.loading));
 const nObj = computed(() => pk.counts ? tree.value.flatMap(leaves).filter(l => isOgd(l.key) && cnt(l.key)).length : null);
-function ogdWithObjects() { const s = new Set(pk.sel); Object.keys(pk.counts || {}).filter(c => pk.counts[c]).forEach(c => s.add("ogd." + c)); pk.sel = s; }
+function ogdWithObjects() { const s = new Set(pk.sel); Object.keys(pk.counts || {}).filter(c => pk.counts[c]).forEach(c => s.add(viaPolys("ogd." + c))); pk.sel = s; }
 
 const badge = k => {
   if (!isOgd(k)) return project.data[k] ? h("span", { class: "n has", title: "Слой уже загружен в проект" }, "в проекте: " + plural(project.data[k].fc?.features?.length || 0, ["объект", "объекта", "объектов"])) : null;
@@ -293,7 +300,7 @@ const TreeNode = defineComponent({
       const n = p.n, d = p.depth;
       if (n.loading && !n.children.length) return h("div", { class: "fold", style: { "--d": d } }, [h("span", { class: "nm" }, n.name), h("span", { class: "n" }, " каталог портала…")]);
       if (!shownNode(n)) return null;
-      if (n.key) return h("label", { class: "ly", style: { "--d": d } }, [
+      if (n.key) return h("label", { class: "ly", style: { "--d": d }, title: n.title }, [
         h("input", { type: "checkbox", checked: pk.sel.has(n.key), onChange: e => { const s = new Set(pk.sel); e.target.checked ? s.add(n.key) : s.delete(n.key); pk.sel = s; } }),
         h("span", { class: "nm" }, [n.num ? h("b", n.num + " ") : null, n.name]), badge(n.key)]);
       const ls = leaves(n).filter(shownNode), on = ls.filter(l => pk.sel.has(l.key)).length;
@@ -304,7 +311,7 @@ const TreeNode = defineComponent({
             onClick: e => { e.stopPropagation(); e.preventDefault(); const all = ls.every(l => pk.sel.has(l.key)), s = new Set(pk.sel); ls.forEach(l => all ? s.delete(l.key) : s.add(l.key)); pk.sel = s; } }),
           h("span", { class: "nm" }, [n.label && !/^\d/.test(n.name) && n.label !== "Т" ? h("b", n.label + " ") : null, n.name]),
           h("span", { class: "n", title: "Отмечено из показанных слоёв папки" }, `${on} из ${ls.length}`)]),
-        ...(open ? n.children.map(c => h(TreeNode, { n: c, depth: d + 1, key: c.key || c.num })) : []),
+        ...(open ? n.children.map(c => h(TreeNode, { n: c, depth: d + 1, key: (c.num || "") + "|" + (c.key || "") })) : []),
       ]);
     };
   },
@@ -319,6 +326,7 @@ async function openPicker(dxf = null) {
   pk.sel = sel; pk.q = ""; pk.counts = null; pk.dxf = dxf; pk.open = true;
   if (!Object.keys(SOURCES).length) await loadSources();
   try { if (!pk.ogd) pk.ogd = (await (await fetch("/api/ogd_all/tree")).json()).tree || []; } catch { pk.ogd = []; }
+  if (pk.dxf === dxf) pk.sel = new Set([...pk.sel].map(viaPolys));   // прежний выбор линий границ — их полигоны
   try {
     const r = await fetch("/api/ogd_all/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dxf?.sheet ? { sheet: dxf.sheet } : { bbox: bb }) });
     pk.counts = r.ok ? (await r.json()).counts || {} : {};

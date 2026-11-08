@@ -81,6 +81,8 @@ def catalog_tree(cat):
             node = {"name": name, "num": num, "path": " / ".join([*path, name]), "children": build(x.get("id"), num, [*path, name])}
             if x.get("type") in ("layer", "virtual") and x.get("code"):
                 node["code"] = x["code"]
+                if x["code"] in INSTEAD:                    # линии границ — в проект и DXF идут полигоны того же объекта
+                    node["instead"] = INSTEAD[x["code"]]
             out.append(node)
         return out
     roots = []
@@ -150,11 +152,14 @@ def _lgr_code(name):
 
 # ---------- Линии границ: сторона полигона слева ----------
 # Слой границ → (слой полигонов той же папки ГИС ОГД, код линии, чья сторона смотрит на эти полигоны).
-_AREA_OF = {"l18": ("virtual138", 18), "l21": ("virtual139", 21)}
+AREA_OF = {"l18": ("virtual138", 18), "l21": ("virtual139", 21)}
+RED_LINE_CODES = {1, 2, 3, 4}        # красные линии и линии ОДМС: у зон их знак контуром не ставится
 # Слой линий → полигональный слой вместо него в DXF. Границы объектов ПК (l18) у портала с перепутанной стороной кода:
 # знаки REDLN97 местами смотрели наружу. Полигоны «Природные и озеленённые территории» (virtual138) — те же объекты,
 # контур рисуется по часовой стрелке, знаки кода 18 всегда внутрь (владелец 27.10.2026).
-INSTEAD = {"l18": "virtual138"}
+# Режимы регулирования ПК (l21) — так же полигонами «Режимы …» (virtual139): владелец 08.11.2026 «выгружать лучше полигоны,
+# чтобы маркеры смотрели в нужную сторону». Касается и выгрузки из каталога в проект (catalog_tree → instead), и DXF.
+INSTEAD = {"l18": "virtual138", "l21": "virtual139"}
 
 
 def _polys(features):
@@ -371,7 +376,7 @@ def etalon_code(name, path="", field=None):
 
 # Оформление зон по Эталону владельца вместо Эталона: береговые полосы — синий штриховой контур без заливки
 ETALON_NO_FILL = {41}
-ETALON_REV = 3          # номер правки оформления «по Эталону» (см. OWN_STYLE: слой перекрашивается один раз)
+ETALON_REV = 4          # номер правки оформления «по Эталону» (см. OWN_STYLE: слой перекрашивается один раз); 4 — контур зоны знаком ЛГР (08.11.2026)
 
 
 _LGR_FILE = Path(__file__).resolve().parents[2] / "core/render/grado_render/styles/moscow_lgr.json"
@@ -639,7 +644,7 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
                 own = layer.get("line_lgr")                  # знак ЛГР, выбранный в «Свойствах» слоя проекта — на все объекты
                 if redln and own and not lts:
                     lts = _linetypes({"linecode": str(own)}, redln)
-                elif redln and not lts and layer.get("lgr") and poly and layer["lgr"] not in (1, 2, 3, 4):
+                elif redln and not lts and layer.get("lgr") and poly and layer["lgr"] not in RED_LINE_CODES:
                     lts = _linetypes({"linecode": str(layer["lgr"])}, redln)  # контур зоны — знаком Эталона (у линий — свой код)
                 if lts and poly:                             # знаки по коду «+» — справа по ходу: контур по часовой, знаки внутрь
                     geom = _orient(geom, _first_sign(props.get("linelineco") or props.get("linecode") or own or 1))
@@ -890,7 +895,7 @@ class Job:
             if self.redln:                              # знаки границ ПК — в сторону своих полигонов
                 st.update(current="", message="Стороны границ природного комплекса…")
                 have = {it["code"]: it for it in found}
-                for code, (area, lc) in _AREA_OF.items():
+                for code, (area, lc) in AREA_OF.items():
                     if code in have:
                         try:
                             feats = have[area]["features"] if area in have else self._portal(api.fetch, self.bbox, area)["features"]
