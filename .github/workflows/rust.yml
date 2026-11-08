@@ -83,8 +83,8 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-latest, target: x86_64, manylinux: auto, test: true }      # сайт grado.tailink.tech
-          - { os: macos-14, target: aarch64, test: true }                            # Mac на Apple M
-          - { os: macos-14, target: x86_64, test: false }                            # Mac на Intel (сборка на M, без запуска)
+          - { os: macos-15, target: aarch64, test: true }                            # Mac на Apple M
+          - { os: macos-15, target: x86_64, test: false }                            # Mac на Intel (сборка на M, без запуска)
           - { os: windows-latest, target: x64, test: true }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
