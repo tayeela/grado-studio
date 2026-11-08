@@ -5,11 +5,11 @@
    ваши правки, удалённое и нарисованное сохраняются; поля файла — title, source, fetched_at, notes, history, shp, bbox,
    fc, original. Портал: части большой области сервер берёт по очереди с паузами, клиент шлёт по одному запросу на группу.
    Ход выгрузки по слоям (job) показывает окно «Данные». */
-import { markRaw, reactive, ref } from "vue";
+import { markRaw, reactive, ref, watch } from "vue";
 import * as turf from "@turf/turf";
 import "../../web/roles.js";
-import { currentId, project } from "./store.js";
-import { lyr, mapApi, normGroups, setLabel, touchData } from "./edit.js";
+import { TERR_KEY, currentId, project, terrLayerDefaults } from "./store.js";
+import { dataRev, lyr, mapApi, normGroups, setLabel, touchData } from "./edit.js";
 import { busy, markDirty, notice, say } from "./project.js";
 import { setSel, sizeOf } from "./features.js";
 import { CAT, assignCats, fullStyle } from "./symbology.js";
@@ -48,11 +48,53 @@ export async function loadSources() {
 /* ---------- граница территории ---------- */
 export const terrArea = () => project.territory ? sizeOf(project.territory)[1] : 0;   // м² в МСК, как площадь объектов
 
-/* opt.keep — правка вершин: вид карты остаётся. Граница хранится в файле как GeoJSON Feature без свойств. */
+/* Граница территории — РОЛЬ слоя (Марат 08.11.2026: «не нужен отдельный инструмент граница, лучше задавать такую роль
+   уже имеющемуся слою»). Роль «Граница территории» (role: "territory", web/roles.js) — у одного площадного слоя;
+   project.territory = объединение его полигонов и следует за правками слоя (её читают сервер, альбом, область загрузки).
+   Кнопки окна «Данные» (нарисовать, из файла, по участкам, из выбранного, пример) пишут в свой слой TERR_KEY и дают роль ему. */
+export { TERR_KEY };
+export const TERR_ROLE = "territory";
+export const terrLayer = () => project.layers.find(l => l.role === TERR_ROLE) || null;
+const polyFeats = key => (project.data[key]?.fc?.features || []).filter(f => /Polygon/.test(f?.geometry?.type || ""));
+const sameGeom = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/* граница по слою с ролью; слоя нет — граница остаётся как есть; в слое нет полигонов — граница снимается */
+export function syncTerritory() {
+  const l = terrLayer(); if (!l) return;
+  const fs = polyFeats(l.key), u = fs.length ? unionAll(fs) : null, g = u?.geometry || null;
+  if (sameGeom(g, project.territory?.geometry)) return;
+  project.territory = g ? markRaw({ type: "Feature", properties: {}, geometry: g }) : null;
+}
+
+/* роль «Граница территории» — слою key (у прежнего слоя роль снимается); key пустой — роль ни у кого, граница остаётся */
+export function setTerritoryLayer(key) {
+  const l = key ? lyr(key) : null;
+  if (key && (!l || !polyFeats(key).length)) { notice.value = "Границей может быть только слой с площадными объектами"; return false; }
+  setLabel(l ? `Граница территории — слой «${l.title}»` : "Снять роль границы со слоя");
+  project.layers.forEach(x => { if (x.role === TERR_ROLE && x.key !== key) delete x.role; });
+  if (l) { l.role = TERR_ROLE; syncTerritory(); }
+  return true;
+}
+
+/* следим за правками слоя-границы и сменой ролей: граница проекта всегда совпадает со слоем */
+let syncT = null;
+watch([dataRev, () => terrLayer()?.key], () => { clearTimeout(syncT); syncT = setTimeout(syncTerritory, 150); });
+
+/* opt.keep — правка вершин: вид карты остаётся. Граница пишется в свой слой TERR_KEY (один полигон), роль — ему. */
 export function setTerritory(feature, opt = {}) {
   if (!feature?.geometry) return;
   setLabel("Изменить границу территории");   // конкретные пути ставят свою подпись раньше (честнее)
-  project.territory = markRaw({ type: "Feature", properties: {}, geometry: feature.geometry });
+  const f = { type: "Feature", properties: {}, geometry: feature.geometry }, prev = project.data[TERR_KEY];
+  project.data[TERR_KEY] = { ...(prev || {}), title: prev?.title || "Граница территории", source: prev?.source || "граница территории, задана в ГРАДО",
+    fetched_at: today(), fc: { type: "FeatureCollection", features: [f] } };
+  const had = !!lyr(TERR_KEY), l = ensureLayer(TERR_KEY, project.data[TERR_KEY].title);
+  if (!had) Object.assign(l, terrLayerDefaults());
+  const was = terrLayer();
+  project.layers.forEach(x => { if (x.role === TERR_ROLE && x.key !== TERR_KEY) delete x.role; });
+  l.role = TERR_ROLE;
+  if (was && was.key !== TERR_KEY) notice.value = `Граница записана в слой «${l.title}»; слой «${was.title}» больше не граница`;
+  project.territory = markRaw(f);
+  touchData();
   if (!opt.keep) mapApi.fitExtent?.(turf.bbox(project.territory));
 }
 

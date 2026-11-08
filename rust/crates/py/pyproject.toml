@@ -1,0 +1,13 @@
+# Сборка модуля grado_rs: maturin build --release -m rust/crates/py/Cargo.toml (колесо abi3: одно на платформу для Python ≥ 3.10)
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "grado_rs"
+version = "0.1.0"
+requires-python = ">=3.10"
+description = "ТЭП-движок ГРАДО на Rust для grado_compute (необязательный ускоритель, Python-версия остаётся эталоном)"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]

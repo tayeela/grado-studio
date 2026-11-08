@@ -133,7 +133,22 @@ def _legend(b):
             dash = [max(0.1, _num(d)) for d in it["dash"]] if isinstance(it.get("dash"), list) and it["dash"] else None
             out.append(_path([[(pad, y + sh / 2), (pad + sw, y + sh / 2)]], stroke=c, width=0.6, closed=False, dash=dash))
         else:
-            out.append(_path([_rect(pad, y, sw, sh)], fill=_rgb(it.get("f"), None), stroke=c, width=0.3))
+            # знак класса как на карте (ГРАДО 2 sheetmaps.js legendRow): прозрачность заливки a, штриховка h цветом hc,
+            # контур своей толщины w (пикс. карты) и штриха dash (мм)
+            box = [_rect(pad, y, sw, sh)]
+            f = _rgb(it.get("f"), None)
+            if f is not None and isinstance(it.get("a"), (int, float)) and 0 <= it["a"] < 1:
+                f = _fade(f, it["a"])
+            if f is not None:
+                out.append(_path(box, fill=f, width=0))
+            if it.get("h"):
+                hc = _rgb(it.get("hc"), None) or c
+                for ang in {"0": (0,), "90": (90,), "135": (135,), "x45": (45, 135), "x0": (0, 90)}.get(str(it["h"]), (45,)):
+                    out.extend(print_io.hatch_ops(box, spacing=1.2, stroke=hc, angle=ang, width=0.13))
+            dash = [max(0.1, _num(d)) for d in it["dash"]] if isinstance(it.get("dash"), list) and it["dash"] else None
+            if it.get("w") != 0:
+                w = max(0.1, _num(it.get("w"), 1) * print_io.PX_MM) if it.get("w") is not None else 0.3
+                out.append(_path(box, stroke=c, width=w, dash=dash))
         out.append(_text(pad + sw + 2.5, _baseline(y + .3, fs), _fit(str(it.get("t") or ""), "ui", fs, b["w"] - 2 * pad - sw - 2.5), fs))
     return out
 
@@ -236,11 +251,37 @@ def map_sheet(b, mp):
             "layers": [l for l in (mp.get("layers") or []) if isinstance(l, dict)]}
 
 
-def _map(b, mp, lib, lgr_dash, tiles):
-    """Карта в мм листа: SketchMapFrame альбома в прямоугольнике блока (поворот карты не поддержан — как в альбоме)."""
+PLATE_DPI = 300
+RASTER_OPS = {"path", "circle", "image", "clip", "unclip"}
+
+
+plate_on = print_io.plate_on
+
+def _plated(b, ops, report):
+    """Карта блока пластиной (rust/crates/plate): геометрия — одной картинкой PLATE_DPI в рамке блока, подписи — текстом
+    поверх (в PDF ищутся и копируются, в PPTX правятся), в той же обрезке по рамке. Карта без закраски — в report
+    (лист не готов: «карта пустая»), как пропавшие карты Безобразово (выпуск 16, 9 листов из 12)."""
+    x, y, w, h = b["x"], b["y"], b["w"], b["h"]
+    png, drawn, skipped, ink = rust_plate()(plate_ops_json([o for o in ops if o.get("op") in RASTER_OPS]), float(w), float(h), float(PLATE_DPI))
+    if report is not None:
+        report.setdefault("maps", []).append({"id": str(b.get("id") or ""), "ink": round(ink, 4), "drawn": drawn})
+        if ink < 0.002:
+            report.setdefault("empty_maps", []).append(str(b.get("id") or ""))
+    texts = [{**o, "x": o["x"] + x, "y": o["y"] + y} for o in ops if o.get("op") == "text"]
+    out = [{"op": "layer", "name": "Карта"}, {"op": "image", "data": png, "x": x, "y": y, "w": w, "h": h}]
+    if texts:
+        out += [{"op": "layer", "name": "Подписи карты"}, {"op": "clip", "rect": (x, y, w, h)}, *texts, {"op": "unclip"}]
+    return out
+
+
+def _map(b, mp, lib, lgr_dash, tiles, report=None):
+    """Карта в мм листа: SketchMapFrame альбома в прямоугольнике блока (поворот карты не поддержан — как в альбоме).
+    С модулем grado_rs — пластиной (_plated): та же сцена в рамке (0, 0, w, h), картинкой и подписями поверх."""
     sh = map_sheet(b, mp)
     if sh is None:
         return _placeholder(b, "Карта: укажите место — «Как на карте»")
+    if plate_on():
+        return _plated(b, print_io.SketchMapFrame((0, 0, b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({}), report)
     return print_io.SketchMapFrame((b["x"], b["y"], b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({})
 
 
@@ -304,8 +345,8 @@ def _block(b):
 class _Blocks:
     """Элементы листа одной «рамкой» страницы: снизу вверх в порядке списка, как слои Konva."""
 
-    def __init__(self, sheet, maps, lib, lgr_dash, tiles):
-        self.sheet, self.maps, self.lib, self.lgr_dash, self.tiles = sheet, maps, lib, lgr_dash, tiles
+    def __init__(self, sheet, maps, lib, lgr_dash, tiles, report=None):
+        self.sheet, self.maps, self.lib, self.lgr_dash, self.tiles, self.report = sheet, maps, lib, lgr_dash, tiles, report
 
     def ops(self, ctx):
         raw = [b for b in self.sheet.get("blocks") or [] if isinstance(b, dict)]
@@ -316,7 +357,7 @@ class _Blocks:
                 continue
             if b.get("kind") == "map":
                 own = _place(_frame_ops(b), {**b, "rotation": 0, "opacity": 1})
-                out += _map(b, self.maps.get(b.get("id")), self.lib, self.lgr_dash, self.tiles) + own
+                out += _map(b, self.maps.get(b.get("id")), self.lib, self.lgr_dash, self.tiles, self.report) + own
             else:
                 out += _place(_local(b, blocks) + _frame_ops(b), b)
         return out
@@ -336,12 +377,12 @@ def _doc(spec):
     return Document(m["object"] or "Лист", meta=m)
 
 
-def _page(doc, item, lib, lgr_dash, tiles, no, total):
+def _page(doc, item, lib, lgr_dash, tiles, no, total, report=None):
     """Один лист: {sheet, maps: {id карты: {layers}}} → (w, h, ops); no и total — «Лист» и «Листов» штампа."""
     sheet = item.get("sheet") if isinstance(item.get("sheet"), dict) else {}
     maps = item.get("maps") if isinstance(item.get("maps"), dict) else {}
     page = Page(page_size(sheet))
-    blocks = _Blocks(sheet, maps, lib, lgr_dash, tiles)
+    blocks = _Blocks(sheet, maps, lib, lgr_dash, tiles, report)
     page.frames = ([PageBorder(page), StampFrame(page), blocks] if sheet.get("stamp") is not False
                    else [_PaperBorder(frame_rect(sheet)), blocks])
     ctx = _ctx(doc, None, None, None, no, str(sheet.get("title") or ""))
@@ -350,24 +391,25 @@ def _page(doc, item, lib, lgr_dash, tiles, no, total):
     return w, h, page.ops(ctx)
 
 
-def build_pages(spec, lib, lgr_dash, tiles=None):
+def build_pages(spec, lib, lgr_dash, tiles=None, report=None):
     """spec = {meta, sheets: [{sheet, maps}]} — все листы макета одним документом, либо {meta, sheet, maps, page:
-    {page_no, page_total}} — один лист с его номером в списке листов."""
+    {page_no, page_total}} — один лист с его номером в списке листов. report (dict) — пластины карт: maps
+    [{id, ink, drawn}], empty_maps [id] — пустые карты (лист не готов)."""
     doc = _doc(spec)
     if isinstance(spec.get("sheets"), list):
         items = [x for x in spec["sheets"] if isinstance(x, dict)]
-        return [_page(doc, x, lib, lgr_dash, tiles, i, len(items)) for i, x in enumerate(items, start=1)]
+        return [_page(doc, x, lib, lgr_dash, tiles, i, len(items), report) for i, x in enumerate(items, start=1)]
     pg = spec.get("page") if isinstance(spec.get("page"), dict) else {}
     no, total = int(_num(pg.get("page_no"), 1, 1, 9999)), int(_num(pg.get("page_total"), 1, 1, 9999))
-    return [_page(doc, spec, lib, lgr_dash, tiles, no, max(no, total))]
+    return [_page(doc, spec, lib, lgr_dash, tiles, no, max(no, total), report)]
 
 
 def build_page(spec, lib, lgr_dash, tiles=None):
     return build_pages(spec, lib, lgr_dash, tiles)[0]
 
 
-def render_pdf(spec, lib, lgr_dash, tiles=None):
-    pages = build_pages(spec, lib, lgr_dash, tiles)
+def render_pdf(spec, lib, lgr_dash, tiles=None, report=None):
+    pages = build_pages(spec, lib, lgr_dash, tiles, report)
     if not pages:
         raise ValueError("no sheets")
     return PdfBackend(None).render(pages)
@@ -377,11 +419,31 @@ def render_page_svg(spec, lib, lgr_dash, tiles=None):
     return render_svg(*build_page(spec, lib, lgr_dash, tiles))
 
 
-def map_svg(spec, lib, lgr_dash, tiles=None):
-    """Одна карта блока картинкой SVG (w × h мм): {block: {w, h, center, scale, basemap}, layers}."""
+def _map_ops(spec, lib, lgr_dash, tiles=None):
     b = _block({**(spec.get("block") or {}), "x": 0, "y": 0})
     sh = map_sheet(b, {"layers": spec.get("layers")})
     if sh is None:
         raise ValueError("map block: center and scale required")
-    ops = print_io.SketchMapFrame((0, 0, b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({})
+    return b, print_io.SketchMapFrame((0, 0, b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({})
+
+
+plate_ops_json = print_io.plate_ops_json
+
+rust_plate = print_io.rust_plate
+
+def map_plate(spec, lib, lgr_dash, tiles=None, dpi=300):
+    """Карта блока пластиной (PNG, dpi) на Rust: та же сцена, что map_svg и печать, без подписей (они векторные поверх).
+    → (png, {"drawn", "skipped", "ink"}); ink — доля закрашенного: около нуля — карта пустая."""
+    render = rust_plate()
+    if render is None:
+        raise RuntimeError("отрисовка карты на Rust недоступна: модуль grado_rs не установлен")
+    b, ops = _map_ops(spec, lib, lgr_dash, tiles)
+    dpi = _num(dpi, 300, 30, 600)
+    png, drawn, skipped, ink = render(plate_ops_json(ops), float(b["w"]), float(b["h"]), float(dpi))
+    return png, {"drawn": drawn, "skipped": skipped, "ink": round(ink, 4)}
+
+
+def map_svg(spec, lib, lgr_dash, tiles=None):
+    """Одна карта блока картинкой SVG (w × h мм): {block: {w, h, center, scale, basemap}, layers}."""
+    b, ops = _map_ops(spec, lib, lgr_dash, tiles)
     return render_svg(b["w"], b["h"], ops)

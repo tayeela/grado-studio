@@ -22,6 +22,14 @@
         <wa-button size="s" appearance="outlined" :disabled="!sel.length" title="Граница — объединение выбранных на карте площадных объектов" @click="territoryFromSelection(selected())"><SquareDashed :size="14" /> Из выбранного</wa-button>
         <wa-button size="s" :class="{ wide: askExample }" :appearance="askExample ? 'filled' : 'outlined'" :variant="askExample ? 'danger' : 'neutral'" @click="example">{{ askExample ? (project.territory ? "Заменить вашу границу примером?" : "Граница-пример на Ходынском поле — поставить?") : "Пример" }}</wa-button>
       </div>
+      <!-- граница — роль слоя (Марат 08.11.2026): любой площадной слой проекта может быть границей -->
+      <div class="terrlyr">
+        <span>Слой-граница</span>
+        <wa-select :key="terrSelKey" size="s" :value="terrKey" title="Граница территории — объединение площадных объектов этого слоя; правки слоя сразу меняют границу" @change="pickTerr($event.target.value)">
+          <wa-option value="">не выбран</wa-option>
+          <wa-option v-for="l in polyLayers" :key="l.key" :value="l.key">{{ l.title }}</wa-option>
+        </wa-select>
+      </div>
     </section>
 
     <section class="step">
@@ -159,7 +167,7 @@ import { sel, selected } from "../features.js";
 import { plural } from "../geom.js";
 import {
   ERRORS, FG, FILE_ACCEPT, SOURCES, fgFind, fgLoad, fgPick, fgSearch, checked, coverBox, coverOn, coverOwn, coverRev, coverText, setCover, existingSummary, exampleTerritory, importBoundary, importFiles,
-  job, keepChecked, loadKeys, retryFailed, loadSources, loading, localSys, ogd, startOgd, stopOgd, terrTool, territoryByNumbers, territoryFromSelection,
+  job, keepChecked, loadKeys, retryFailed, loadSources, loading, localSys, ogd, setTerritoryLayer, startOgd, stopOgd, terrLayer, terrTool, territoryByNumbers, territoryFromSelection,
 } from "../data.js";
 import { album, call } from "../albumhost.js";
 import { notice } from "../project.js";
@@ -219,6 +227,11 @@ let fgT = null;
 function fgTyped(e) { clearTimeout(fgT); const v = e.target.value; fgT = setTimeout(() => fgSearch(v), 450); }
 function fgCheck(id, on) { const s = new Set(FG.sel); if (on) s.add(id); else s.delete(id); FG.sel = s; }
 
+/* слой-граница: площадные слои проекта с полигонами; выбор отдаёт слою роль «Граница территории» */
+const polyLayers = computed(() => (dataRev.value, project.layers.filter(l => (project.data[l.key]?.fc?.features || []).some(f => /Polygon/.test(f?.geometry?.type || "")))));
+const terrKey = computed(() => (dataRev.value, project.layers.map(l => l.role).join(), terrLayer()?.key || ""));
+const terrSelKey = ref(0);
+function pickTerr(k) { if (!setTerritoryLayer(k || null)) terrSelKey.value++; }
 function toggle(t) { terrTool.value = terrTool.value === t ? "" : t; }
 let askT = null; const askExample = ref(false);
 function example() {
@@ -353,6 +366,8 @@ onBeforeUnmount(() => { clearInterval(tick); off?.dispose?.(); coverOn.value = f
 <style>
 /* шаги «граница → загрузка → в проекте»: номер в кружке, под ним карточка; кнопки — сеткой равных колонок (аудит 09.10.2026) */
 .data .reset { margin: -2px 0 6px -8px; }
+.data .terrlyr { display: flex; align-items: center; gap: var(--wa-space-s); margin-top: var(--wa-space-s); }
+.data .terrlyr wa-select { flex: 1; min-width: 0; }
 .data .step { padding-bottom: var(--wa-space-m); margin-bottom: var(--wa-space-m); border-bottom: 1px solid var(--g-line); }
 .data .sh { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: var(--wa-font-size-s); margin-bottom: 6px; }
 .data .sh .num { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; flex: none;

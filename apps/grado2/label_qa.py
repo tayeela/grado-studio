@@ -70,7 +70,13 @@ def page_conflicts(ops):
     for o in ops:
         op = o.get("op")
         if op == "clip":
-            cur = {"rect": tuple(o["rect"]), "labels": [], "layer": None}
+            if o.get("rect"):
+                rect = tuple(o["rect"])
+            else:                                                       # обрезка по кольцам (маска территории) — её охват
+                pts = [p for r in o.get("rings") or [] for p in r] or [(0, 0)]
+                xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+                rect = (min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+            cur = {"rect": rect, "labels": [], "layer": None}
             maps.append(cur)
         elif op == "unclip":
             cur = None

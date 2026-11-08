@@ -28,6 +28,18 @@ def sheet(**kw):
 
 
 class Print(unittest.TestCase):
+    def test_hatch_with_own_colour_keeps_class_fill_under_it(self):
+        """Свой цвет штриховки (hc): под штриховкой — заливка цветом класса, штрихи — цветом hc (знак из двух слоёв)."""
+        lon, lat = 37.525, 55.7925
+        g = {"type": "Polygon", "coordinates": [[[lon - .001, lat - .0006], [lon + .001, lat - .0006], [lon + .001, lat + .0006], [lon - .001, lat + .0006], [lon - .001, lat - .0006]]]}
+        f = {"g": g, "fill": "#ddebd3", "stroke": "#2e7d32", "w": 1, "a": 1, "hatch": True, "hp": "45", "hc": "#2e7d32"}
+        doc = print_io.build_document({"sheets": [sheet(layers=[{"title": "Зоны", "features": [f]}], legend=[], tep=[])]}, S.REDLN, S.LGR_DASH)
+        ops = next(fr for fr in doc.pages[0].frames if isinstance(fr, print_io.SketchMapFrame)).ops({})
+        fills = [o.get("fill") for o in ops if o.get("op") == "path" and o.get("fill")]
+        self.assertIn(print_io.hex_to_rgb("#ddebd3"), fills)
+        strokes = {o.get("stroke") for o in ops if o.get("op") == "path" and not o.get("closed")}
+        self.assertIn(print_io.hex_to_rgb("#2e7d32"), strokes)
+
     def test_plain_paper_sheet_fills_the_page_in_both_orientations(self):
         for orient, size in (("L", (420, 297)), ("P", (297, 420))):
             doc = print_io.build_document({"sheets": [sheet(size="BA3", orient=orient, title="Лист 1")]}, S.REDLN, S.LGR_DASH)
@@ -430,7 +442,8 @@ class PptKrtSheets(unittest.TestCase):
         self.assertTrue(all(abs(o["size"] - 18 * 0.3528) < 1e-9 for o in red))   # кегль не уменьшается
         self.assertLess(red[1]["y"] + 1.6, 44)                         # вторая строка кончается выше карты
         self.assertGreater(red[0]["y"] - 18 * 0.3528 * .7, 27.9)       # первая — ниже шапки
-        self.assertFalse(print_io.not_ready(spec))
+        # название поместилось; карта без слоёв с модулем grado_rs честно помечена пустой (print_io.map_is_empty)
+        self.assertEqual(spec["sheets"][0].get("_notReady") or [], [print_io.EMPTY_MAP_NOTE] if print_io.plate_on() else [])
 
     def test_photo_sheet_has_map_and_photo_grid(self):
         spec = {"sheets": [{"size": "PA3", "style": "pptkrt", "kind": "photos", "title": "Материалы фотофиксации", "rect": [24, 44, 170, 233],

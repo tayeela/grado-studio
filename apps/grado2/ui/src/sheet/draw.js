@@ -67,6 +67,21 @@ function mapContent(g, b, opts) {
       new Konva.Text({ text: t, fontSize: fs, padding: fs * .35, fontFamily: SANS, fill: "#5b6b57" })));
   }
 }
+/* знак строки легенды как в печати (layout_io.py _legend): заливка с прозрачностью a, штриховка h цветом hc, контур
+   толщины w (пикс. карты → мм, 0 — без контура) и штриха dash (мм) */
+const HATCH_ANG = { "0": [0], "90": [90], "135": [135], x45: [45, 135], x0: [0, 90] };
+function legendBox(g, it, x, y, w, h) {
+  if (it.f) g.add(new Konva.Rect({ x, y, width: w, height: h, fill: it.f, opacity: typeof it.a === "number" ? it.a : 1, listening: false }));
+  if (it.h) {
+    const hg = new Konva.Group({ clipX: x, clipY: y, clipWidth: w, clipHeight: h, listening: false }), step = 1.2, d = w + h;
+    (HATCH_ANG[it.h] || [45]).forEach(a => {
+      const r = a * Math.PI / 180, ux = Math.cos(r), uy = -Math.sin(r), nx = -uy, ny = ux, cx = x + w / 2, cy = y + h / 2;
+      for (let t = -d; t <= d; t += step) hg.add(new Konva.Line({ points: [cx + nx * t - ux * d, cy + ny * t - uy * d, cx + nx * t + ux * d, cy + ny * t + uy * d], stroke: it.hc || it.c, strokeWidth: .13, listening: false }));
+    });
+    g.add(hg);
+  }
+  if (it.w !== 0) g.add(new Konva.Rect({ x, y, width: w, height: h, stroke: it.c, strokeWidth: it.w != null ? Math.max(.1, it.w * .26) : .3, dash: it.dash, listening: false }));
+}
 function legendContent(g, b) {
   const pad = 3, row = LEGEND_ROW, fs = 2.8, items = b.items || [], fit = legendFit(b);
   g.add(new Konva.Text({ x: pad, y: pad, width: b.w - pad * 2, text: b.title || "", fontSize: 3.4, fontStyle: "bold", fontFamily: SANS, fill: INK,
@@ -82,7 +97,7 @@ function legendContent(g, b) {
     const y = pad + 7 + i * row;
     const sw = 8, sh = 4;
     if (it.s === "line") g.add(new Konva.Line({ points: [pad, y + sh / 2, pad + sw, y + sh / 2], stroke: it.c, strokeWidth: .6, dash: it.dash, listening: false }));
-    else g.add(new Konva.Rect({ x: pad, y, width: sw, height: sh, fill: it.f || "transparent", stroke: it.c, strokeWidth: .3, listening: false }));
+    else legendBox(g, it, pad, y, sw, sh);
     g.add(new Konva.Text({ x: pad + sw + 2.5, y: y + .3, width: b.w - pad * 2 - sw - 2.5, text: it.t, fontSize: fs, fontFamily: SANS, fill: INK, wrap: "none", ellipsis: true, listening: false }));
   });
 }

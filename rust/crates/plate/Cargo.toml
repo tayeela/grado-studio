@@ -1,0 +1,13 @@
+[package]
+name = "grado_plate"
+version = "0.1.0"
+edition = "2021"
+description = "Пластина карты: список операций рендера ГРАДО (path, circle, clip, image) → растр PNG заданного dpi на tiny-skia"
+publish = false
+
+[dependencies]
+tiny-skia = "0.11.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+jpeg-decoder = "0.3"

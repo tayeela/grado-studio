@@ -34,6 +34,7 @@ export function setProject(p, name, source) {
   project.layers = (p.layers || []).filter(l => l && l.key).map(l => ({ ...l, visible: l.visible !== false, style: fullStyle(l.style) }));   // стиль со всеми полями, как web/layers.js ST
   project.data = markRaw(p.data || {});
   project.territory = p.territory?.geometry ? markRaw(p.territory) : null;   // граница территории: GeoJSON Feature, как в файле
+  adoptTerritory();
   project.views = (p.views || []).filter(v => v && v.id).map(v => JSON.parse(JSON.stringify(v)));
   viewCur.value = null;
   project.view = p.view || null;
@@ -41,6 +42,22 @@ export function setProject(p, name, source) {
   viewNow.center = viewNow.zoom = null;   // пока карта не поставила вид нового проекта, в файл идёт его прежний вид
   if (BASEMAPS[p.view?.basemap]) setBasemap(p.view.basemap);
   currentId.value = project.layers.some(l => l.key === p.current) ? p.current : (project.layers[0]?.key || "");
+}
+
+/* Граница территории — роль слоя (data.js TERR_KEY, syncTerritory). Проект, где граница есть, а слоя с ролью нет
+   (файлы до 08.11.2026), получает скрытый слой «Граница территории» с этой границей и ролью: граница видна в «Слоях»,
+   её роль можно передать другому слою. Сама граница не меняется; отдельной правкой открытие не считается. */
+export const TERR_KEY = "user:territory";
+export const terrLayerDefaults = () => ({ geom: "poly", visible: false,
+  style: fullStyle({ fill: "#b0228c", opacity: 0, stroke: "#b0228c", width: 2, dash: [6, 4] }) });
+function adoptTerritory() {
+  const t = project.territory;
+  if (!t || project.layers.some(l => l.role === "territory")) return;
+  if (!project.data[TERR_KEY]) project.data[TERR_KEY] = { title: "Граница территории", source: "граница территории проекта",
+    fetched_at: new Date().toISOString().slice(0, 10), fc: { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: t.geometry }] } };
+  const l = project.layers.find(x => x.key === TERR_KEY);
+  if (l) l.role = "territory";
+  else project.layers.push({ key: TERR_KEY, title: project.data[TERR_KEY].title || "Граница территории", layerOpacity: 1, open: false, group: null, role: "territory", ...terrLayerDefaults() });
 }
 
 /* Подложка карты, как у рабочей страницы (web/app.js BASEMAPS): выбор помнит браузер (тот же ключ «grado2.base»)

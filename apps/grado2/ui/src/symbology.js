@@ -25,11 +25,42 @@ export const okn = (v, d) => { const n = typeof v === "number" || (typeof v === 
 export const isNum = v => typeof v === "number" || (v !== "" && v != null && !isNaN(+v));
 const numOf = v => v == null || v === "" ? NaN : +v;
 
+/* Полный знак класса (Марат 08.11.2026: «классификация стиля слоя по атрибутам даёт настраивать только заливку»):
+   у категории (st.cat.sym[значение]) и у правила (поля в самом правиле) — свои прозрачность заливки, штриховка (узор, шаг),
+   цвет, толщина и тип контура, подпись (поле или "" — без подписи), кегль и цвет подписи. Поля, которых у класса нет,
+   берутся у слоя. Заливка класса — по-прежнему st.cat.colors[значение] и rule.fill. */
+export const SYM_KEYS = ["opacity", "hatch", "hatchPat", "hatchStep", "hatchColor", "stroke", "width", "dash", "label", "labelSize", "labelColor"];
+export function cleanSym(o) {
+  const r = {};
+  if (!o || typeof o !== "object") return r;
+  if (o.opacity != null) r.opacity = Math.min(1, Math.max(0, okn(o.opacity, .7)));
+  if (o.hatch != null) r.hatch = !!o.hatch;
+  if (o.hatchPat != null && Object.hasOwn(HATCHES, String(o.hatchPat))) r.hatchPat = String(o.hatchPat);
+  if (o.hatchStep != null) { const n = okn(o.hatchStep, 0); if (n > 0) r.hatchStep = n; }
+  if (typeof o.hatchColor === "string" && HEX.test(o.hatchColor)) r.hatchColor = o.hatchColor;
+  if (typeof o.stroke === "string" && HEX.test(o.stroke)) r.stroke = o.stroke;
+  if (o.width != null) r.width = Math.max(0, okn(o.width, 1));
+  if (Array.isArray(o.dash)) r.dash = o.dash.map(Number).filter(n => Number.isFinite(n) && n >= 0);
+  if (typeof o.label === "string") r.label = o.label;
+  if (o.labelSize != null) { const n = okn(o.labelSize, 0); if (n > 0) r.labelSize = n; }
+  if (typeof o.labelColor === "string" && HEX.test(o.labelColor)) r.labelColor = o.labelColor;
+  return r;
+}
+/* стиль слоя с полями класса поверх: свой цвет контура класса не заменяется цветом штриховки (edgeColor) */
+export function classStyle(st, o) {
+  if (!o) return st;
+  const c = cleanSym(o); delete c.hatch;              // штриховка класса — в знаке s.hatch (symbolOf)
+  if (!Object.keys(c).length) return st;
+  return { ...st, ...c, strokeOwn: st.strokeOwn || c.stroke != null };
+}
+/* у класса есть свои поля, кроме заливки */
+export const hasOwnSym = o => !!o && SYM_KEYS.some(k => o[k] != null);
+
 /* Стиль слоя со всеми полями (как web/layers.js ST = cleanStyle(stDefaults)): чужие значения из файла заменяются умолчаниями. */
 export function fullStyle(o = {}) {
   const st = {
     mode: "single", fill: "#9aa1a8", stroke: "#5f6368", width: 1, opacity: .7, hatch: false, label: "", labelSize: 11, ...o,
-    cat: { field: "", colors: {}, off: [], ...(o.cat || {}) },
+    cat: { field: "", colors: {}, off: [], sym: {}, ...(o.cat || {}) },
     grad: { field: "", n: 5, ramp: "blue", method: "quantile", ...(o.grad || {}) },
     rules: { list: [], elseFill: "#dddddd", elseHide: false, ...(o.rules || {}) },
   };
@@ -39,9 +70,13 @@ export function fullStyle(o = {}) {
   st.fill = okc(st.fill, "#9aa1a8"); st.stroke = okc(st.stroke, "#5f6368");
   if (!Object.hasOwn(RAMPS, st.grad.ramp)) st.grad.ramp = "blue";
   st.rules.elseFill = okc(st.rules.elseFill, "#dddddd");
-  st.rules.list = (st.rules.list || []).map(r => ({ field: "", op: "=", val: "", ...r, fill: okc(r?.fill, "#9aa1a8") }));
+  st.rules.list = (st.rules.list || []).map(r => {
+    const x = { field: "", op: "=", val: "", ...r, fill: okc(r?.fill, "#9aa1a8") }; SYM_KEYS.forEach(k => delete x[k]);
+    return Object.assign(x, cleanSym(r));
+  });
   st.cat.colors = Object.fromEntries(Object.entries(st.cat.colors || {}).map(([k, c]) => [k, okc(c, "#9aa1a8")]));
   st.cat.off = Array.isArray(st.cat.off) ? st.cat.off : [];
+  st.cat.sym = Object.fromEntries(Object.entries(st.cat.sym && typeof st.cat.sym === "object" ? st.cat.sym : {}).map(([k, o]) => [k, cleanSym(o)]).filter(([, o]) => Object.keys(o).length));
   if (st.lgrLine != null) { const n = Math.trunc(okn(st.lgrLine, 0)); if (n && Math.abs(n) < 100) st.lgrLine = n; else delete st.lgrLine; }
   return st;
 }
@@ -89,29 +124,34 @@ export function testRule(r, get) {
 }
 export const ruleCount = (r, fc) => (fc?.features || []).filter(f => testRule(r, k => f.properties?.[k])).length;
 
-/* Цвет, штриховка и «скрыт» одного объекта; br — границы диапазонов (считаются один раз на слой). */
+/* Знак одного объекта: цвет, штриховка, «скрыт», o — поля знака класса (категории или правила, classStyle), id — класс
+   (для кэша стилей); br — границы диапазонов (считаются один раз на слой). */
 export function symbolOf(st, get, br) {
-  let fill = st.fill, hatch = st.hatch, hide = false;
-  if (st.mode === "cat") { const v = String(get(st.cat.field) ?? ""); fill = st.cat.colors[v] || OTHER; hide = st.cat.off.includes(v); }
+  let fill = st.fill, hatch = st.hatch, hide = false, o = null, id = "";
+  if (st.mode === "cat") {
+    const v = String(get(st.cat.field) ?? ""); fill = st.cat.colors[v] || OTHER; hide = st.cat.off.includes(v);
+    o = st.cat.sym?.[v] || null; id = "c:" + v; if (o?.hatch != null) hatch = o.hatch;
+  }
   else if (st.mode === "grad") {
     const cols = ramp(st.grad.ramp, br.length - 1), v = numOf(get(st.grad.field)), i = br.findIndex((x, k) => k > 0 && v <= x);
     fill = isNaN(v) ? OTHER : cols[Math.max(0, i - 1)] ?? cols[cols.length - 1];
   } else if (st.mode === "rules") {
-    const r = st.rules.list.find(r => r.field && testRule(r, get));
-    if (r) { fill = r.fill; hatch = r.hatch; } else { fill = st.rules.elseFill; hatch = false; hide = st.rules.elseHide; }
+    const i = st.rules.list.findIndex(r => r.field && testRule(r, get)), r = st.rules.list[i];
+    if (r) { fill = r.fill; hatch = !!r.hatch; o = r; id = "r:" + i; } else { fill = st.rules.elseFill; hatch = false; hide = st.rules.elseHide; id = "e"; }
   }
-  return { fill, hatch, hide };
+  return { fill, hatch, hide, o, id };
 }
 
 /* Пункты легенды для окна «Свойства» и списка слоёв. */
 export function legendItems(st, fc) {
-  if (st.mode === "cat") return catValues(fc, st.cat.field).map(([v, n]) => ({ v, n, c: st.cat.colors[v] || OTHER, off: st.cat.off.includes(v) }));
+  if (st.mode === "cat") return catValues(fc, st.cat.field).map(([v, n]) => { const o = st.cat.sym?.[v] || null;
+    return { v, n, c: st.cat.colors[v] || OTHER, off: st.cat.off.includes(v), o, h: o?.hatch ?? !!st.hatch }; });
   if (st.mode === "grad") {
     const b = breaks(st, fc), none = (fc?.features || []).filter(f => isNaN(numOf(f.properties?.[st.grad.field]))).length;
     const fmt = x => Number(x).toLocaleString("ru-RU", { maximumFractionDigits: 1 });
     return ramp(st.grad.ramp, b.length - 1).map((c, i) => ({ v: `${fmt(b[i])} – ${fmt(b[i + 1])}`, c })).concat(none ? [{ v: "нет значения", c: OTHER, n: none }] : []);
   }
-  if (st.mode === "rules") return st.rules.list.map(r => ({ v: `${r.field} ${r.op} ${r.val}`, c: r.fill })).concat(st.rules.elseHide ? [] : [{ v: "остальные", c: st.rules.elseFill }]);
+  if (st.mode === "rules") return st.rules.list.map(r => ({ v: `${r.field} ${r.op} ${r.val}`, c: r.fill, o: r, h: !!r.hatch })).concat(st.rules.elseHide ? [] : [{ v: "остальные", c: st.rules.elseFill }]);
   return [];
 }
 
@@ -218,9 +258,11 @@ export const scaleDen = (res, lat) => Math.round(res * Math.cos(lat * Math.PI / 
 export const denToRes = (den, lat) => den * 0.000264583 / Math.cos(lat * Math.PI / 180);
 
 /* Цвет контура: у штриховки без своего цвета контура — цвет штриховки. Общий для карты, образца слоя и окна «Свойства». */
-export const edgeColor = (st, s) => s.hatch && !st.strokeOwn ? s.fill : st.stroke;
-/* Заливка: узор штриховки (своя светлая подложка, прозрачность заливки не действует) или цвет с прозрачностью заливки. */
-export const fillPaint = (st, s) => s.hatch ? hatch(s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity);
+export const edgeColor = (st, s) => s.hatch && !st.strokeOwn ? (st.hatchColor || s.fill) : st.stroke;
+/* Заливка: узор штриховки (своя светлая подложка, прозрачность заливки не действует) или цвет с прозрачностью заливки.
+   Свой цвет штриховки (hatchColor) — знак из двух слоёв: заливка цветом класса с прозрачностью, сверху штриховка. */
+export const fillPaint = (st, s) => s.hatch ? hatch(st.hatchColor || s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity);
+const underFill = (st, s) => s.hatch && st.hatchColor && st.opacity > 0 ? new Style({ fill: new Fill({ color: rgba(s.fill, st.opacity) }) }) : null;
 
 /* Стиль OpenLayers знака s ({ fill, hatch }) для вида геометрии g: point, line, pline (линия в слое полигонов), poly.
    lat() — широта вида: с ней знак ЛГР слоя (st.lgrLine) рисуется знаками REDLN97, без неё (образец слоя) — линией цвета ЛГР. */
@@ -236,8 +278,10 @@ export function symbolStyle(st, s, g, clip, lat) {
   if (g === "pline") return new Style({ stroke: new Stroke({ color: edge, width: Math.max(st.width, 1), lineCap: "round", lineJoin: "round", lineDash: dash }) });
   if (g === "point" && st.marker === false) return [];
   if (g === "point") return new Style({ image: new Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new Fill({ color: s.fill }), stroke: new Stroke({ color: st.stroke, width: 1 }) }) });
-  if (clip) return [new Style({ fill: fill() }), new Style({ geometry: frameless, stroke: new Stroke({ color: edge, width: st.width, lineDash: dash }) })];
-  return new Style({ fill: fill(), stroke: st.width > 0 ? new Stroke({ color: edge, width: st.width, lineDash: dash }) : undefined });   // толщина 0 — без контура
+  const under = underFill(st, s);
+  if (clip) return [under, new Style({ fill: fill() }), new Style({ geometry: frameless, stroke: new Stroke({ color: edge, width: st.width, lineDash: dash }) })].filter(Boolean);
+  const top = new Style({ fill: fill(), stroke: st.width > 0 ? new Stroke({ color: edge, width: st.width, lineDash: dash }) : undefined });   // толщина 0 — без контура
+  return under ? [under, top] : top;
 }
 
 /* Знаки для образца слоя (окно «Слои», шапка «Свойств»): единый — один, категории, диапазоны и правила — до трёх первых
@@ -245,39 +289,41 @@ export function symbolStyle(st, s, g, clip, lat) {
 export function swatchSymbols(st, fc) {
   if (st.mode === "single" || st.mode === "lgr") return [{ fill: st.fill, hatch: !!st.hatch }];
   if (st.mode === "rules") {
-    const r = st.rules.list.filter(r => r.field).map(r => ({ fill: r.fill, hatch: !!r.hatch }));
+    const r = st.rules.list.filter(r => r.field).map(r => ({ fill: r.fill, hatch: !!r.hatch, o: r }));
     return (st.rules.elseHide ? r : r.concat({ fill: st.rules.elseFill, hatch: false })).slice(0, 3);
   }
   if (st.mode === "grad") { const c = ramp(st.grad.ramp, 3); return c.map(fill => ({ fill, hatch: !!st.hatch })); }
-  const it = legendItems(st, fc).filter(it => !it.off).slice(0, 3).map(it => ({ fill: it.c, hatch: !!st.hatch }));
+  const it = legendItems(st, fc).filter(it => !it.off).slice(0, 3).map(it => ({ fill: it.c, hatch: it.h, o: it.o }));
   return it.length ? it : [{ fill: OTHER, hatch: !!st.hatch }];
 }
 
 /* Функция стиля OpenLayers для слоя l (поля как в файле: key, title, geom, style); fc — его данные, lat() — широта вида. */
 export function styleFunction(l, fc, lat) {
-  const st = fullStyle(l.style), cache = new Map(), br = st.mode === "grad" ? breaks(st, fc) : null;
+  const st = fullStyle(l.style), cache = new Map(), effs = new Map(), br = st.mode === "grad" ? breaks(st, fc) : null;
+  const eff = s => { if (!s.o) return st; let e = effs.get(s.id); if (!e) effs.set(s.id, e = classStyle(st, s.o)); return e; };   // стиль слоя + знак класса
   return (f, res) => {
-    const out = [];
+    const out = []; let e = st;
     if (st.mode === "lgr") out.push(redLineStyle(f, lat()));
     else {
       const s = symbolOf(st, k => f.get(k), br); if (s.hide) return null;
+      e = eff(s);
       const ft = f.getGeometry()?.getType() || "", g = /Point/.test(ft) ? "point" : /Line/.test(ft) && l.geom !== "line" ? (l.geom === "poly" ? "pline" : "line") : l.geom;
-      const clip = g === "poly" && st.width > 0 && !!f.get("_clip");
-      const key = `${s.fill}|${s.hatch}|${g}|${clip}`; let base = cache.get(key);
-      if (!base) { base = symbolStyle(st, s, g, clip, lat); cache.set(key, base); }
+      const clip = g === "poly" && e.width > 0 && !!f.get("_clip");
+      const key = `${s.id}|${s.fill}|${s.hatch}|${g}|${clip}`; let base = cache.get(key);
+      if (!base) { base = symbolStyle(e, s, g, clip, lat); cache.set(key, base); }
       Array.isArray(base) ? out.push(...base) : out.push(base);
     }
-    if (st.label && res < 4) {
-      let t = f.get(st.label);
+    if (e.label && res < 4) {
+      let t = f.get(e.label);
       if (t != null && t !== "") {
-        if (st.label === "Этажность" && String(l.key).startsWith("user:")) t = t + " эт.";
-        const fd = st.label === "Этажность" ? floorsDenOf(l) : 0;
+        if (e.label === "Этажность" && String(l.key).startsWith("user:")) t = t + " эт.";
+        const fd = e.label === "Этажность" ? floorsDenOf(l) : 0;
         if (!fd || scaleDen(res, lat()) <= fd) {
           const ang = st.labelAngle ? -upright(labelDeg(f)) * Math.PI / 180 : 0, bare = st.marker === false;
           out.push(new Style({ text: new Text({
-            text: String(t), font: `${st.labelSize}px Onest, system-ui, sans-serif`, fill: new Fill({ color: st.labelColor || "#1d1d1f" }), stroke: new Stroke({ color: "#fff", width: 3 }),
+            text: String(t), font: `${e.labelSize}px Onest, system-ui, sans-serif`, fill: new Fill({ color: e.labelColor || "#1d1d1f" }), stroke: new Stroke({ color: "#fff", width: 3 }),
             placement: l.geom === "line" ? "line" : "point", rotation: ang, rotateWithView: !!st.labelAngle,
-            offsetY: l.geom === "point" && !bare ? -(2 + st.width * 2 + 1 + st.labelSize * 0.6 + 5) : 0, overflow: false,
+            offsetY: l.geom === "point" && !bare ? -(2 + e.width * 2 + 1 + e.labelSize * 0.6 + 5) : 0, overflow: false,
           }) }));
         }
       }

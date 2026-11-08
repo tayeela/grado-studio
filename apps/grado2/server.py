@@ -2657,9 +2657,18 @@ def post_layout(c):
     req = c.obj()
     try:
         if c.route == "/api/print/layout":
-            return _file(layout_io.render_pdf(req, REDLN, LGR_DASH, esri_tile), "application/pdf", "grado2-sheet.pdf")
+            rep = {}
+            pdf = layout_io.render_pdf(req, REDLN, LGR_DASH, esri_tile, rep)
+            # пластины карт (Rust): сколько карт и какие пустые — лист с пустой картой не готов (X-Empty-Maps: id блоков)
+            extra = (("X-Plate-Maps", str(len(rep.get("maps", [])))), ("X-Empty-Maps", ",".join(rep.get("empty_maps", []))))
+            return _file(pdf, "application/pdf", "grado2-sheet.pdf", extra=tuple((k, v.encode("ascii", "replace").decode()) for k, v in extra))
+        if c.route == "/api/print/map_png":                # пластина карты на Rust (rust/crates/plate), без подписей
+            png, info = layout_io.map_plate(req, REDLN, LGR_DASH, esri_tile, req.get("dpi") or 300)
+            return _file(png, "image/png", extra=(("X-Plate-Ink", str(info["ink"])), ("X-Plate-Ops", f'{info["drawn"]}/{info["skipped"]}')))
         render = layout_io.render_page_svg if c.route == "/api/print/layout_svg" else layout_io.map_svg
         return _file(render(req, REDLN, LGR_DASH, esri_tile).encode("utf-8"), "image/svg+xml; charset=utf-8")
+    except RuntimeError as e:
+        return _json(501, {"error": str(e)})
     except (KeyError, TypeError, ValueError) as e:
         return _json(400, {"error": _bad(c, e)})
 
@@ -2786,6 +2795,7 @@ POST_ROUTES = {
     "/api/print/layout": post_layout,
     "/api/print/layout_svg": post_layout,
     "/api/print/map_svg": post_layout,
+    "/api/print/map_png": post_layout,
     "/api/ogd_all/start": post_ogd_start,
     "/api/ogd_all/label_angles": post_ogd_label_angles,
     "/api/ogd_all/styles": post_ogd_styles,

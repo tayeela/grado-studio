@@ -158,7 +158,8 @@ class PdfBackend:
     def _image(self, c, o, h, cache):
         img = cache.get(o["data"])
         if img is None:
-            jpeg_info(o["data"])                            # не JPEG — ValueError, как прежде
+            if not o["data"].startswith(b"\x89PNG"):        # PNG — пластина карты на Rust (rust/crates/plate)
+                jpeg_info(o["data"])                        # иное не JPEG — ValueError, как прежде
             img = cache[o["data"]] = ImageReader(io.BytesIO(o["data"]))
         c.saveState()
         if "quad" in o:
