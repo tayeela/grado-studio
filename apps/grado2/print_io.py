@@ -947,6 +947,8 @@ class SketchMapFrame(Frame):
                         if fill or (stroke and f.get("w", 1) > 0):          # контур поверх штриховки, как на карте
                             out.append({"op": "path", "rings": rings, "closed": True, "fill": fill, "stroke": stroke if f.get("w", 1) > 0 else None,
                                         "width": w, "dash": dash})
+                        if f.get("lt") or f.get("miss"):                # контур зоны знаком ЛГР слоя: знаки внутрь (lsign > 0)
+                            out.extend(self._lgr_contour(poly, tr, rect, f, w))
                         if f.get("label"):
                             c = _ring_centroid(rings[0])
                             if best is None or c[2] > best[2]:
@@ -1604,6 +1606,34 @@ class SketchMapFrame(Frame):
                         "rings": [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]]})
         else:
             out.extend(self._frame_marks(rect, k, sh["scale"], small=rect[2] < 150))
+        return out
+
+    def _lgr_contour(self, poly, tr, rect, f, w):
+        """Контур полигона знаком ЛГР (f["lt"] — типы линий REDLN97, f["miss"] — штрих Эталона): кольца развёрнуты, как на
+        карте (symbology.js ownLgrStyle): наружное по часовой на листе при lsign > 0 — знаки внутрь, дыры — наоборот.
+        Кольца не обрезаются рамкой (иначе знаки встали бы на её край) — режет clip карты; кольцо вне рамки пропускается."""
+        out, sign = [], -1 if (f.get("lsign") or 1) < 0 else 1
+        color = hex_to_rgb(f.get("stroke") or "#d7191c")
+        x0, y0, x1, y1 = rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]
+        for i, r in enumerate(poly):
+            pts = [tr.mm(*p[:2]) for p in r]
+            if len(pts) < 3:
+                continue
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            if max(xs) < x0 or min(xs) > x1 or max(ys) < y0 or min(ys) > y1:
+                continue
+            area = sum(pts[j - 1][0] * pts[j][1] - pts[j][0] * pts[j - 1][1] for j in range(len(pts)))
+            want = (-1 if i else 1) * sign
+            if (area > 0) - (area < 0) != want:
+                pts = pts[::-1]
+            if pts[0] != pts[-1]:
+                pts = pts + [pts[0]]
+            for name in f.get("lt") or []:
+                out.extend(linetype_ops(pts, name, LT_MM, color, max(w * 1.5, 0.5), self.lib, shape_k=LT_SHAPE_MM))
+            for code, _s in f.get("miss") or []:
+                dash = self.lgr_dash.get(int(code))
+                out.append({"op": "path", "closed": True, "fill": None, "stroke": color, "width": max(w * 1.5, 0.5),
+                            "dash": [d * LT_MM for d in dash] if dash else None, "rings": [pts[:-1]]})
         return out
 
     @staticmethod
