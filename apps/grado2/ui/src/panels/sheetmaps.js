@@ -149,7 +149,12 @@ async function download(body, name) {
   const url = URL.createObjectURL(await r.blob()), a = document.createElement("a");
   a.href = url; a.download = `${(name || "лист").replace(/[\\/:*?"<>|]/g, "_")}.pdf`; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
+  // пластины карт на Rust (layout_io._plated): блоки карт без единого закрашенного места — лист не готов
+  const empty = (r.headers.get("X-Empty-Maps") || "").split(",").filter(Boolean);
+  return { empty, titles: empty.map(id => body.sheets ? body.sheets.find(x => x.sheet.blocks?.some(b => b.id === id))?.sheet.title || "" : body.sheet?.title || "") };
 }
+/* текст «карта пустая» для строки состояния: лист собран, но в нём карта без объектов */
+export const emptyNote = res => !res?.empty?.length ? "" : `PDF собран, но карта пустая (${res.empty.length}): ${[...new Set(res.titles.filter(Boolean))].join(", ") || "проверьте охват и слои блока"}`;
 
 /* Лист — в PDF той же печатью, что и альбом; page — его номер в списке листов (для штампа). */
 export function printPdf(sheet, meta, page) {

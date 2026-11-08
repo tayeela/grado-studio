@@ -29,7 +29,7 @@
 | `test_labelfmt_js.py` | LabelFmtJs | 1 |
 | `test_layout_io.py` | LayoutPrint, LayoutsInProject | 14 |
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
-| `test_map_plate.py` | MapPlate | 4 |
+| `test_map_plate.py` | MapPlate | 6 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
 | `test_next_ui.py` | NextUi | 24 |

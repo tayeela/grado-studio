@@ -69,11 +69,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_white`, `label_box`, `_corners`, `_aabb`, `_overlap`, `page_conflicts`, `_dedupe`, `phrase`, `_times`, `album_conflicts`
 
-### `apps/grado2/layout_io.py` — 439 стр.
+### `apps/grado2/layout_io.py` — 470 стр.
 
 Лист из нового редактора раскладки («Макет листа» в /next/, apps/grado2/ui/src/sheet) — в PDF и SVG.
 
-Функции: `_num`, `page_size`, `frame_rect`, `_rgb`, `_fade`, `_rect`, `_path`, `_baseline`, `_text`, `_fit`, `_wrap`, `fmt_m`, `fmt_scale`, `linked_scale`, `scalebar_step`, `_legend`, `_table`, `_textblock`, `_picture`, `_north`, `_scalebar`, `_ellipse`, `_line`, `_placeholder`, `map_sheet`, `_map`, `_local`, `_frame_ops`, `_place`, `_block`, `_Blocks`, `_PaperBorder`, `_doc`, `_page`, `build_pages`, `build_page`, `render_pdf`, `render_page_svg`, `_map_ops`, `plate_ops_json`, `rust_plate`, `map_plate`, `map_svg`
+Функции: `_num`, `page_size`, `frame_rect`, `_rgb`, `_fade`, `_rect`, `_path`, `_baseline`, `_text`, `_fit`, `_wrap`, `fmt_m`, `fmt_scale`, `linked_scale`, `scalebar_step`, `_legend`, `_table`, `_textblock`, `_picture`, `_north`, `_scalebar`, `_ellipse`, `_line`, `_placeholder`, `map_sheet`, `plate_on`, `_plated`, `_map`, `_local`, `_frame_ops`, `_place`, `_block`, `_Blocks`, `_PaperBorder`, `_doc`, `_page`, `build_pages`, `build_page`, `render_pdf`, `render_page_svg`, `_map_ops`, `plate_ops_json`, `rust_plate`, `map_plate`, `map_svg`
 
 ### `apps/grado2/ogd_all.py` — 942 стр.
 
@@ -115,7 +115,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3418 стр.
+### `apps/grado2/server.py` — 3422 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -575,7 +575,7 @@ AutoCAD complex linetypes: reading .SHX (compiled shapes) and .LIN (linetypes).
 
 Функции: `_s8`, `read_shx`, `_read_shx`, `_draw`, `_bulge`, `read_lin`, `_complex`, `lgr_index`, `linetype_for`, `_get`, `linetypes_for_codes`, `missing_codes`, `parse_line_codes`
 
-### `core/render/grado_render/backend_pdf.py` — 227 стр.
+### `core/render/grado_render/backend_pdf.py` — 228 стр.
 
 Печатный бэкенд PDF на ReportLab (BSD): векторный вывод того же списка операций, что у экранного бэкенда (scene.py).
 
@@ -587,7 +587,7 @@ PPTX-бэкенд: тот же список операций, что у PDF и S
 
 Функции: `_face`, `_hex`, `_t`, `clip_polygon`, `_segment`, `clip_polyline`, `_bbox`, `_inside_box`, `_meet`, `_area2`, `_in_ring`, `orient`, `_eot`, `_Slide`, `PptxBackend`, `_scheme`
 
-### `core/render/grado_render/backend_svg.py` — 146 стр.
+### `core/render/grado_render/backend_svg.py` — 147 стр.
 
 Экранный бэкенд: SVG (в C++ ядре его место занимает GPU-рендер).
 

@@ -64,6 +64,35 @@ class MapPlate(unittest.TestCase):
         finally:
             srv.shutdown()
             srv.server_close()
+    def test_sheet_pdf_map_block_is_a_plate_with_vector_labels_on_top(self):
+        """Лист «Макета листа»: карта блока — картинкой PNG ровно в рамке блока, подписи — текстом поверх в обрезке рамки;
+        пустая карта — в отчёте (лист не готов)."""
+        b = {"id": "map-1", "kind": "map", "x": 25, "y": 10, "w": 120, "h": 90, "scale": 2000, "center": [LON, LAT]}
+        e = {"id": "map-2", "kind": "map", "x": 160, "y": 10, "w": 60, "h": 40, "scale": 2000, "center": [LON + 1, LAT]}
+        item = {"sheet": {"format": "A4", "orient": "L", "stamp": False, "blocks": [b, e]},
+                "maps": {"map-1": {"layers": [{"title": "Квартал", "features": [{"g": square(.0005), "fill": "#cc0000", "stroke": "#000000", "w": 1, "a": 1, "label": "Квартал 1"}]}]},
+                         "map-2": {"layers": []}}}
+        rep = {}
+        w, h, ops = layout_io.build_pages({"sheets": [item]}, S.REDLN, S.LGR_DASH, None, rep)[0]
+        imgs = [o for o in ops if o["op"] == "image"]
+        self.assertEqual(len(imgs), 2)
+        self.assertTrue(imgs[0]["data"].startswith(b"\x89PNG"))
+        self.assertEqual((imgs[0]["x"], imgs[0]["y"], imgs[0]["w"], imgs[0]["h"]), (25, 10, 120, 90))
+        label = next(o for o in ops if o["op"] == "text" and o["text"] == "Квартал 1")
+        self.assertTrue(25 < label["x"] < 145 and 10 < label["y"] < 100, "подпись — в рамке блока, в координатах листа")
+        self.assertFalse(any(o["op"] == "path" and o.get("fill") == layout_io._rgb("#cc0000") for o in ops), "геометрия карты — не вектором")
+        self.assertEqual(rep["empty_maps"], ["map-2"])
+        self.assertEqual([m["id"] for m in rep["maps"]], ["map-1", "map-2"])
+        pdf = layout_io.render_pdf({"sheets": [item]}, S.REDLN, S.LGR_DASH)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+
+    def test_plate_can_be_switched_off(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"GRADO_PLATE": "0"}):
+            self.assertFalse(layout_io.plate_on())
+        self.assertTrue(layout_io.plate_on())
+
 
 if __name__ == "__main__":
     unittest.main()

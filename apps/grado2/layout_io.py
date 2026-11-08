@@ -11,6 +11,7 @@ import base64
 import io
 import json
 import math
+import os
 
 from grado_layout import Document, Page, PageBorder, StampFrame
 from grado_layout.compose import _ctx
@@ -252,11 +253,40 @@ def map_sheet(b, mp):
             "layers": [l for l in (mp.get("layers") or []) if isinstance(l, dict)]}
 
 
-def _map(b, mp, lib, lgr_dash, tiles):
-    """Карта в мм листа: SketchMapFrame альбома в прямоугольнике блока (поворот карты не поддержан — как в альбоме)."""
+PLATE_DPI = 300
+RASTER_OPS = {"path", "circle", "image", "clip", "unclip"}
+
+
+def plate_on():
+    """Карта листа пластиной на Rust: GRADO_PLATE=0 — выключить; иначе включена, если модуль grado_rs установлен."""
+    return os.environ.get("GRADO_PLATE", "").strip() != "0" and rust_plate() is not None
+
+
+def _plated(b, ops, report):
+    """Карта блока пластиной (rust/crates/plate): геометрия — одной картинкой PLATE_DPI в рамке блока, подписи — текстом
+    поверх (в PDF ищутся и копируются, в PPTX правятся), в той же обрезке по рамке. Карта без закраски — в report
+    (лист не готов: «карта пустая»), как пропавшие карты Безобразово (выпуск 16, 9 листов из 12)."""
+    x, y, w, h = b["x"], b["y"], b["w"], b["h"]
+    png, drawn, skipped, ink = rust_plate()(plate_ops_json([o for o in ops if o.get("op") in RASTER_OPS]), float(w), float(h), float(PLATE_DPI))
+    if report is not None:
+        report.setdefault("maps", []).append({"id": str(b.get("id") or ""), "ink": round(ink, 4), "drawn": drawn})
+        if ink < 0.002:
+            report.setdefault("empty_maps", []).append(str(b.get("id") or ""))
+    texts = [{**o, "x": o["x"] + x, "y": o["y"] + y} for o in ops if o.get("op") == "text"]
+    out = [{"op": "layer", "name": "Карта"}, {"op": "image", "data": png, "x": x, "y": y, "w": w, "h": h}]
+    if texts:
+        out += [{"op": "layer", "name": "Подписи карты"}, {"op": "clip", "rect": (x, y, w, h)}, *texts, {"op": "unclip"}]
+    return out
+
+
+def _map(b, mp, lib, lgr_dash, tiles, report=None):
+    """Карта в мм листа: SketchMapFrame альбома в прямоугольнике блока (поворот карты не поддержан — как в альбоме).
+    С модулем grado_rs — пластиной (_plated): та же сцена в рамке (0, 0, w, h), картинкой и подписями поверх."""
     sh = map_sheet(b, mp)
     if sh is None:
         return _placeholder(b, "Карта: укажите место — «Как на карте»")
+    if plate_on():
+        return _plated(b, print_io.SketchMapFrame((0, 0, b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({}), report)
     return print_io.SketchMapFrame((b["x"], b["y"], b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({})
 
 
@@ -320,8 +350,8 @@ def _block(b):
 class _Blocks:
     """Элементы листа одной «рамкой» страницы: снизу вверх в порядке списка, как слои Konva."""
 
-    def __init__(self, sheet, maps, lib, lgr_dash, tiles):
-        self.sheet, self.maps, self.lib, self.lgr_dash, self.tiles = sheet, maps, lib, lgr_dash, tiles
+    def __init__(self, sheet, maps, lib, lgr_dash, tiles, report=None):
+        self.sheet, self.maps, self.lib, self.lgr_dash, self.tiles, self.report = sheet, maps, lib, lgr_dash, tiles, report
 
     def ops(self, ctx):
         raw = [b for b in self.sheet.get("blocks") or [] if isinstance(b, dict)]
@@ -332,7 +362,7 @@ class _Blocks:
                 continue
             if b.get("kind") == "map":
                 own = _place(_frame_ops(b), {**b, "rotation": 0, "opacity": 1})
-                out += _map(b, self.maps.get(b.get("id")), self.lib, self.lgr_dash, self.tiles) + own
+                out += _map(b, self.maps.get(b.get("id")), self.lib, self.lgr_dash, self.tiles, self.report) + own
             else:
                 out += _place(_local(b, blocks) + _frame_ops(b), b)
         return out
@@ -352,12 +382,12 @@ def _doc(spec):
     return Document(m["object"] or "Лист", meta=m)
 
 
-def _page(doc, item, lib, lgr_dash, tiles, no, total):
+def _page(doc, item, lib, lgr_dash, tiles, no, total, report=None):
     """Один лист: {sheet, maps: {id карты: {layers}}} → (w, h, ops); no и total — «Лист» и «Листов» штампа."""
     sheet = item.get("sheet") if isinstance(item.get("sheet"), dict) else {}
     maps = item.get("maps") if isinstance(item.get("maps"), dict) else {}
     page = Page(page_size(sheet))
-    blocks = _Blocks(sheet, maps, lib, lgr_dash, tiles)
+    blocks = _Blocks(sheet, maps, lib, lgr_dash, tiles, report)
     page.frames = ([PageBorder(page), StampFrame(page), blocks] if sheet.get("stamp") is not False
                    else [_PaperBorder(frame_rect(sheet)), blocks])
     ctx = _ctx(doc, None, None, None, no, str(sheet.get("title") or ""))
@@ -366,24 +396,25 @@ def _page(doc, item, lib, lgr_dash, tiles, no, total):
     return w, h, page.ops(ctx)
 
 
-def build_pages(spec, lib, lgr_dash, tiles=None):
+def build_pages(spec, lib, lgr_dash, tiles=None, report=None):
     """spec = {meta, sheets: [{sheet, maps}]} — все листы макета одним документом, либо {meta, sheet, maps, page:
-    {page_no, page_total}} — один лист с его номером в списке листов."""
+    {page_no, page_total}} — один лист с его номером в списке листов. report (dict) — пластины карт: maps
+    [{id, ink, drawn}], empty_maps [id] — пустые карты (лист не готов)."""
     doc = _doc(spec)
     if isinstance(spec.get("sheets"), list):
         items = [x for x in spec["sheets"] if isinstance(x, dict)]
-        return [_page(doc, x, lib, lgr_dash, tiles, i, len(items)) for i, x in enumerate(items, start=1)]
+        return [_page(doc, x, lib, lgr_dash, tiles, i, len(items), report) for i, x in enumerate(items, start=1)]
     pg = spec.get("page") if isinstance(spec.get("page"), dict) else {}
     no, total = int(_num(pg.get("page_no"), 1, 1, 9999)), int(_num(pg.get("page_total"), 1, 1, 9999))
-    return [_page(doc, spec, lib, lgr_dash, tiles, no, max(no, total))]
+    return [_page(doc, spec, lib, lgr_dash, tiles, no, max(no, total), report)]
 
 
 def build_page(spec, lib, lgr_dash, tiles=None):
     return build_pages(spec, lib, lgr_dash, tiles)[0]
 
 
-def render_pdf(spec, lib, lgr_dash, tiles=None):
-    pages = build_pages(spec, lib, lgr_dash, tiles)
+def render_pdf(spec, lib, lgr_dash, tiles=None, report=None):
+    pages = build_pages(spec, lib, lgr_dash, tiles, report)
     if not pages:
         raise ValueError("no sheets")
     return PdfBackend(None).render(pages)

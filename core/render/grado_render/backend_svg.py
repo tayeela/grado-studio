@@ -67,7 +67,8 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
             open_groups -= 1
         elif o["op"] == "image":
             b64 = base64.b64encode(o["data"]).decode("ascii")
-            href = f'href="data:image/jpeg;base64,{b64}"'
+            mime = "image/png" if o["data"][:4] == b"\x89PNG" else "image/jpeg"     # PNG — пластина карты на Rust
+            href = f'href="data:{mime};base64,{b64}"'
             if "quad" in o:
                 # параллелограмм: единичный квадрат → matrix(a b c d e f)
                 (tlx, tly), (trx, tr_y), (blx, bly) = o["quad"]
