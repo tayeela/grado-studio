@@ -139,9 +139,22 @@ impl ComputeEngine {
     }
 }
 
+/// Пластина карты (crates/plate): операции рендера в JSON (мм листа) → (PNG, нарисовано, пропущено, доля закраски).
+/// Тексты пропускаются — подписи остаются векторными поверх пластины.
+#[pyfunction]
+#[pyo3(signature = (ops_json, w_mm, h_mm, dpi=300.0))]
+fn render_plate(py: Python<'_>, ops_json: &str, w_mm: f32, h_mm: f32, dpi: f32) -> PyResult<(Py<pyo3::types::PyBytes>, usize, usize, f64)> {
+    let plate = py
+        .detach(|| grado_plate::render_json(ops_json, w_mm, h_mm, dpi))
+        .map_err(|e| PyValueError::new_err(e.0))?;
+    let png = plate.png().map_err(|e| PyValueError::new_err(e.0))?;
+    Ok((pyo3::types::PyBytes::new(py, &png).unbind(), plate.drawn, plate.skipped, plate.ink()))
+}
+
 #[pymodule]
 fn grado_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ComputeEngine>()?;
+    m.add_function(wrap_pyfunction!(render_plate, m)?)?;
     m.add("ExpressionError", m.py().get_type::<ExpressionError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
