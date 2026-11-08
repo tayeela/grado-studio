@@ -52,6 +52,21 @@ class Catalog(unittest.TestCase):
         api.fetch.side_effect = S.ConnectorError("портал не ответил")
         self.assertEqual(S.orient_by_areas(api, (37.5, 55.7, 37.7, 55.8), "l18", lines), 0)   # без полигонов — как есть
 
+    def test_border_copies_from_other_layers_are_turned_and_kept_once(self):
+        edge = [[37.60, 55.75], [37.61, 55.75]]                       # нижний край квадрата, на восток: ПК слева
+        props = {"linelineco": "-17,18,21", "gisguid": "f155eff8"}
+        copy17 = {"geometry": {"type": "LineString", "coordinates": list(edge)}, "properties": dict(props)}     # из l17
+        copy18 = {"geometry": {"type": "LineString", "coordinates": edge[::-1]}, "properties": dict(props)}    # из l18
+        other = {"geometry": {"type": "LineString", "coordinates": list(edge)}, "properties": {"linelineco": "1"}}
+        feats = S.drop_guid_copies([copy17, copy18, other])
+        self.assertEqual(feats, [copy17, other])
+        api = mock.Mock()
+        api.fetch.return_value = {"features": [{"geometry": SQ}]}
+        S.orient_all_by_areas(api, (37.5, 55.7, 37.7, 55.8), feats)
+        self.assertEqual(feats[0]["geometry"]["coordinates"], edge[::-1])   # знак 18 — внутрь ПК, хоть линия и из l17
+        self.assertEqual(feats[1]["geometry"]["coordinates"], edge)          # красная линия не тронута
+        self.assertEqual({c.args[1] for c in api.fetch.call_args_list}, {"virtual138", "virtual139"})
+
     def test_lgr_zone_polygons_get_their_sign_on_the_contour(self):
         c = mock.Mock()
         c.obj.return_value = {"layers": {"virtual109": ["poly", None], "virtual138": ["poly", None], "l1": ["line", "1"]}}

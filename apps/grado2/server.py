@@ -467,6 +467,37 @@ def orient_by_areas(api, bbox, code, lines):
     return ogd_all.orient_lines(lines, areas, lcode)
 
 
+def _has_code(f, code):
+    raw = next((v for k, v in (f.get("properties") or {}).items() if k.lower() in ("linelineco", "linecode")), None)
+    return any(p.strip().lstrip("+-").split(".")[0] == str(code) for p in str(raw or "").split(","))
+
+
+def orient_all_by_areas(api, bbox, lines):
+    """Любая линия с кодом 18 или 21 — из какого бы слоя ни пришла (одна граница у портала лежит сразу в l17, l18 и l21) —
+    разворачивается по полигонам своего объекта. Полигоны берутся, только если такие линии есть. Возвращает число развёрнутых."""
+    import ogd_all
+    n = 0
+    for code, (twin, lcode) in ogd_all.AREA_OF.items():
+        mine = [f for f in lines if _has_code(f, lcode)]
+        if mine:
+            n += orient_by_areas(api, bbox, code, mine)
+    return n
+
+
+def drop_guid_copies(feats):
+    """Один объект портала в нескольких слоях подборки (граница «-17,18,21» в l17, l18 и l21) → одна копия: иначе
+    линия рисуется трижды, а у копии с обратным ходом знаки смотрят наружу (проверка у Нескучного сада 08.11.2026)."""
+    seen, out = set(), []
+    for f in feats:
+        g = (f.get("properties") or {}).get("gisguid")
+        if g and not f.get("_extra"):
+            if g in seen:
+                continue
+            seen.add(g)
+        out.append(f)
+    return out
+
+
 def lgr_has_linetype(code):
     """У кода ЛГР есть тип линии REDLN97 со знаками (бергштрихи, зубцы): им рисуется контур зоны."""
     return bool(acad_lin.linetypes_for_codes([(int(code), 1)], REDLN["linetypes"], REDLN_IDX))
@@ -1110,7 +1141,6 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
             raise ConnectorError("портал занят другой выгрузкой, повторите через минуту") from None
 
     def run_gisogd(k, nth=0, of=0):
-        import ogd_all
         feats, notes, doc = [], [], None
         def tell(code, got, total, stage):
             PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage, "nth": nth, "of": of}
@@ -1126,8 +1156,6 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
                 missed.append(f"{zone or code}: {e}")
                 continue
             doc, notes = res["source_doc"], notes + res["notes"]
-            if code in ogd_all.AREA_OF:                 # границы ПК: сторона знака — по полигонам того же объекта
-                orient_by_areas(api, bbox, code, res["features"])
             for f in res["features"]:
                 if zone:
                     f["_extra"] = {"Вид зоны": zone}
@@ -1136,6 +1164,8 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M, _gate=None):
         if missed and len(missed) == len(SOURCES[k][1]):
             raise ConnectorError("; ".join(missed))
         notes += [f"портал не отдал — {m}" for m in missed]
+        feats = drop_guid_copies(feats)
+        orient_all_by_areas(api, bbox, feats)         # границы ПК: сторона знака — по полигонам того же объекта
         if k.startswith("ogd.") and any(str((f.get("properties") or {}).get("text") or "").strip() for f in feats[:20]):
             feats = ogd_label_angles(k[4:], feats, bbox, api)     # надписи — вдоль границ своей папки
         layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})

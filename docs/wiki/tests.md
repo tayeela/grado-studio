@@ -13,7 +13,7 @@
 | `test_blocks.py` | UrbanBlocks | 1 |
 | `test_cadcore.py` | CadCore | 1 |
 | `test_catalog.py` | Preview, LocalRoutes, HubPreview | 14 |
-| `test_catalog_lgr.py` | Catalog, PrintContour | 4 |
+| `test_catalog_lgr.py` | Catalog, PrintContour | 5 |
 | `test_collab_js.py` | CollabJs | 1 |
 | `test_dxf.py` | DxfRoundTrip, LinetypeProps, AcadNames | 8 |
 | `test_e2e.py` | BrowserScenarios | 3 |
