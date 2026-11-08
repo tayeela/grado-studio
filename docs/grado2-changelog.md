@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-11-08, ГРАДО 2 v0.99.129: ядро на Rust в репозитории, ТЭП может считать Rust.**
+  - Владелец: на экране ничего не меняется. Начатый zcode перевод ядра на Rust (лежал только на Mac) перенесён в программу: расчёт ТЭП и геометрия переписаны на Rust и проверены против нынешних — числа совпадают. ТЭП на Rust считает в десятки раз быстрее; пока он включается только вручную, по умолчанию считает прежний расчёт.
+  - Перенос: ~/.zcode/workspace/draft-271dc5ae…/grado-rust (zcode, 05–06.11, вне git) → `rust/`: крейты `compute` (ТЭП, бит-в-бит), `geom` (affine/curves/path/overlay/snap/coverage, допуск rel 1e-9), сверка `rust/parity/`. Пути тестов к пресетам — корень репозитория; отладочный тест debug5.rs убран.
+  - Новый крейт `rust/crates/py` → модуль `grado_rs` (PyO3 0.30, abi3 ≥ 3.10, maturin); обёртка `core/compute/grado_compute/rust_backend.py` (RustEngine, тот же API и классы ошибок). `grado_compute.Engine` = Python по умолчанию, `GRADO_COMPUTE=rust` + установленный grado_rs → Rust (`grado_compute.BACKEND`).
+  - Rust-движок: ошибка выражения при пересчёте больше не паника (`expect`), а ошибка с видом (PresetError/KeyError/ExpressionError/ZeroDivisionError); синтаксис выражения в пресете — ExpressionError, как в Python.
+  - Проверки: `core/compute/tests/test_rust_backend.py` (9 сценариев, 200 случайных наборов, типы, ошибки); весь `core/compute/tests` (55) и `apps/grado2/tests/test_server.py` (173) зелёные и при `GRADO_COMPUTE=rust`; CI `.github/workflows/rust.yml` (cargo test, оба движка, сверка CLI; вручную — колёса для Linux/macOS/Windows).
+  - Не сделано: колёса grado_rs в установщиках и на сайте, включение Rust по умолчанию; geom из Python пока не вызывается.
+
 - **2026-11-07, ГРАДО 2 v0.99.128: руководство с картинками и честные слова про копии (3.2, 4.6, 4.7).**
   - Владелец: в руководстве «Первый район за 30 минут» теперь снимки экрана — старт, выбор здания, эскиз с показателями, выгрузка, схема расчёта, виды (6 снимков, сняты офлайн-сценариями самой программы); в руководствах прямо сказано: один проект — одно окно (общее автосохранение), а единственная защита от смерти диска — внешняя копия (Time Machine или облако).
   - Скриншоты (3.2): docs/guides/img/ (1,4 МБ), сняты прогоном next_acceptance --shots (Playwright + Chromium, офлайн-данные), вставлены в first-project.md (6 мест) и install.md (первое окно).

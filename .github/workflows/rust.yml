@@ -1,0 +1,91 @@
+name: Rust (ядро и сверка с Python)
+
+# Ядро на Rust (rust/): cargo test всех крейтов, сборка модуля grado_rs (maturin), набор core/compute/tests
+# на Python-движке и на Rust (GRADO_COMPUTE=rust), сверка ТЭП и геометрии с Python-эталоном через CLI (rust/parity).
+# Колёса grado_rs для macOS arm64/x86_64, Windows и Linux — задача wheels, только вручную (Run workflow), в артефакты.
+
+on:
+  pull_request:
+    paths:
+      - "rust/**"
+      - "core/compute/**"
+      - "core/geom/**"
+      - ".github/workflows/rust.yml"
+  push:
+    branches:
+      - main
+      - team/t60
+    paths:
+      - "rust/**"
+      - "core/compute/**"
+      - "core/geom/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: cargo test (compute, geom, py)
+        working-directory: rust
+        run: cargo test --workspace
+      - name: Модуль grado_rs (maturin) и shapely для сверки геометрии
+        run: |
+          python -m pip install -q "maturin>=1.5,<2" "shapely==2.2.0"
+          maturin build --release -m rust/crates/py/Cargo.toml -o /tmp/wheels
+          python -m pip install -q /tmp/wheels/grado_rs-*.whl
+      - name: core/compute/tests — Python-движок и сверка с Rust
+        run: PYTHONPATH=core/compute python -m unittest discover -s core/compute/tests
+      - name: core/compute/tests — весь набор на Rust (GRADO_COMPUTE=rust)
+        run: |
+          GRADO_COMPUTE=rust PYTHONPATH=core/compute python -c "import grado_compute as g; assert g.BACKEND == 'rust', g.BACKEND"
+          GRADO_COMPUTE=rust PYTHONPATH=core/compute python -m unittest discover -s core/compute/tests
+      - name: Сверка CLI с Python (rust/parity)
+        working-directory: rust
+        run: |
+          cargo build --release
+          python parity/dump_reference.py .. /tmp/par/py
+          python -I parity/run_rs_dumps.py /tmp/par/rs .. /tmp/par/py
+          python -I parity/compare.py /tmp/par/py /tmp/par/rs
+          python parity/geom/dump_reference_geom.py .. /tmp/par/gpy
+          python -I parity/geom/run_rs_dumps.py /tmp/par/grs ..
+          python -I parity/geom/compare.py /tmp/par/gpy /tmp/par/grs
+
+  wheels:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, macos-13, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release -m rust/crates/py/Cargo.toml -o dist
+      - name: Колесо ставится и считает так же, как Python
+        shell: bash
+        run: |
+          python -m pip install -q dist/grado_rs-*.whl
+          python -c "import grado_rs; print('grado_rs', grado_rs.__version__)"
+          PYTHONPATH=core/compute python -m unittest discover -s core/compute/tests -p test_rust_backend.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grado_rs-${{ matrix.os }}
+          path: dist/*.whl
