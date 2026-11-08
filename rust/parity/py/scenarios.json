@@ -1,0 +1,308 @@
+[
+ {
+  "name": "calc2_defaults",
+  "preset": "moscow_calc2.json",
+  "set": [],
+  "const": []
+ },
+ {
+  "name": "calc2_yakimanka",
+  "preset": "moscow_calc2.json",
+  "set": [
+   [
+    "terr_area",
+    15
+   ],
+   [
+    "restrict_area",
+    0
+   ],
+   [
+    "spp_in",
+    357
+   ],
+   [
+    "ratio_zh",
+    100
+   ],
+   [
+    "nonres_part",
+    6
+   ],
+   [
+    "education_zone",
+    1
+   ],
+   [
+    "k1",
+    0.75
+   ],
+   [
+    "k2",
+    0.2
+   ],
+   [
+    "tinao",
+    0
+   ],
+   [
+    "territory_mode",
+    1
+   ],
+   [
+    "unbuilt_share",
+    25
+   ]
+  ],
+  "const": []
+ },
+ {
+  "name": "calc2_zone2",
+  "preset": "moscow_calc2.json",
+  "set": [
+   [
+    "terr_area",
+    15
+   ],
+   [
+    "restrict_area",
+    0
+   ],
+   [
+    "spp_in",
+    357
+   ],
+   [
+    "ratio_zh",
+    100
+   ],
+   [
+    "nonres_part",
+    6
+   ],
+   [
+    "education_zone",
+    1
+   ],
+   [
+    "k1",
+    0.75
+   ],
+   [
+    "k2",
+    0.2
+   ],
+   [
+    "tinao",
+    0
+   ],
+   [
+    "territory_mode",
+    1
+   ],
+   [
+    "education_zone",
+    2
+   ]
+  ],
+  "const": []
+ },
+ {
+  "name": "calc2_lowrise",
+  "preset": "moscow_calc2.json",
+  "set": [
+   [
+    "spp_in",
+    100
+   ],
+   [
+    "ratio_zh",
+    100
+   ],
+   [
+    "spp_low_in",
+    100
+   ],
+   [
+    "nonres_part",
+    6
+   ]
+  ],
+  "const": []
+ },
+ {
+  "name": "calc2_people_100",
+  "preset": "moscow_calc2.json",
+  "set": [
+   [
+    "spp_in",
+    5.400981996726678
+   ],
+   [
+    "ratio_zh",
+    100
+   ],
+   [
+    "nonres_part",
+    6
+   ]
+  ],
+  "const": []
+ },
+ {
+  "name": "calc2_people_101",
+  "preset": "moscow_calc2.json",
+  "set": [
+   [
+    "spp_in",
+    5.401522094926351
+   ],
+   [
+    "ratio_zh",
+    100
+   ],
+   [
+    "nonres_part",
+    6
+   ]
+  ],
+  "const": []
+ },
+ {
+  "name": "calc2_const_doo50",
+  "preset": "moscow_calc2.json",
+  "set": [
+   [
+    "terr_area",
+    15
+   ],
+   [
+    "restrict_area",
+    0
+   ],
+   [
+    "spp_in",
+    357
+   ],
+   [
+    "ratio_zh",
+    100
+   ],
+   [
+    "nonres_part",
+    6
+   ],
+   [
+    "education_zone",
+    1
+   ],
+   [
+    "k1",
+    0.75
+   ],
+   [
+    "k2",
+    0.2
+   ],
+   [
+    "tinao",
+    0
+   ],
+   [
+    "territory_mode",
+    1
+   ],
+   [
+    "unbuilt_share",
+    25
+   ]
+  ],
+  "const": [
+   [
+    "doo_z1",
+    50
+   ]
+  ]
+ },
+ {
+  "name": "calc2_const_plots",
+  "preset": "moscow_calc2.json",
+  "set": [
+   [
+    "terr_area",
+    15
+   ],
+   [
+    "restrict_area",
+    0
+   ],
+   [
+    "spp_in",
+    357
+   ],
+   [
+    "ratio_zh",
+    100
+   ],
+   [
+    "nonres_part",
+    6
+   ],
+   [
+    "education_zone",
+    1
+   ],
+   [
+    "k1",
+    0.75
+   ],
+   [
+    "k2",
+    0.2
+   ],
+   [
+    "tinao",
+    0
+   ],
+   [
+    "territory_mode",
+    1
+   ],
+   [
+    "unbuilt_share",
+    25
+   ]
+  ],
+  "const": [
+   [
+    "doo_plot_m2_2",
+    30
+   ],
+   [
+    "clinic_plot_norm_ha",
+    0.5
+   ]
+  ]
+ },
+ {
+  "name": "calc2_zero",
+  "preset": "moscow_calc2.json",
+  "set": [
+   [
+    "spp_in",
+    0
+   ],
+   [
+    "education_zone",
+    1
+   ]
+  ],
+  "const": []
+ },
+ {
+  "name": "krt_defaults",
+  "preset": "moscow_krt.json",
+  "set": [],
+  "const": []
+ }
+]

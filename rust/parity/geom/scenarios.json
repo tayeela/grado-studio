@@ -1,0 +1,54 @@
+{
+  "overlay": [
+    {"name": "partial_overlap", "regions": [[[[50, 50], [150, 50], [150, 150], [50, 150]]]], "clips": [[[[0, 0], [100, 0], [100, 100], [0, 100]]]]},
+    {"name": "duplicates_nested", "regions": [[[[0, 0], [100, 0], [100, 100], [0, 100]]], [[[0, 0], [100, 0], [100, 100], [0, 100]]], [[[20, 20], [50, 20], [50, 50], [20, 50]]]], "clips": [[[[0, 0], [100, 0], [100, 100], [0, 100]]]]},
+    {"name": "adjacent_share_edge", "regions": [[[[0, 0], [50, 0], [50, 50], [0, 50]]], [[[50, 0], [100, 0], [100, 50], [50, 50]]]], "clips": [[[[0, 0], [100, 0], [100, 100], [0, 100]]]]},
+    {"name": "hole_and_orientation", "regions": [[[[0, 0], [0, 100], [100, 100], [100, 0]], [[40, 40], [60, 40], [60, 60], [40, 60]]]], "clips": [[[[-10, -10], [190, -10], [190, 190], [-10, 190]]]]},
+    {"name": "triangle", "regions": [[[[0, 0], [100, 0], [0, 100]]]], "clips": [[[[0, 0], [100, 0], [100, 100], [0, 100]]]]},
+    {"name": "triangle_disjoint", "regions": [[[[500, 500], [510, 500], [500, 510]]]], "clips": [[[[0, 0], [100, 0], [100, 100], [0, 100]]]]},
+    {"name": "degrees_split", "regions": [[[[37.70, 55.80], [37.71, 55.80], [37.70, 55.81]]]], "clips": [[[[37.60, 55.70], [37.705, 55.70], [37.705, 55.90], [37.60, 55.90]]], [[[37.705, 55.70], [37.80, 55.70], [37.80, 55.90], [37.705, 55.90]]]]},
+    {"name": "degenerate_collinear", "regions": [[[[0, 0], [1, 1], [2, 2]]]], "clips": [[[[0, 0], [10, 0], [10, 10], [0, 10]]]]},
+    {"name": "bowtie", "regions": [[[[0, 0], [100, 100], [100, 0], [0, 100]]]], "clips": [[[[0, 0], [100, 0], [100, 100], [0, 100]]]]},
+    {"name": "district_shares_like", "regions": [
+      [[[37.60, 55.75], [37.68, 55.75], [37.68, 55.82], [37.60, 55.82]]],
+      [[[37.66, 55.78], [37.72, 55.78], [37.72, 55.85], [37.66, 55.85]]],
+      [[[37.69, 55.76], [37.71, 55.76], [37.71, 55.80], [37.69, 55.80]]]
+    ], "clips": [[[[37.55, 55.70], [37.75, 55.70], [37.75, 55.90], [37.55, 55.90]]]]}
+  ],
+  "snap": [
+    {"name": "cross_grid", "tolerance": 0.5, "segments": [[[0, 0], [10, 10]], [[0, 10], [10, 0]]], "queries": [[0.1, 0.05], [5.2, 5.1], [5.3, 5.3], [50, 50], [1000.1, 1000.1]]},
+    {"name": "cross_grid_far", "tolerance": 0.5, "segments": [[[0, 0], [10, 10]], [[0, 10], [10, 0]], [[1000, 1000], [1010, 1000]]], "queries": [[0.1, 0.05], [1000.1, 1000.1]]},
+    {"name": "midpoint", "tolerance": 0.5, "segments": [[[0, 0], [10, 0]]], "queries": [[5.1, 0.2], [4.9, -0.3]]},
+    {"name": "dense_grid", "tolerance": 0.7, "segments": [[[0, 0], [10, 0]], [[10, 0], [10, 10]], [[10, 10], [0, 10]], [[0, 10], [0, 0]], [[0, 0], [10, 10]]], "queries": [[0.2, 0.1], [9.9, 0.1], [5, -0.3], [10.2, 5], [5.05, 5.05], [-0.4, 5]]}
+  ],
+  "coverage": [
+    {"name": "two_zones", "polygons": [["A", [[0, 0], [10, 0], [10, 10], [0, 10]]], ["B", [[10, 0], [20, 0], [20, 10], [10, 10]]]], "bump_shared_edge": null, "tol": 1e-06},
+    {"name": "two_zones_bump", "polygons": [["A", [[0, 0], [10, 0], [10, 10], [0, 10]]], ["B", [[10, 0], [20, 0], [20, 10], [10, 10]]]], "bump_shared_edge": 13, "tol": 1e-06},
+    {"name": "edit_nodes_fixed", "polygons": [["A", [[0, 0], [10, 0], [10, 10], [0, 10]]], ["B", [[10, 0], [20, 0], [20, 10], [10, 10]]]], "edit_ends_mismatch": true, "tol": 1e-06},
+    {"name": "three_faces", "polygons": [["A", [[0, 0], [10, 0], [10, 10], [0, 10]]], ["B", [[10, 0], [20, 0], [20, 10], [10, 10]]], ["C", [[0, 10], [10, 10], [20, 10], [20, 16], [0, 16]]]], "bump_shared_edge": null, "tol": 1e-06},
+    {"name": "overlap_rejected", "polygons": [["A", [[0, 0], [10, 0], [10, 10], [0, 10]]], ["B", [[0, 0], [10, 0], [10, 10], [0, 10]]]], "bump_shared_edge": null, "tol": 1e-06},
+    {"name": "triple_use_rejected", "polygons": [["A", [[0, 0], [10, 0], [10, 10], [0, 10]]], ["B", [[10, 0], [20, 0], [20, 10], [10, 10]]], ["C", [[0, 0], [10, 0], [10, 10], [0, 10]]]], "bump_shared_edge": null, "tol": 1e-06},
+    {"name": "disconnected", "polygons": [["A", [[0, 0], [10, 0], [10, 10], [0, 10]]], ["B", [[30, 0], [40, 0], [40, 10], [30, 10]]]], "bump_shared_edge": null, "tol": 1e-06}
+  ],
+  "path": [
+    {"name": "polyline_station", "vertices": [[0, 0], [10, 0], [10, 10]], "radius": 0, "fillet": false, "closed": false, "stations": 5.0, "offset": null, "tol": 0.01},
+    {"name": "fillet_corner", "vertices": [[0, 0], [10, 0], [10, 10]], "radius": 2, "fillet": true, "closed": false, "stations": 5.0, "offset": 1.0, "tol": 0.01},
+    {"name": "fillet_too_big", "vertices": [[0, 0], [3, 0], [3, 3]], "radius": 5, "fillet": true, "closed": false, "stations": null, "offset": null, "tol": 0.01},
+    {"name": "rect_miter", "vertices": [[0, 0], [10, 0], [10, 6], [0, 6]], "radius": 0, "fillet": false, "closed": true, "stations": null, "offset": 1.0, "tol": 0.01},
+    {"name": "rect_miter_outer", "vertices": [[0, 0], [10, 0], [10, 6], [0, 6]], "radius": 0, "fillet": false, "closed": true, "stations": null, "offset": -1.0, "tol": 0.01},
+    {"name": "red_line_like", "vertices": [[0, 0], [120, 0], [120, 40], [200, 40]], "radius": 15, "fillet": true, "closed": false, "stations": 25.0, "offset": -6.0, "tol": 0.05}
+  ],
+  "arc": [
+    {"name": "semicircle_3pts", "p0": [0, 0], "pm": [1, 1], "p1": [2, 0], "tol": 0.01, "t_samples": [0.0, 0.25, 0.5, 0.75, 1.0], "s_samples": [0.0, 1.0, 2.0], "offset": null},
+    {"name": "quarter", "cx": 0, "cy": 0, "r": 10, "a0": 0, "sweep": 1.5707963267948966, "tol": 0.01, "t_samples": [0.0, 0.5, 1.0], "s_samples": [0.0, 7.853981633974483], "offset": 2.0},
+    {"name": "cw_arc", "cx": 5, "cy": 5, "r": 10, "a0": 1.5707963267948966, "sweep": -1.5707963267948966, "tol": 0.01, "t_samples": [0.0, 1.0], "s_samples": [5.0], "offset": -3.0},
+    {"name": "offset_collapse", "cx": 0, "cy": 0, "r": 10, "a0": 0, "sweep": 1.5707963267948966, "tol": 0.01, "t_samples": [0.0], "s_samples": [], "offset": 10.5}
+  ],
+  "tessellate": [
+    {"name": "circle", "spec": {"type": "circle", "cx": 0, "cy": 0, "r": 5}, "tol": 0.05},
+    {"name": "arc_spec", "spec": {"type": "arc", "cx": 0, "cy": 0, "r": 10, "a0": 0, "sweep": 1.5707963267948966}, "tol": 0.05},
+    {"name": "path_radius", "spec": {"type": "path", "radius": 2, "vertices": [[0, 0], [10, 0], [10, 10]]}, "tol": 0.05},
+    {"name": "path_no_radius", "spec": {"type": "path", "radius": 0, "vertices": [[0, 0], [10, 0], [10, 10]]}, "tol": 0.05},
+    {"name": "path_big_radius", "spec": {"type": "path", "radius": 25, "vertices": [[0, 0], [3, 0], [3, 3]]}, "tol": 0.05}
+  ]
+}

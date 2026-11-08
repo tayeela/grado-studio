@@ -1,0 +1,6 @@
+[workspace]
+resolver = "2"
+members = ["crates/compute", "crates/geom", "crates/py"]
+
+[profile.release]
+opt-level = 3

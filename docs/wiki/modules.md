@@ -459,6 +459,12 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `round_half_up`, `ExpressionError`, `_pow`, `_PowGuard`, `_depth`, `parse`, `names`, `evaluate`
 
+### `core/compute/grado_compute/rust_backend.py` — 74 стр.
+
+ТЭП-движок на Rust (модуль grado_rs, rust/crates/py) с API как у engine.Engine.
+
+Функции: `_call`, `RustEngine`
+
 ## Ядро: model (core/model/grado_model)
 
 ### `core/model/grado_model/classifier.py` — 77 стр.
