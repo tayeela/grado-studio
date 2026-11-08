@@ -2394,7 +2394,9 @@ def get_sources(c):
 
 
 def get_health(c):
-    return _json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION, "hub": HUB is not None})
+    import rs_wheel
+    return _json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION, "hub": HUB is not None,
+                       "grado_rs": rs_wheel.installed()})
 
 
 def get_ogd_tree(c):
@@ -3469,6 +3471,8 @@ def main(argv=None):
     if not os.environ.get("GRADO2_NO_BROWSER"):      # тестовый запуск без открытия окна
         webbrowser.open(f"http://127.0.0.1:{p}")
     start_warm(p)
+    import rs_wheel
+    rs_wheel.ensure_background(FROZEN)               # модуль Rust grado_rs — фоном из релиза GitHub (план 08.11, шаг 1)
     server.serve_forever()
 
 

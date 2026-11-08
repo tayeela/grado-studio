@@ -3,7 +3,9 @@ name: Rust (ядро и сверка с Python)
 # Ядро на Rust (rust/): cargo test всех крейтов, сборка модуля grado_rs (maturin), набор core/compute/tests
 # на Python-движке и на Rust (GRADO_COMPUTE=rust), пластина карты (render_plate) из печати ГРАДО 2, сверка ТЭП и геометрии
 # с Python-эталоном через CLI (rust/parity).
-# Колёса grado_rs для macOS arm64/x86_64, Windows и Linux — задача wheels, только вручную (Run workflow), в артефакты.
+# Колёса grado_rs для macOS arm64/x86_64, Windows и Linux — задача wheels: при каждом пуше в main с правкой Rust (и вручную, Run workflow);
+# задача release кладёт их в релиз GitHub grado-rs-v<версия крейта py>, откуда их ставит сама программа (apps/grado2/rs_wheel.py).
+# Правка Rust, которая меняет модуль, поднимает version в rust/crates/py/Cargo.toml и WANT в rs_wheel.py: иначе у пользователей останется прежнее колесо.
 
 on:
   pull_request:
@@ -13,6 +15,7 @@ on:
       - "core/geom/**"
       - "apps/grado2/layout_io.py"
       - "apps/grado2/tests/test_map_plate.py"
+      - "apps/grado2/rs_wheel.py"
       - ".github/workflows/rust.yml"
   push:
     branches:
@@ -23,6 +26,8 @@ on:
       - "core/compute/**"
       - "core/geom/**"
       - "apps/grado2/layout_io.py"
+      - "apps/grado2/rs_wheel.py"
+      - ".github/workflows/rust.yml"
   workflow_dispatch:
 
 permissions:
@@ -72,13 +77,17 @@ jobs:
           python -I parity/geom/compare.py /tmp/par/gpy /tmp/par/grs
 
   wheels:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, macos-13, windows-latest]
+        include:
+          - { os: ubuntu-latest, target: x86_64, manylinux: auto, test: true }      # сайт grado.tailink.tech
+          - { os: macos-14, target: aarch64, test: true }                            # Mac на Apple M
+          - { os: macos-14, target: x86_64, test: false }                            # Mac на Intel (сборка на M, без запуска)
+          - { os: windows-latest, target: x64, test: true }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -87,8 +96,11 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           command: build
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || '' }}
           args: --release -m rust/crates/py/Cargo.toml -o dist
       - name: Колесо ставится и считает так же, как Python
+        if: matrix.test
         shell: bash
         run: |
           python -m pip install -q dist/grado_rs-*.whl
@@ -96,5 +108,30 @@ jobs:
           PYTHONPATH=core/compute python -m unittest discover -s core/compute/tests -p test_rust_backend.py
       - uses: actions/upload-artifact@v4
         with:
-          name: grado_rs-${{ matrix.os }}
+          name: grado_rs-${{ matrix.os }}-${{ matrix.target }}
           path: dist/*.whl
+
+  release:
+    needs: [test, wheels]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Релиз grado-rs-v<версия> с колёсами (его читает apps/grado2/rs_wheel.py)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(sed -n 's/^version = "\(.*\)"/\1/p' rust/crates/py/Cargo.toml | head -1)
+          W=$(sed -n 's/^WANT = "\([^"]*\)".*/\1/p' apps/grado2/rs_wheel.py)
+          [ "$V" = "$W" ] || { echo "версия крейта $V ≠ WANT $W в rs_wheel.py"; exit 1; }
+          ls -l dist
+          gh release view "grado-rs-v$V" >/dev/null 2>&1 || gh release create "grado-rs-v$V" --title "grado_rs $V" \
+            --notes "Модуль Rust ГРАДО 2 (grado_rs $V): колёса macOS arm64/x86_64, Windows x64, Linux x86_64. Ставит сама программа (apps/grado2/rs_wheel.py)." --latest=false
+          gh release upload "grado-rs-v$V" dist/*.whl --clobber
