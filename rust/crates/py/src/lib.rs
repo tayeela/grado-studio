@@ -140,12 +140,12 @@ impl ComputeEngine {
 }
 
 /// Пластина карты (crates/plate): операции рендера в JSON (мм листа) → (PNG, нарисовано, пропущено, доля закраски).
-/// Тексты пропускаются — подписи остаются векторными поверх пластины.
+/// Тексты пропускаются — подписи остаются векторными поверх пластины. transparent — фон прозрачный (слайд PPTX).
 #[pyfunction]
-#[pyo3(signature = (ops_json, w_mm, h_mm, dpi=300.0))]
-fn render_plate(py: Python<'_>, ops_json: &str, w_mm: f32, h_mm: f32, dpi: f32) -> PyResult<(Py<pyo3::types::PyBytes>, usize, usize, f64)> {
+#[pyo3(signature = (ops_json, w_mm, h_mm, dpi=300.0, transparent=false))]
+fn render_plate(py: Python<'_>, ops_json: &str, w_mm: f32, h_mm: f32, dpi: f32, transparent: bool) -> PyResult<(Py<pyo3::types::PyBytes>, usize, usize, f64)> {
     let plate = py
-        .detach(|| grado_plate::render_json(ops_json, w_mm, h_mm, dpi))
+        .detach(|| grado_plate::render_json_on(ops_json, w_mm, h_mm, dpi, transparent))
         .map_err(|e| PyValueError::new_err(e.0))?;
     let png = plate.png().map_err(|e| PyValueError::new_err(e.0))?;
     Ok((pyo3::types::PyBytes::new(py, &png).unbind(), plate.drawn, plate.skipped, plate.ink()))

@@ -442,7 +442,8 @@ class PptKrtSheets(unittest.TestCase):
         self.assertTrue(all(abs(o["size"] - 18 * 0.3528) < 1e-9 for o in red))   # кегль не уменьшается
         self.assertLess(red[1]["y"] + 1.6, 44)                         # вторая строка кончается выше карты
         self.assertGreater(red[0]["y"] - 18 * 0.3528 * .7, 27.9)       # первая — ниже шапки
-        self.assertFalse(print_io.not_ready(spec))
+        # название поместилось; карта без слоёв с модулем grado_rs честно помечена пустой (print_io.map_is_empty)
+        self.assertEqual(spec["sheets"][0].get("_notReady") or [], [print_io.EMPTY_MAP_NOTE] if print_io.plate_on() else [])
 
     def test_photo_sheet_has_map_and_photo_grid(self):
         spec = {"sheets": [{"size": "PA3", "style": "pptkrt", "kind": "photos", "title": "Материалы фотофиксации", "rect": [24, 44, 170, 233],
