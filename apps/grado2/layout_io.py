@@ -9,6 +9,7 @@ map_svg — одна карта отдельной картинкой: её по
 
 import base64
 import io
+import json
 import math
 
 from grado_layout import Document, Page, PageBorder, StampFrame
@@ -392,11 +393,47 @@ def render_page_svg(spec, lib, lgr_dash, tiles=None):
     return render_svg(*build_page(spec, lib, lgr_dash, tiles))
 
 
-def map_svg(spec, lib, lgr_dash, tiles=None):
-    """Одна карта блока картинкой SVG (w × h мм): {block: {w, h, center, scale, basemap}, layers}."""
+def _map_ops(spec, lib, lgr_dash, tiles=None):
     b = _block({**(spec.get("block") or {}), "x": 0, "y": 0})
     sh = map_sheet(b, {"layers": spec.get("layers")})
     if sh is None:
         raise ValueError("map block: center and scale required")
-    ops = print_io.SketchMapFrame((0, 0, b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({})
+    return b, print_io.SketchMapFrame((0, 0, b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({})
+
+
+def plate_ops_json(ops):
+    """Операции рендера → JSON для пластины на Rust (rust/crates/plate): кортежи — списки, байты картинки — base64.
+    Тексты уходят как есть: пластина их пропускает, подписи остаются векторными поверх неё."""
+    def conv(o):
+        if o.get("op") == "image" and isinstance(o.get("data"), (bytes, bytearray)):
+            o = {**o, "data_b64": base64.b64encode(o["data"]).decode("ascii")}
+            o.pop("data")
+        return o
+    return json.dumps([conv(o) for o in ops], ensure_ascii=False, default=lambda v: list(v) if isinstance(v, (tuple, set)) else str(v))
+
+
+def rust_plate():
+    """render_plate из модуля grado_rs или None (колесо не установлено — пластины нет, карта идёт векторной)."""
+    try:
+        import grado_rs
+        return getattr(grado_rs, "render_plate", None)
+    except ImportError:
+        return None
+
+
+def map_plate(spec, lib, lgr_dash, tiles=None, dpi=300):
+    """Карта блока пластиной (PNG, dpi) на Rust: та же сцена, что map_svg и печать, без подписей (они векторные поверх).
+    → (png, {"drawn", "skipped", "ink"}); ink — доля закрашенного: около нуля — карта пустая."""
+    render = rust_plate()
+    if render is None:
+        raise RuntimeError("отрисовка карты на Rust недоступна: модуль grado_rs не установлен")
+    b, ops = _map_ops(spec, lib, lgr_dash, tiles)
+    dpi = _num(dpi, 300, 30, 600)
+    png, drawn, skipped, ink = render(plate_ops_json(ops), float(b["w"]), float(b["h"]), float(dpi))
+    return png, {"drawn": drawn, "skipped": skipped, "ink": round(ink, 4)}
+
+
+def map_svg(spec, lib, lgr_dash, tiles=None):
+    """Одна карта блока картинкой SVG (w × h мм): {block: {w, h, center, scale, basemap}, layers}."""
+    b, ops = _map_ops(spec, lib, lgr_dash, tiles)
     return render_svg(b["w"], b["h"], ops)

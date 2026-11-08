@@ -11,5 +11,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 grado_compute_rs = { path = "../compute" }
+grado_plate = { path = "../plate" }
 num-bigint = "0.4"
 pyo3 = { version = "0.30", features = ["extension-module", "abi3-py310", "num-bigint"] }

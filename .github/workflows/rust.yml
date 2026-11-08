@@ -1,7 +1,8 @@
 name: Rust (ядро и сверка с Python)
 
 # Ядро на Rust (rust/): cargo test всех крейтов, сборка модуля grado_rs (maturin), набор core/compute/tests
-# на Python-движке и на Rust (GRADO_COMPUTE=rust), сверка ТЭП и геометрии с Python-эталоном через CLI (rust/parity).
+# на Python-движке и на Rust (GRADO_COMPUTE=rust), пластина карты (render_plate) из печати ГРАДО 2, сверка ТЭП и геометрии
+# с Python-эталоном через CLI (rust/parity).
 # Колёса grado_rs для macOS arm64/x86_64, Windows и Linux — задача wheels, только вручную (Run workflow), в артефакты.
 
 on:
@@ -10,6 +11,8 @@ on:
       - "rust/**"
       - "core/compute/**"
       - "core/geom/**"
+      - "apps/grado2/layout_io.py"
+      - "apps/grado2/tests/test_map_plate.py"
       - ".github/workflows/rust.yml"
   push:
     branches:
@@ -19,6 +22,7 @@ on:
       - "rust/**"
       - "core/compute/**"
       - "core/geom/**"
+      - "apps/grado2/layout_io.py"
   workflow_dispatch:
 
 permissions:
@@ -51,6 +55,11 @@ jobs:
         run: |
           GRADO_COMPUTE=rust PYTHONPATH=core/compute python -c "import grado_compute as g; assert g.BACKEND == 'rust', g.BACKEND"
           GRADO_COMPUTE=rust PYTHONPATH=core/compute python -m unittest discover -s core/compute/tests
+      - name: Пластина карты на Rust (render_plate) из печати ГРАДО 2
+        run: |
+          python -m pip install -q -r apps/grado2/requirements.txt
+          python -c "import grado_rs; assert hasattr(grado_rs, 'render_plate')"
+          python -m unittest apps/grado2/tests/test_map_plate.py
       - name: Сверка CLI с Python (rust/parity)
         working-directory: rust
         run: |
