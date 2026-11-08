@@ -2628,6 +2628,25 @@ def shift_ops(ops, dx, dy):
     return out
 
 
+def _rough_ink(ops, rect):
+    """Грубая доля закраски рамки без растра: охваты не белых заливок (обрезанные рамкой) и контуры (длина × толщина).
+    Перекрытия считаются дважды — годится только чтобы не рисовать пластину там, где карта заведомо не пустая."""
+    x, y, w, h = rect
+    area, white = 0.0, (1, 1, 1)
+    for o in ops:
+        if o["op"] != "path" or not o.get("rings"):
+            continue
+        if o.get("closed") and o.get("fill") is not None and tuple(o["fill"]) != white and float(o.get("alpha") if o.get("alpha") is not None else 1) > .05:
+            for r in o["rings"][:1]:
+                xs, ys = [p[0] for p in r], [p[1] for p in r]
+                area += max(0.0, min(max(xs), x + w) - max(min(xs), x)) * max(0.0, min(max(ys), y + h) - max(min(ys), y))
+        if o.get("stroke") is not None and tuple(o["stroke"]) != white and (o.get("width") or 0) > 0:
+            for r in o["rings"]:
+                area += float(o["width"]) * sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(r, r[1:])
+                                                if x <= a[0] <= x + w and y <= a[1] <= y + h)
+    return area / max(w * h, 1e-9)
+
+
 def map_is_empty(ops, rect):
     """Карта рамки пустая: ни снимка подложки, ни закраски контурами (пластина EMPTY_DPI, доля меньше EMPTY_INK).
     Без модуля grado_rs проверки нет (False). Подписи и рамка не в счёт — пропавшая карта Безобразово была белой
@@ -2636,8 +2655,10 @@ def map_is_empty(ops, rect):
         return False
     if any(o["op"] == "image" for o in ops):
         return False
-    geo = [o for o in ops if o["op"] in ("path", "circle", "clip", "unclip")]
     x, y, w, h = rect
+    if _rough_ink(ops, rect) > 20 * EMPTY_INK:                         # закраски заведомо много — пластина не нужна
+        return False                                                    # (плотная карта: JSON сцены дороже самой печати)
+    geo = [o for o in ops if o["op"] in ("path", "circle", "clip", "unclip")]
     try:
         *_, ink = rust_plate()(plate_ops_json(shift_ops(geo, -x, -y)), float(w), float(h), float(EMPTY_DPI))
     except ValueError as e:                                             # пластина не собралась — печать не останавливать
