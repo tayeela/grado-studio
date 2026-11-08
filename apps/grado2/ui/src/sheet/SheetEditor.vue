@@ -380,7 +380,7 @@ function exportPng() {
 async function printPdf() {
   if (!props.maps?.pdf || busy.value === "PDF собирается…") return;
   busy.value = "PDF собирается…";
-  try { await props.maps.pdf(clone(sheet.value), props.meta, props.page); busy.value = ""; } catch (e) { busy.value = e.message || "PDF не собрался"; }
+  try { const res = await props.maps.pdf(clone(sheet.value), props.meta, props.page); busy.value = props.maps.emptyNote?.(res) || ""; } catch (e) { busy.value = e.message || "PDF не собрался"; }
 }
 /* масштаб блока с видом задаёт рамка: она меняет размер на карте (#119, ч.2); масштаб не из ряда — без «круглого»,
    иначе его тут же округлило бы. → false, если блок без вида с рамкой */

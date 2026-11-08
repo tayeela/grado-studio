@@ -15,6 +15,20 @@ import server as S  # noqa: E402
 import layout_io  # noqa: E402
 
 LON, LAT = 37.803, 55.827
+# здесь проверяется векторная карта листа; карта пластиной на Rust (GRADO_PLATE, модуль grado_rs) — test_map_plate.py
+_VECTOR = None
+
+
+def setUpModule():
+    global _VECTOR
+    import os
+    from unittest import mock
+    _VECTOR = mock.patch.dict(os.environ, {"GRADO_PLATE": "0"})
+    _VECTOR.start()
+
+
+def tearDownModule():
+    _VECTOR.stop()
 
 
 def square(d):

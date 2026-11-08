@@ -49,10 +49,10 @@ import AlbumSheetView from "../sheet/AlbumSheetView.vue";
 import { album } from "../albumhost.js";
 import { newSheet, newId } from "../sheet/model.js";
 import { project, sheetNav } from "../store.js";
-import { mapImage, here, legendItems, printPdf, printAll, views, sync, frameTo, frameScale, ownView } from "./sheetmaps.js";
+import { mapImage, here, legendItems, printPdf, printAll, emptyNote, views, sync, frameTo, frameScale, ownView } from "./sheetmaps.js";
 import { ALB, vframes } from "../viewframesmap.js";
 
-const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf, views, sync, frameTo, frameScale, ownView, showFrame: id => { vframes.sel = id; vframes.fit = id; } };
+const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf, emptyNote, views, sync, frameTo, frameScale, ownView, showFrame: id => { vframes.sel = id; vframes.fit = id; } };
 const clone = x => JSON.parse(JSON.stringify(x));
 const sheets = ref([]), cur = ref(0), askDrop = ref(false);
 /* листы альбома ППТ КРТ — в том же списке (шаг 2 переноса альбома): открываются картинкой той же печати (AlbumSheetView.vue) */
@@ -84,7 +84,7 @@ function drop() {
 
 async function all() {
   state.kind = ""; state.text = "PDF собирается…";
-  try { await printAll(clone(sheets.value), meta(), project.name || "листы"); state.text = "PDF готов"; }
+  try { const n = emptyNote(await printAll(clone(sheets.value), meta(), project.name || "листы")); state.kind = n ? "warn" : ""; state.text = n || "PDF готов"; }
   catch (e) { state.kind = "warn"; state.text = e.message; }
 }
 
