@@ -489,7 +489,8 @@ def drop_guid_copies(feats):
     линия рисуется трижды, а у копии с обратным ходом знаки смотрят наружу (проверка у Нескучного сада 08.11.2026)."""
     seen, out = set(), []
     for f in feats:
-        g = (f.get("properties") or {}).get("gisguid")
+        props = f.get("properties") or {}
+        g = props.get("guid") or props.get("gisguid")        # shp портала — "guid", CSV — "gisguid"
         if g and not f.get("_extra"):
             if g in seen:
                 continue
