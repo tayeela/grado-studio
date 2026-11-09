@@ -24,6 +24,7 @@
       <button class="spn-b" title="Новый пустой лист А3: карту и остальное ставите сами" @click="add()"><FilePlus2 :size="15" :stroke-width="1.7" />Новый</button>
       <button class="spn-b" :disabled="acur >= 0" title="Копия этого листа" @click="add(sheets[cur])"><Copy :size="15" :stroke-width="1.7" />Копия</button>
       <button class="spn-b" :disabled="acur >= 0 || sheets.length < 2" title="Удалить этот лист" @click="askDrop = true"><Trash2 :size="15" :stroke-width="1.7" />Удалить</button>
+      <button v-if="autoViews().length" class="spn-b" title="Рамки видов с «Листом по территории» встают по территории, недостающие листы собираются" @click="collect"><LayoutGrid :size="15" :stroke-width="1.7" />Собрать по территории</button>
       <button class="spn-b" title="Все листы по порядку одним PDF, номера листов — в штампе" @click="all"><FileDown :size="15" :stroke-width="1.7" />Все листы в PDF</button>
       <span class="spn-hint" :title="HINT" aria-hidden="true">?</span>
       <span class="spn-st" :class="state.kind">{{ state.text }}</span>
@@ -42,17 +43,18 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, toRaw, watch, onMounted, onBeforeUnmount } from "vue";
-import { FilePlus2, Copy, Trash2, FileDown } from "@lucide/vue";
+import { computed, nextTick, ref, reactive, toRaw, watch, onMounted, onBeforeUnmount } from "vue";
+import { FilePlus2, Copy, Trash2, FileDown, LayoutGrid } from "@lucide/vue";
 import SheetEditor from "../sheet/SheetEditor.vue";
 import AlbumSheetView from "../sheet/AlbumSheetView.vue";
 import { album } from "../albumhost.js";
 import { newSheet, newId } from "../sheet/model.js";
 import { project, sheetNav } from "../store.js";
-import { mapImage, here, legendItems, printPdf, printAll, emptyNote, views, sync, frameTo, frameScale, ownView } from "./sheetmaps.js";
+import { mapImage, here, legendItems, printPdf, printAll, emptyNote, views, sync, frameTo, frameScale, ownView, ready } from "./sheetmaps.js";
+import { assemble, assembleNote, autoViews } from "../autosheets.js";
 import { ALB, vframes } from "../viewframesmap.js";
 
-const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf, emptyNote, views, sync, frameTo, frameScale, ownView, showFrame: id => { vframes.sel = id; vframes.fit = id; } };
+const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf, emptyNote, views, sync, frameTo, frameScale, ownView, ready, showFrame: id => { vframes.sel = id; vframes.fit = id; } };
 const clone = x => JSON.parse(JSON.stringify(x));
 const sheets = ref([]), cur = ref(0), askDrop = ref(false);
 /* листы альбома ППТ КРТ — в том же списке (шаг 2 переноса альбома): открываются картинкой той же печати (AlbumSheetView.vue) */
@@ -82,6 +84,12 @@ function drop() {
   sheets.value.splice(cur.value, 1); cur.value = Math.min(cur.value, sheets.value.length - 1);
 }
 
+// «Собрать по территории»: рамки видов — по территории, недостающие листы — сами (autosheets.js)
+async function collect() {
+  const r = assemble({ force: true });
+  await nextTick();                                   // список листов переоткрылся (open) — итог поверх его строки
+  state.kind = r.why ? "warn" : r.fitted.length ? "warn" : "ok"; state.text = assembleNote(r);
+}
 async function all() {
   state.kind = ""; state.text = "PDF собирается…";
   try { const n = emptyNote(await printAll(clone(sheets.value), meta(), project.name || "листы")); state.kind = n ? "warn" : ""; state.text = n || "PDF готов"; }

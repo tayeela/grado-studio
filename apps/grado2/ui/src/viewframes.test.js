@@ -70,3 +70,20 @@ test("рамка листа альбома по углам: пропорции �
   const l = sheetFromCorners([0, 0], [-100, -896], [275, 224]);     // тянули влево вниз и узко: масштаб по высоте, лист лёжа
   assert.equal(l.scale, 4000); near(l.w, 1100); near(l.c[0], -550); near(l.c[1], -448);
 });
+
+test("лист по территории: охват в метрах, вписать — круглый масштаб, заданный — он или крупнее, если не влезает", async () => {
+  const { boxM, terrFrame } = await import("./viewframes.js");
+  const box = boxM({ type: "MultiPolygon", coordinates: [[[[0, 0], [600, 0], [600, 300], [0, 0]]], [[[100, 400], [200, 400], [100, 400]]]] }, c => c);
+  assert.deepEqual(box, [0, 0, 600, 400]);
+  assert.equal(boxM(null, c => c), null);
+  const b = { w: 275, h: 224 };
+  const fit = terrFrame(box, b, { mode: "fit", margin: 50 });          // 700 м в 275 мм → 1:2546 → 1:3000
+  assert.equal(fit.scale, 3000); assert.deepEqual(fit.c, [300, 200]); near(fit.w, 825); near(fit.h, 672);
+  assert.equal(fit.fitted, false); assert.equal(fit.aspect, "275:224");
+  assert.equal(terrFrame(box, b, { mode: "scale", scale: 5000, margin: 50 }).scale, 5000);     // влезает — как задано
+  const big = terrFrame(box, b, { mode: "scale", scale: 1000, margin: 50 });                    // не влезает — 1:3000
+  assert.equal(big.scale, 3000); assert.equal(big.fitted, true);
+  // рамка под блок: «Вписать» по ней даёт ровно этот масштаб
+  assert.equal(blockScale(b, fit), 3000);
+  assert.equal(terrFrame(box, { w: 0, h: 1 }), null);
+});

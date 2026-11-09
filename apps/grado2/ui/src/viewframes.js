@@ -83,3 +83,31 @@ export function frameLabel(name, f) {
   const km = Math.max(f.w, f.h) >= 10000, n = v => km ? String(Math.round(v / 100) / 10).replace(".", ",") : String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
   return `${name} · ${n(f.w)} × ${n(f.h)} ${km ? "км" : "м"}`;
 }
+
+/* ---------- лист сам по территории (план 08.11.2026, шаг 4) ----------
+   Вид с настройкой auto = { on, mode: "fit" | "scale", scale, margin (м), format, orient }: выбрали территорию — рамка
+   вида встаёт по ней, лист вида собирается сам (autosheets.js). Здесь — только расчёт в метрах МСК. */
+export const AUTO_DEF = { on: true, mode: "fit", scale: 2000, margin: 50, format: "A3", orient: "L" };
+/* охват территории в метрах МСК: geom — GeoJSON (WGS84), toM — [долгота, широта] → [x, y] МСК → [x0, y0, x1, y1] или null */
+export function boxM(geom, toM) {
+  const b = [Infinity, Infinity, -Infinity, -Infinity];
+  const walk = c => { if (typeof c[0] === "number") { const [x, y] = toM(c); b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); } else c.forEach(walk); };
+  if (geom?.type === "GeometryCollection") geom.geometries.forEach(g => walk(g.coordinates || []));
+  else if (geom?.coordinates) walk(geom.coordinates);
+  return b[0] <= b[2] ? b : null;
+}
+/* рамка вида по территории для блока карты b (w × h мм): середина — середина охвата, стороны = блок × масштаб.
+   «Вписать» (mode fit) — ближайший круглый масштаб, при котором охват с полем margin виден целиком; заданный масштаб
+   (mode scale) — он, а если территория в него не влезает — ближайший круглый, при котором влезает (fitted: true).
+   → { c: [x, y] МСК, w, h, scale, fitted, aspect } или null */
+export function terrFrame(box, b, auto = AUTO_DEF) {
+  if (!box || !(b?.w > 0 && b?.h > 0)) return null;
+  const m = Math.max(0, +auto.margin || 0), ew = box[2] - box[0] + 2 * m, eh = box[3] - box[1] + 2 * m;
+  const need = Math.max(ew / b.w, eh / b.h, 1e-3) * 1000;
+  const round = SCALES.find(v => v >= need * 0.9999) || Math.ceil(need);
+  const fixed = auto.mode === "scale" && auto.scale > 0 ? +auto.scale : 0;
+  const scale = fixed && fixed >= need * 0.9999 ? fixed : round;
+  const r2 = v => Math.round(v * 100) / 100, mm = v => String(Math.round(v * 10) / 10).replace(".", ",");
+  return { c: [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2], w: r2(b.w * scale / 1000), h: r2(b.h * scale / 1000), scale,
+    fitted: !!fixed && scale !== fixed, aspect: `${mm(b.w)}:${mm(b.h)}` };
+}
