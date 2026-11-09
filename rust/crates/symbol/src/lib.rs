@@ -9,10 +9,14 @@
 //!
 //! Выход — операции рендера (как core/render/grado_render): `path` (кольца, заливка или контур), `clip` / `unclip`.
 //! Их рисует пластина (crates/plate) для PDF и PPTX и canvas экрана (ui/src/symbology.js через WebAssembly).
+//! Типы линий ЛГР (REDLN97) — модуль linetype.rs.
 //! Координаты — ось y вниз. Полоса внутрь — контур двойной ширины, обрезанный по полигону (как карта на экране),
 //! без построения буфера. Python-двойник — apps/grado2/symparts.py (сверка — tests/test_symparts.py).
 
 use serde_json::{json, Value};
+
+pub mod linetype;
+pub use linetype::LineLib;
 
 pub const PX_MM: f64 = 0.26;
 
@@ -237,6 +241,25 @@ mod wasm {
     #[wasm_bindgen]
     pub fn parts_ops(kind: &str, shapes_json: &str, parts_json: &str, px_mm: f64) -> Result<String, JsValue> {
         super::parts_ops_json(kind, shapes_json, parts_json, px_mm).map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// Экран: типы линий ЛГР (REDLN97) — библиотека грузится один раз, линии рисует canvas слоя
+    #[wasm_bindgen]
+    pub struct LineLib(super::LineLib);
+
+    #[wasm_bindgen]
+    impl LineLib {
+        #[wasm_bindgen(constructor)]
+        pub fn new(lib_json: &str) -> Result<LineLib, JsValue> {
+            super::LineLib::from_json(lib_json).map(LineLib).map_err(|e| JsValue::from_str(&e))
+        }
+        pub fn has(&self, name: &str) -> bool {
+            self.0.has(name)
+        }
+        /// shape_k ≤ 0 — масштаб знаков как у шаблона
+        pub fn ops(&self, pts_json: &str, name: &str, k: f64, shape_k: f64, color: &str, width: f64) -> Result<String, JsValue> {
+            self.0.ops_json(pts_json, name, k, (shape_k > 0.0).then_some(shape_k), color, width).map_err(|e| JsValue::from_str(&e))
+        }
     }
 }
 

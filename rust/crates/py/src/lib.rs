@@ -159,11 +159,52 @@ fn parts_ops(kind: &str, shapes_json: &str, parts_json: &str, px_mm: f64) -> PyR
     grado_symbol::parts_ops_json(kind, shapes_json, parts_json, px_mm).map_err(PyValueError::new_err)
 }
 
+/// Типы линий ЛГР (REDLN97) вдоль ломаной в мм листа (crates/symbol linetype.rs) — print_io.linetype_ops.
+/// Библиотека разбирается один раз; тот же код рисует ЛГР на экране (WebAssembly).
+#[pyclass(frozen)]
+struct LineLib(grado_symbol::LineLib);
+
+#[pymethods]
+impl LineLib {
+    #[new]
+    fn new(lib_json: &str) -> PyResult<Self> {
+        grado_symbol::LineLib::from_json(lib_json).map(LineLib).map_err(PyValueError::new_err)
+    }
+    fn has(&self, name: &str) -> bool {
+        self.0.has(name)
+    }
+    /// Операции print_io.linetype_ops: [{"op": "path", …, "stroke": color, "rings": [[(x, y), …], …]}] —
+    /// объекты Python строятся здесь же, без JSON (длинная граница — десятки тысяч точек)
+    #[pyo3(signature = (pts, name, k, color, width, shape_k=None))]
+    fn ops<'py>(&self, py: Python<'py>, pts: Vec<(f64, f64)>, name: &str, k: f64, color: Bound<'py, PyAny>, width: f64, shape_k: Option<f64>) -> PyResult<Bound<'py, PyList>> {
+        let out = PyList::empty(py);
+        if pts.len() < 2 {
+            return Ok(out);
+        }
+        for r in self.0.runs(&pts, name, k, shape_k, width) {
+            let d = PyDict::new(py);
+            d.set_item("op", "path")?;
+            d.set_item("closed", false)?;
+            d.set_item("fill", py.None())?;
+            d.set_item("stroke", &color)?;
+            d.set_item("width", r.width)?;
+            d.set_item("dash", py.None())?;
+            d.set_item("rings", r.rings)?;
+            if r.round {
+                d.set_item("join", "round")?;
+            }
+            out.append(d)?;
+        }
+        Ok(out)
+    }
+}
+
 #[pymodule]
 fn grado_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ComputeEngine>()?;
     m.add_function(wrap_pyfunction!(render_plate, m)?)?;
     m.add_function(wrap_pyfunction!(parts_ops, m)?)?;
+    m.add_class::<LineLib>()?;
     m.add("ExpressionError", m.py().get_type::<ExpressionError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())

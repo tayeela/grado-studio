@@ -14,10 +14,11 @@ Python-версия остаётся эталоном и запасным пут
   полоса внутрь, штриховка, значки вдоль со стороной) → операции рендера. Один код для печати (`grado_rs.parts_ops` →
   `apps/grado2/symparts.py` → пластина/PDF) и экрана (WebAssembly `apps/grado2/ui/src/wasm`, собирает
   `tools/build_symbol_wasm.sh`; `ui/src/symbology.js partStyles`). Сверка с Python-эталоном — `tests/test_symparts.py`
-  (те же операции; полоса — та же картинка), `ui/src/symbolwasm.test.js`;
+  (те же операции; полоса — та же картинка), `ui/src/symbolwasm.test.js`; типы линий ЛГР (REDLN97) — `linetype.rs`
+  (`print_io.linetype_ops` и `symbology.js drawLt`);
 - **`crates/py`** (`grado_rs`) — модуль Python (PyO3, abi3 ≥ 3.10): ТЭП-движок на Rust
   с API `grado_compute.Engine`; включается `GRADO_COMPUTE=rust` (см. «Мост в Python»);
-  `render_plate(ops_json, w_mm, h_mm, dpi)` — пластина карты; `parts_ops(kind, shapes, parts, px_mm)` — слои знака (0.2.0).
+  `render_plate(ops_json, w_mm, h_mm, dpi)` — пластина карты; `parts_ops(kind, shapes, parts, px_mm)` — слои знака (0.2.0); `LineLib(lib_json).ops(pts, name, k, color, width, shape_k)` — типы линий ЛГР REDLN97 (0.3.0).
 
 ## Мост в Python — статус (шаг 1 «змеи»)
 

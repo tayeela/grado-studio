@@ -122,6 +122,29 @@ class RustSameAsPython(unittest.TestCase):
         a, b = ink(symparts.parts_ops("poly", [HOLE], part)), ink(symparts.parts_ops_py("poly", [HOLE], part))
         self.assertGreater(len(a & b) / len(a | b), 0.95)
 
+    def test_lgr_linetypes(self):
+        """Все типы линий REDLN97 на Rust (print_io.linetype_ops) — те же операции, что Python-эталон: штрихи, точки,
+        знаки своей толщиной; по ломаной с изломами, в масштабе печати и легенды (shape_k)."""
+        import print_io
+        lib = server.REDLN
+        self.assertIsNotNone(print_io._rs_linelib(lib), "модуль grado_rs без LineLib")
+        line = [(0, 0), (40, 3), (55, 30), (20, 60), (21, 61)]
+        for name in lib["linetypes"]:
+            for k, sk in ((print_io.LT_MM, print_io.LT_SHAPE_MM), (0.2, None)):
+                a = print_io.linetype_ops(line, name, k, (0.8, 0.1, 0.1), 0.5, lib, shape_k=sk)
+                b = print_io.linetype_ops_py(line, name, k, (0.8, 0.1, 0.1), 0.5, lib, shape_k=sk)
+                self.assertEqual(len(a), len(b), name)
+                for x, y in zip(a, b):
+                    self.assertEqual(x.get("join"), y.get("join"), name)
+                    self.assertAlmostEqual(x["width"], y["width"], places=9, msg=name)
+                    self.assertEqual(tuple(x["stroke"]), tuple(y["stroke"]))
+                    self.assertEqual(len(x["rings"]), len(y["rings"]), name)
+                    for r1, r2 in zip(x["rings"], y["rings"]):
+                        self.assertEqual(len(r1), len(r2), name)
+                        for p1, p2 in zip(r1, r2):
+                            self.assertAlmostEqual(p1[0], p2[0], places=6, msg=name)
+                            self.assertAlmostEqual(p1[1], p2[1], places=6, msg=name)
+
 
 if __name__ == "__main__":
     unittest.main()
