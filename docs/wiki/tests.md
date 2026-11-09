@@ -49,7 +49,7 @@
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |
 | `test_sheetmodel_js.py` | SheetModelJs | 1 |
 | `test_snap_js.py` | SnapJs | 1 |
-| `test_symparts.py` | SymParts | 6 |
+| `test_symparts.py` | SymParts, RustSameAsPython | 8 |
 | `test_t78_labels.py` | StationNotOnRail, StationNotOnDiagonalRail, StationBestSpot, DistrictBoundaryObstacle, Quotes, LeadersAndCaptions, NestedQuotes | 11 |
 | `test_t80_albums_print.py` | OverLayerOrder, TopLayerOverTerritory, LineLabelInsideMap, LegendLineLabel, MapNoteCorners, ConceptSwatchRail, LinetypeMarksThin, YandexSatPath | 17 |
 | `test_t82_rail_icons.py` | RailIcons | 9 |

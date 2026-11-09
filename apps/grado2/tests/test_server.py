@@ -774,8 +774,8 @@ class HttpHardening(unittest.TestCase):
             self.assertEqual(h["X-Frame-Options"], "SAMEORIGIN", path)          # в рамку — только свои страницы (движок альбома)
             self.assertIn("frame-ancestors 'self'", h["Content-Security-Policy"], path)
         csp = S.CSP
-        self.assertIn("script-src 'self';", csp)
-        self.assertNotIn("unsafe-eval", csp)
+        self.assertIn("script-src 'self' 'wasm-unsafe-eval';", csp)     # только сборка WebAssembly (слои знака на Rust)
+        self.assertNotIn("'unsafe-eval'", csp)
         self.assertNotIn("script-src 'self' 'unsafe", csp)
         self.assertIn("img-src 'self' data: blob: https:", csp)        # плитки Esri и EOX
 

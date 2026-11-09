@@ -44,8 +44,9 @@ class RsWheel(unittest.TestCase):
         return f.as_uri()
 
     def test_want_is_the_crate_version(self):
-        toml = (ROOT / "rust/crates/py/Cargo.toml").read_text("utf-8")
-        self.assertEqual(rs_wheel.WANT, re.search(r'^version = "([^"]+)"', toml, re.M).group(1))
+        for f in ("Cargo.toml", "pyproject.toml"):        # версия колеса — из pyproject.toml, релиза — из Cargo.toml
+            toml = (ROOT / "rust/crates/py" / f).read_text("utf-8")
+            self.assertEqual(rs_wheel.WANT, re.search(r'^version = "([^"]+)"', toml, re.M).group(1), f)
 
     def test_release_lists_only_wheels(self):
         d = self.tmp / "w"

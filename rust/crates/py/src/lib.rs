@@ -151,10 +151,19 @@ fn render_plate(py: Python<'_>, ops_json: &str, w_mm: f32, h_mm: f32, dpi: f32, 
     Ok((pyo3::types::PyBytes::new(py, &png).unbind(), plate.drawn, plate.skipped, plate.ink()))
 }
 
+/// Слои знака (crates/symbol, план 08.11 шаг 3): kind "poly"/"line", фигуры и части в JSON → операции рендера в JSON.
+/// Тот же код собирается в WebAssembly для карты на экране (ui/src/symbology.js).
+#[pyfunction]
+#[pyo3(signature = (kind, shapes_json, parts_json, px_mm=0.26))]
+fn parts_ops(kind: &str, shapes_json: &str, parts_json: &str, px_mm: f64) -> PyResult<String> {
+    grado_symbol::parts_ops_json(kind, shapes_json, parts_json, px_mm).map_err(PyValueError::new_err)
+}
+
 #[pymodule]
 fn grado_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ComputeEngine>()?;
     m.add_function(wrap_pyfunction!(render_plate, m)?)?;
+    m.add_function(wrap_pyfunction!(parts_ops, m)?)?;
     m.add("ExpressionError", m.py().get_type::<ExpressionError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
