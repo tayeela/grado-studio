@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { initSync, parts_ops } from "./wasm/grado_symbol.js";
+import { initSync, parts_ops, LineLib } from "./wasm/grado_symbol.js";
 
 initSync({ module: readFileSync(new URL("./wasm/grado_symbol_bg.wasm", import.meta.url)) });
 const ops = (kind, shapes, parts, k = 1) => JSON.parse(parts_ops(kind, JSON.stringify(shapes), JSON.stringify(parts), k));
@@ -29,4 +29,20 @@ test("линия: только значки и линия, штрих × pixelRa
   const o = ops("line", [[[0, 0], [100, 0]]], [{ k: "band", b: 5 }, { k: "line", c: "#000000", w: 2, dash: [6, 4] }, { k: "marks", step: 20 }], 2);
   assert.equal(o[0].width, 4); assert.deepEqual(o[0].dash, [12, 8]);
   assert.equal(o.length, 1 + 3);
+});
+
+test("типы линий ЛГР (REDLN97) на Rust: все типы библиотеки строятся, у знаков своя тонкая линия, короткая — сплошная", () => {
+  const lib = JSON.parse(readFileSync(new URL("../../../../core/render/grado_render/styles/redln97.json", import.meta.url), "utf8"));
+  const ll = new LineLib(JSON.stringify({ linetypes: lib.linetypes, shapes: lib.shapes }));
+  const line = JSON.stringify([[0, 0], [400, 30], [550, 300]]);
+  let marks = 0;
+  for (const name of Object.keys(lib.linetypes)) {
+    const o = JSON.parse(ll.ops(line, name, 4, 0, "#d7191c", 1.3));
+    assert.ok(o.length >= 1, name);
+    for (const r of o) { assert.equal(r.op, "path"); assert.ok(r.width <= 1.3 + 1e-9, name); if (r.join === "round") marks++; }
+  }
+  assert.ok(marks > 100, "знаки REDLN97 есть");
+  const short = JSON.parse(ll.ops(JSON.stringify([[0, 0], [3, 0]]), "LERROR", 4, 0, "#000000", 1));
+  assert.equal(short.length, 1); assert.equal(short[0].rings[0].length, 2);
+  assert.ok(ll.has("LERROR") && !ll.has("НЕТ"));
 });

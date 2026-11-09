@@ -5,7 +5,7 @@ build-backend = "maturin"
 
 [project]
 name = "grado_rs"
-version = "0.2.0"
+version = "0.3.0"
 requires-python = ">=3.10"
 description = "ТЭП-движок ГРАДО на Rust для grado_compute (необязательный ускоритель, Python-версия остаётся эталоном)"
 

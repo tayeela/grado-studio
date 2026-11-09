@@ -1,4 +1,90 @@
 /**
+ * Экран: типы линий ЛГР (REDLN97) — библиотека грузится один раз, линии рисует canvas слоя
+ */
+export class LineLib {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        LineLibFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_linelib_free(ptr, 0);
+    }
+    /**
+     * @param {string} name
+     * @returns {boolean}
+     */
+    has(name) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.linelib_has(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * @param {string} lib_json
+     */
+    constructor(lib_json) {
+        const ptr0 = passStringToWasm0(lib_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.linelib_new(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0];
+        LineLibFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * shape_k ≤ 0 — масштаб знаков как у шаблона
+     * @param {string} pts_json
+     * @param {string} name
+     * @param {number} k
+     * @param {number} shape_k
+     * @param {string} color
+     * @param {number} width
+     * @returns {string}
+     */
+    ops(pts_json, name, k, shape_k, color, width) {
+        let deferred8_0;
+        let deferred8_1;
+        try {
+            const val4 = +k;
+            const val5 = +shape_k;
+            const val6 = +width;
+            let ptr0, len0, ptr1, len1, ptr2, len2;
+            try {
+                ptr0 = passStringToWasm0(pts_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+                len0 = WASM_VECTOR_LEN;
+                ptr1 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+                len1 = WASM_VECTOR_LEN;
+                ptr2 = passStringToWasm0(color, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+                len2 = WASM_VECTOR_LEN;
+            } catch (e) {
+                if (ptr2) { wasm.__wbindgen_free(ptr2, len2 * 1, 1); }
+                if (ptr1) { wasm.__wbindgen_free(ptr1, len1 * 1, 1); }
+                if (ptr0) { wasm.__wbindgen_free(ptr0, len0 * 1, 1); }
+                throw e;
+            }
+            const ret = wasm.linelib_ops(this.__wbg_ptr, ptr0, len0, ptr1, len1, val4, val5, ptr2, len2, val6);
+            var ptr7 = ret[0];
+            var len7 = ret[1];
+            if (ret[3]) {
+                ptr7 = 0; len7 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred8_0 = ptr7;
+            deferred8_1 = len7;
+            return getStringFromWasm0(ptr7, len7);
+        } finally {
+            wasm.__wbindgen_free(deferred8_0, deferred8_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) LineLib.prototype[Symbol.dispose] = LineLib.prototype.free;
+
+/**
  * Экран: операции частей знака в пикселях карты (px_mm = 1) — их рисует canvas слоя (symbology.js)
  * @param {string} kind
  * @param {string} shapes_json
@@ -42,6 +128,9 @@ export function parts_ops(kind, shapes_json, parts_json, px_mm) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg___wbindgen_throw_4c88d8bf264fd984: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
@@ -61,6 +150,10 @@ function __wbg_get_imports() {
         "./grado_symbol_bg.js": import0,
     };
 }
+
+const LineLibFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_linelib_free(ptr, 1));
 
 function getStringFromWasm0(ptr, len) {
     ptr = ptr >>> 0;

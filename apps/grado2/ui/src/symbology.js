@@ -6,7 +6,7 @@ import { Circle, Fill, Stroke, Style, Text } from "ol/style.js";
 import MultiLineString from "ol/geom/MultiLineString.js";
 import { fromLonLat } from "ol/proj.js";
 import "../../web/linetype.js";
-import initSymbol, { parts_ops as rsPartsOps } from "./wasm/grado_symbol.js";
+import initSymbol, { parts_ops as rsPartsOps, LineLib as RsLineLib } from "./wasm/grado_symbol.js";
 
 export const CAT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"], OTHER = "#9aa1a8";
 export const RAMPS = {
@@ -240,7 +240,7 @@ const redLineStyle = (f, lat) => new Style({ renderer(coords, st) {
   const ctx = st.context, pr = st.pixelRatio, mpp = st.resolution * Math.cos(lat * Math.PI / 180), k = pr / mpp, plain = mpp / 0.000264583 > 10000;
   const lines = typeof coords[0][0] === "number" ? [coords] : coords, lt = f.get("_lt") || [], miss = f.get("_miss") || [];
   for (const pts of lines) {
-    lt.forEach(n => window.Linetypes.draw(ctx, pts, n, k, { color: LGRC[ltCode(n)] || "#d7191c", width: 1.3 * pr, plain }));
+    lt.forEach(n => drawLt(ctx, pts, n, k, { color: LGRC[ltCode(n)] || "#d7191c", width: 1.3 * pr, plain }));
     miss.forEach(([c]) => { ctx.save(); ctx.strokeStyle = LGRC[c] || "#888"; ctx.lineWidth = 1.3 * pr; if (LGRD[c] && !plain) ctx.setLineDash(LGRD[c].map(v => v * k)); ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.stroke(); ctx.restore(); });
     if (!lt.length && !miss.length) { ctx.save(); ctx.strokeStyle = "#999"; ctx.lineWidth = pr; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.stroke(); ctx.restore(); }
   }
@@ -263,7 +263,7 @@ function ownLgrStyle(code, width, lat, geometry) {
       });
     } else lines.push(...(typeof coords[0][0] === "number" ? [coords] : coords));
     for (const pts of lines) {
-      if (name) { window.Linetypes.draw(ctx, pts, name, k, { color: lgrColor(c), width: w, plain }); continue; }
+      if (name) { drawLt(ctx, pts, name, k, { color: lgrColor(c), width: w, plain }); continue; }
       ctx.save(); ctx.strokeStyle = lgrColor(c); ctx.lineWidth = w; if (LGRD[c] && !plain) ctx.setLineDash(LGRD[c].map(v => v * k));
       ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.stroke(); ctx.restore();
     }
@@ -363,6 +363,22 @@ export const symbolEngine = () => (rsOps ? "rust" : "js");
 if (typeof window !== "undefined" && typeof WebAssembly !== "undefined")
   initSymbol().then(() => { rsOps = rsPartsOps; window.dispatchEvent(new Event("grado-symbol-ready")); }).catch(() => {});
 const cssRgb = c => `rgb(${c.map(v => Math.round(v * 255)).join(",")})`;
+/* Типы линий ЛГР (REDLN97) через Rust — тот же код, что в печати (print_io.linetype_ops): штрихи, точки, знаки своей
+   толщиной со скруглёнными изломами. Библиотека разбирается один раз, когда есть и модуль, и redln97.json;
+   без модуля — прежний web/linetype.js. plain — мелкий масштаб: сплошная линия. */
+let rsLines = null, rsLinesFail = false;
+function drawLt(ctx, pts, name, k, { color, width, plain }) {
+  if (!rsLines && !rsLinesFail && rsOps && window.Linetypes?.lib)
+    try { rsLines = new RsLineLib(JSON.stringify({ linetypes: window.Linetypes.lib.linetypes, shapes: window.Linetypes.lib.shapes })); } catch { rsLinesFail = true; }
+  if (rsLines && !plain) {
+    try {
+      const ops = JSON.parse(rsLines.ops(JSON.stringify(pts), name, k, 0, color, width));
+      for (const o of ops) o.cap = o.join === "round" ? "round" : "butt";            // как пластина печати
+      ctx.save(); drawOps(ctx, ops); ctx.restore(); return;
+    } catch { /* кривая линия — прежним путём */ }
+  }
+  window.Linetypes.draw(ctx, pts, name, k, { color, width, plain });
+}
 /* операции рендера (path, clip, unclip) на canvas: координаты — пиксели устройства */
 function drawOps(ctx, ops) {
   let depth = 0;
@@ -374,7 +390,7 @@ function drawOps(ctx, ops) {
     if (o.fill) { ctx.fillStyle = cssRgb(o.fill); ctx.fill("evenodd"); }
     if (o.stroke && o.width > 0) {
       ctx.strokeStyle = cssRgb(o.stroke); ctx.lineWidth = o.width; ctx.setLineDash(o.dash || []);
-      ctx.lineJoin = "round"; ctx.lineCap = o.dash ? "butt" : "round"; ctx.stroke();
+      ctx.lineJoin = "round"; ctx.lineCap = o.cap || (o.dash ? "butt" : "round"); ctx.stroke();
     }
   }
   while (depth--) ctx.restore();
