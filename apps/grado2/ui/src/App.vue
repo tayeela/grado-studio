@@ -217,6 +217,7 @@ import { album, albumFile, albumHooks, ogdDxf } from "./albumhost.js";
 import { ogdResume, terrTool } from "./data.js";
 import { NEW, newViewBySelection, vframes } from "./viewframesmap.js";
 import { printAll } from "./panels/sheetmaps.js";
+import "./autosheets.js";                  // листы сами по территории: смена территории пересобирает листы видов
 import { plural } from "./geom.js";
 import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";

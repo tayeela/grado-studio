@@ -65,7 +65,7 @@ let stage, paper, blocks, guideL, over, tr, k = 1, hovered = false, space = fals
 
 const views = computed(() => props.maps?.views?.() || []);     // виды проекта для блока «Карта» (#119)
 const selBlocks = computed(() => sel.value.map(id => sheet.value.blocks.find(b => b.id === id)).filter(Boolean));
-const issues = computed(() => problems(sheet.value));
+const issues = computed(() => [...problems(sheet.value), ...(props.maps?.ready?.(sheet.value) || [])]);   // + готовность к выгрузке (sheetmaps.js ready)
 const anyLocked = computed(() => sheet.value.blocks.some(b => b.locked));
 const statusSel = computed(() => !sel.value.length ? "" : sel.value.length === 1 ? `Выбрано: ${label(selBlocks.value[0] || {}, sheet.value.blocks)}` : `Выбрано элементов: ${sel.value.length}`);
 const fmt1 = v => String(+v.toFixed(1)).replace(".", ",");
