@@ -304,6 +304,7 @@ function onUp() {
     const b = blk(sheet.value, d.id), dx = (d.p1?.x ?? d.p0.x) - d.p0.x, dy = (d.p1?.y ?? d.p0.y) - d.p0.y;
     if (!b?.center || Math.hypot(dx, dy) <= .05) return;
     const c = moveCenter(b.center, b.scale, -dx, -dy);
+    if (b.cell) { patch(b.id, { center: c, cell: { ...b.cell, center: c } }); said.value = "Сдвинута карта этого листа атласа"; return; }
     if (b.view && props.maps?.frameTo?.(b.view, c)) { said.value = `Сдвинута рамка вида «${viewName(b.view)}» — все листы с этим видом`; return; }
     patch(b.id, { center: c });
     return;
@@ -385,6 +386,7 @@ async function printPdf() {
 /* масштаб блока с видом задаёт рамка: она меняет размер на карте (#119, ч.2); масштаб не из ряда — без «круглого»,
    иначе его тут же округлило бы. → false, если блок без вида с рамкой */
 function viewScale(b, s) {
+  if (b.cell) { patch(b.id, { scale: s, cell: { ...b.cell, scale: s } }); said.value = `Масштаб листа атласа ${"1:" + s.toLocaleString("ru")}`; return true; }
   if (!b.view || !props.maps?.frameScale?.(b.view, b, s)) return false;
   if (b.round !== false && !SCALES.includes(s)) patch(b.id, { round: false });
   said.value = `Рамка вида «${viewName(b.view)}» под масштаб ${"1:" + s.toLocaleString("ru")}${shared(b.view) > 1 ? " — меняются все листы с этим видом" : ""}`;

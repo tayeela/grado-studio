@@ -717,6 +717,56 @@ def search_any(q):
     return code, ({**obj, "type": kind} if code == 200 else obj)
 
 
+PARCEL_AT_M = 4                   # полусторона квадрата запроса вокруг точки адреса, м: участок под точкой, без соседей
+
+
+def parcel_at(lon, lat, nspd=None):
+    """Участок ЕГРН под точкой (адрес из поиска → граница территории, план 08.11 шаг 4) → (code, ответ как у поиска
+    по номеру: features, missing, notes). Один запрос к НСПД по маленькому квадрату, под замком поиска и шлюзом
+    портала (#51); из ответа — участки, в которые точка попадает (на улице — ближайший из задетых). 404 — под точкой
+    участков нет, 502 — НСПД не ответил, 503 — занят."""
+    try:
+        lon, lat = float(lon), float(lat)
+    except (TypeError, ValueError):
+        return 400, {"error": "Нет точки адреса"}
+    if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+        return 400, {"error": "Нет точки адреса"}
+    dlat = PARCEL_AT_M / 111320.0
+    dlon = dlat / max(0.1, math.cos(math.radians(lat)))
+    bbox = (lon - dlon, lat - dlat, lon + dlon, lat + dlat)
+    if not CAD_LOCK.acquire(timeout=CAD_LOCK_TIMEOUT):
+        return 503, {"error": SEARCH_BUSY}
+    token = object()
+    try:
+        try:
+            portalgate.GATE.acquire({"nspd"}, token, timeout=CAD_LOCK_TIMEOUT)
+        except portalgate.Busy:
+            return 503, {"error": "Портал НСПД сейчас занят выгрузкой слоёв — повторите через минуту"}
+        try:
+            got = (nspd or NspdDirect()).fetch(bbox, [36368])
+        except ConnectorError:
+            return 502, {"error": NSPD_DOWN}
+        finally:
+            portalgate.GATE.release({"nspd"}, token)
+    finally:
+        CAD_LOCK.release()
+    feats = [f for f in got.get("features") or [] if f.get("geometry")]
+    inside = [f for f in feats if _point_in(f["geometry"], lon, lat)]
+    if not inside and feats:                     # точка адреса на улице или во дворе между участками — ближайший
+        from shapely.geometry import Point, shape
+        pt = Point(lon, lat)
+        inside = [min(feats, key=lambda f: shape(f["geometry"]).distance(pt))]
+    if not inside:
+        return 404, {"error": "Под этим адресом нет участка ЕГРН — найдите участок по кадастровому номеру или нарисуйте границу"}
+    layer = _layer("nspd.parcels", {"features": inside, "source_doc": "НСПД (nspd.gov.ru), участок под адресом"})
+    return 200, {"features": layer["features"]["features"], "missing": [], "notes": []}
+
+
+def get_parcel_at(c):
+    code, obj = parcel_at(c.q("lon"), c.q("lat"))
+    return _json(code, obj)
+
+
 # ---------- Пределы тела запроса, ход выгрузки, понятные ошибки порталов ----------
 # Тело запроса читается в память целиком, поэтому предел свой у каждого пути: проект со 100 000 объектов ~100 МБ,
 # импорт — несколько файлов в base64, печать и экспорт несут слои проекта и фото листов; остальное — короткий JSON.
@@ -2519,6 +2569,7 @@ def post_font(c):
 GET_ROUTES = {
     "/api/search/cadastral": get_search_cadastral,
     "/api/search/address": get_search,
+    "/api/search/parcel_at": get_parcel_at,
     "/api/search": get_search,
     "/api/sources": get_sources,
     "/api/layer_roles": lambda c: _json(200, layer_roles()),
@@ -2715,7 +2766,10 @@ def post_layout(c):
             rep = {}
             pdf = layout_io.render_pdf(req, REDLN, LGR_DASH, esri_tile, rep)
             # пластины карт (Rust): сколько карт и какие пустые — лист с пустой картой не готов (X-Empty-Maps: id блоков)
-            extra = (("X-Plate-Maps", str(len(rep.get("maps", [])))), ("X-Empty-Maps", ",".join(rep.get("empty_maps", []))))
+            extra = (("X-Plate-Maps", str(len(rep.get("maps", [])))), ("X-Empty-Maps", ",".join(rep.get("empty_maps", []))),
+                     # подписи карт налезают друг на друга (план 08.11 шаг 4): «id блока:сколько пар»
+                     ("X-Label-Clash", ",".join(f'{m["id"]}:{m["n"]}' for m in rep.get("label_clash", []))),
+                     ("X-Label-Drop", ",".join(f'{m["id"]}:{m["n"]}' for m in rep.get("label_drop", []))))
             return _file(pdf, "application/pdf", "grado2-sheet.pdf", extra=tuple((k, v.encode("ascii", "replace").decode()) for k, v in extra))
         if c.route == "/api/print/map_png":                # пластина карты на Rust (rust/crates/plate), без подписей
             png, info = layout_io.map_plate(req, REDLN, LGR_DASH, esri_tile, req.get("dpi") or 300)

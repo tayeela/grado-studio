@@ -165,6 +165,40 @@ class LayoutPrint(unittest.TestCase):
         self.assertTrue(layout_io.render_pdf(s, S.REDLN, S.LGR_DASH).startswith(b"%PDF"))
 
 
+class LabelClash(unittest.TestCase):
+    """Подписи карты налезают друг на друга (план 08.11 шаг 4): повёрнутые рамки по шрифту PDF; касание и столбик строк
+    одной подписи — не налезание; в PDF-выгрузке — X-Label-Clash."""
+
+    def t(self, x, y, text, angle=0.0, anchor=None, size=2.5):
+        return {"op": "text", "x": x, "y": y, "text": text, "size": size, "angle": angle, **({"anchor": anchor} if anchor else {})}
+
+    def test_pairs(self):
+        import math
+        L = layout_io.label_clashes
+        self.assertEqual(len(L([self.t(10, 10, "Хабаровская улица"), self.t(14, 10.5, "Уральская улица")])), 1)
+        self.assertEqual(L([self.t(10, 10, "Хабаровская улица"), self.t(10, 20, "Уральская улица")]), [])
+        self.assertEqual(L([self.t(10, 10, "1-я строка", anchor="middle"), self.t(10, 12.6, "2-я строка", anchor="middle")]), [])  # столбик
+        # повёрнутая подпись рядом с горизонтальной: рамки по осям пересекаются, повёрнутые — нет
+        self.assertEqual(L([self.t(0, 0, "Длинная улица", angle=math.radians(60)), self.t(14, 1, "Дом")]), [])
+        self.assertEqual(len(L([self.t(0, 0, "Длинная улица", angle=math.radians(60)), self.t(3, 5, "Дом")])), 1)
+        self.assertEqual(L([self.t(0, 0, "  ")]), [])
+
+    def test_dropped_labels_reported(self):
+        """Подписи объектов в рамке, которым печать не нашла места, — в отчёте листа (X-Label-Drop)."""
+        lon, lat = 37.80, 55.83
+
+        def sq(dx, d=.0004):
+            return {"type": "Polygon", "coordinates": [[[lon + dx - d, lat - d / 2], [lon + dx + d, lat - d / 2], [lon + dx + d, lat + d / 2],
+                                                        [lon + dx - d, lat + d / 2], [lon + dx - d, lat - d / 2]]]}
+        fs = [{"g": sq(i * .0003), "fill": "#cc0000", "w": 1, "a": 1, "label": f"Очень длинное название квартала {i}"} for i in range(6)]
+        b = {"id": "m1", "kind": "map", "x": 10, "y": 10, "w": 120, "h": 90, "scale": 5000, "center": [lon + .0008, lat]}
+        item = {"sheet": {"format": "A4", "orient": "L", "stamp": False, "blocks": [b]}, "maps": {"m1": {"layers": [{"title": "К", "features": fs}]}}}
+        rep = {}
+        layout_io.build_pages({"sheets": [item]}, S.REDLN, S.LGR_DASH, None, rep)
+        self.assertEqual(rep["label_drop"][0]["id"], "m1")
+        self.assertGreaterEqual(rep["label_drop"][0]["n"], 3)
+
+
 class LayoutsInProject(unittest.TestCase):
     """Листы макета живут в файле проекта последним ключом layouts; запись рабочей страницы (без этого ключа) их не стирает."""
 

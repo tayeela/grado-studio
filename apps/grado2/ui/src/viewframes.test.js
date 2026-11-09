@@ -87,3 +87,21 @@ test("лист по территории: охват в метрах, вписа
   assert.equal(blockScale(b, fit), 3000);
   assert.equal(terrFrame(box, { w: 0, h: 1 }), null);
 });
+
+test("атлас: не влезает в масштаб — сетка ячеек с перекрытием, пустые ячейки Г-образной территории выпадают", async () => {
+  const { terrGrid, touches } = await import("./viewframes.js");
+  const b = { w: 200, h: 100 };                                             // 1:2000 → ячейка 400 × 200 м
+  const box = [0, 0, 1000, 300], a = { mode: "scale", scale: 2000, margin: 0, split: "grid", overlap: 10 };
+  const g = terrGrid(box, b, a);
+  assert.equal(g.scale, 2000); assert.equal(g.nx, 3); assert.equal(g.ny, 2); assert.equal(g.cells.length, 6);
+  assert.ok(g.w >= 1000 && g.h >= 300);
+  assert.deepEqual(g.cells.slice(0, 2).map(c => [c.i, c.j]), [[0, 0], [1, 0]]);  // сверху вниз, слева направо
+  assert.ok(g.cells[0].c[1] > g.cells[3].c[1]);
+  assert.equal(terrGrid([0, 0, 300, 150], b, a), null);                    // влезает — один лист
+  assert.equal(terrGrid(box, b, { ...a, split: "round" }), null);          // круглый масштаб — не сетка
+  const L = [[[0, 0], [1000, 0], [1000, 100], [100, 100], [100, 300], [0, 300], [0, 0]]];
+  const gl = terrGrid(box, b, a, L);
+  assert.ok(gl.cells.length < 6, "ячейка без территории выпала: " + gl.cells.length);
+  assert.ok(touches([10, 10, 20, 20], [[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]]), "внутри кольца");
+  assert.ok(!touches([200, 200, 300, 300], [[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]]));
+});

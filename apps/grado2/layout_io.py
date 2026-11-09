@@ -257,6 +257,53 @@ RASTER_OPS = {"path", "circle", "image", "clip", "unclip"}
 
 plate_on = print_io.plate_on
 
+def _label_box(o):
+    """Повёрнутая рамка подписи (мм): 4 угла по базовой линии, якорю, размеру и углу; ширина — тем шрифтом, что в PDF.
+    Рамка чуть ужата (12 %): касание соседей и выносные хвосты букв — не налезание."""
+    t = str(o.get("text") or "")
+    if not t.strip():
+        return None
+    s = float(o.get("size") or 2.5)
+    w = print_io._text_w(t, o.get("font_family"), s)
+    x0 = {"middle": -w / 2, "end": -w}.get(o.get("anchor"), 0.0)
+    k = 0.12
+    xa, xb, ya, yb = x0 + w * k / 2, x0 + w * (1 - k / 2), -0.75 * s * (1 - k), 0.2 * s * (1 - k)
+    a = float(o.get("angle") or 0.0)
+    c, sn = math.cos(a), math.sin(a)
+    return [(o["x"] + px * c - py * sn, o["y"] + px * sn + py * c) for px, py in ((xa, ya), (xb, ya), (xb, yb), (xa, yb))]
+
+
+def _boxes_hit(p, q):
+    """Две выпуклые рамки пересекаются (разделяющая ось)."""
+    for poly in (p, q):
+        for i in range(4):
+            ex, ey = poly[(i + 1) % 4][0] - poly[i][0], poly[(i + 1) % 4][1] - poly[i][1]
+            nx, ny = -ey, ex
+            a = [nx * x + ny * y for x, y in p]
+            b = [nx * x + ny * y for x, y in q]
+            if max(a) <= min(b) or max(b) <= min(a):
+                return False
+    return True
+
+
+def label_clashes(texts, limit=50):
+    """Подписи карты, налезающие друг на друга (план 08.11 шаг 4, #59): пары [(текст, текст)], не больше limit.
+    Строки одной подписи (одна точка, разные строки) друг другу не мешают — они стоят столбиком."""
+    boxes = [(o, b) for o in texts if (b := _label_box(o))]
+    ab = [(min(x for x, _ in b), min(y for _, y in b), max(x for x, _ in b), max(y for _, y in b)) for _, b in boxes]
+    out = []
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            u, v = ab[i], ab[j]
+            if u[2] <= v[0] or v[2] <= u[0] or u[3] <= v[1] or v[3] <= u[1]:
+                continue
+            if _boxes_hit(boxes[i][1], boxes[j][1]):
+                out.append((str(boxes[i][0].get("text")), str(boxes[j][0].get("text"))))
+                if len(out) >= limit:
+                    return out
+    return out
+
+
 def _plated(b, ops, report):
     """Карта блока пластиной (rust/crates/plate): геометрия — одной картинкой PLATE_DPI в рамке блока, подписи — текстом
     поверх (в PDF ищутся и копируются, в PPTX правятся), в той же обрезке по рамке. Карта без закраски — в report
@@ -268,6 +315,11 @@ def _plated(b, ops, report):
         if ink < 0.002:
             report.setdefault("empty_maps", []).append(str(b.get("id") or ""))
     texts = [{**o, "x": o["x"] + x, "y": o["y"] + y} for o in ops if o.get("op") == "text"]
+    if report is not None and texts:                   # подписи налезают (обязательные, поставленные «как есть») — лист не готов
+        inside = [o for o in texts if x <= o["x"] <= x + w and y <= o["y"] <= y + h]
+        hits = label_clashes(inside)
+        if hits:
+            report.setdefault("label_clash", []).append({"id": str(b.get("id") or ""), "n": len(hits), "pairs": hits[:3]})
     out = [{"op": "layer", "name": "Карта"}, {"op": "image", "data": png, "x": x, "y": y, "w": w, "h": h}]
     if texts:
         out += [{"op": "layer", "name": "Подписи карты"}, {"op": "clip", "rect": (x, y, w, h)}, *texts, {"op": "unclip"}]
@@ -280,9 +332,13 @@ def _map(b, mp, lib, lgr_dash, tiles, report=None):
     sh = map_sheet(b, mp)
     if sh is None:
         return _placeholder(b, "Карта: укажите место — «Как на карте»")
-    if plate_on():
-        return _plated(b, print_io.SketchMapFrame((0, 0, b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({}), report)
-    return print_io.SketchMapFrame((b["x"], b["y"], b["w"], b["h"]), sh, lib, lgr_dash, tiles).ops({})
+    plate = plate_on()
+    fr = print_io.SketchMapFrame((0, 0, b["w"], b["h"]) if plate else (b["x"], b["y"], b["w"], b["h"]), sh, lib, lgr_dash, tiles)
+    ops = fr.ops({})
+    if report is not None and fr.dropped:              # подписи объектов в рамке, которым не нашлось места (лист не готов)
+        names = sorted(set(fr.dropped))
+        report.setdefault("label_drop", []).append({"id": str(b.get("id") or ""), "n": len(names), "names": names[:5]})
+    return _plated(b, ops, report) if plate else ops
 
 
 def _local(b, blocks):
