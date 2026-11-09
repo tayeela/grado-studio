@@ -29,7 +29,34 @@ const numOf = v => v == null || v === "" ? NaN : +v;
    у категории (st.cat.sym[значение]) и у правила (поля в самом правиле) — свои прозрачность заливки, штриховка (узор, шаг),
    цвет, толщина и тип контура, подпись (поле или "" — без подписи), кегль и цвет подписи. Поля, которых у класса нет,
    берутся у слоя. Заливка класса — по-прежнему st.cat.colors[значение] и rule.fill. */
-export const SYM_KEYS = ["opacity", "hatch", "hatchPat", "hatchStep", "hatchColor", "stroke", "width", "dash", "label", "labelSize", "labelColor"];
+export const SYM_KEYS = ["opacity", "hatch", "hatchPat", "hatchStep", "hatchColor", "stroke", "width", "dash", "label", "labelSize", "labelColor", "parts"];
+
+/* Слои знака (план 08.11.2026, шаг 2, как «слои символа» QGIS): стопка частей поверх основного знака слоя или класса.
+   Часть: k — вид, c — цвет, a — непрозрачность, w — толщина (пикс.), dash — штрих (пикс.); полоса: b — ширина внутрь (пикс.);
+   штриховка: hp — узор (HATCHES), hs — шаг; значки: shape (MARKS), step — шаг, size — размер (пикс.), side — сторона
+   (+1 — внутрь полигона / справа по ходу линии, −1 — наружу / слева). Экран — partStyles, печать — symparts.py, тот же смысл. */
+export const PARTS = { line: "Линия по контуру", band: "Полоса внутрь", hatch: "Штриховка", marks: "Значки вдоль линии" };
+export const MARKS = { tick: "штрих поперёк", tri: "треугольник", dot: "кружок", cross: "крестик" };
+export const PART_DEF = {
+  line: { c: "#333333", w: 1 }, band: { c: "#e34948", a: .35, b: 6 }, hatch: { c: "#333333", w: 1, hp: "45", hs: 8 },
+  marks: { c: "#333333", w: 1, shape: "tick", step: 16, size: 5, side: 1 },
+};
+export function cleanParts(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(p => p && Object.hasOwn(PARTS, p.k)).slice(0, 12).map(p => {
+    const d = PART_DEF[p.k], r = { k: p.k, c: okc(p.c, d.c) };
+    if (p.a != null || d.a != null) r.a = Math.min(1, Math.max(0, okn(p.a, d.a ?? 1)));
+    if (d.w != null) r.w = Math.max(0.1, okn(p.w, d.w));
+    if (p.k !== "band" && p.k !== "hatch" && Array.isArray(p.dash) && p.dash.length) r.dash = p.dash.map(Number).filter(n => Number.isFinite(n) && n >= 0);
+    if (p.k === "band") r.b = Math.max(1, okn(p.b, d.b));
+    if (p.k === "hatch") { r.hp = Object.hasOwn(HATCHES, String(p.hp)) ? String(p.hp) : d.hp; r.hs = Math.max(4, okn(p.hs, d.hs)); }
+    if (p.k === "marks") {
+      r.shape = Object.hasOwn(MARKS, p.shape) ? p.shape : d.shape; r.step = Math.max(4, okn(p.step, d.step));
+      r.size = Math.max(1, okn(p.size, d.size)); r.side = okn(p.side, 1) < 0 ? -1 : 1;
+    }
+    return r;
+  });
+}
 export function cleanSym(o) {
   const r = {};
   if (!o || typeof o !== "object") return r;
@@ -44,6 +71,7 @@ export function cleanSym(o) {
   if (typeof o.label === "string") r.label = o.label;
   if (o.labelSize != null) { const n = okn(o.labelSize, 0); if (n > 0) r.labelSize = n; }
   if (typeof o.labelColor === "string" && HEX.test(o.labelColor)) r.labelColor = o.labelColor;
+  if (Array.isArray(o.parts)) r.parts = cleanParts(o.parts);
   return r;
 }
 /* стиль слоя с полями класса поверх: свой цвет контура класса не заменяется цветом штриховки (edgeColor) */
@@ -78,6 +106,7 @@ export function fullStyle(o = {}) {
   st.cat.off = Array.isArray(st.cat.off) ? st.cat.off : [];
   st.cat.sym = Object.fromEntries(Object.entries(st.cat.sym && typeof st.cat.sym === "object" ? st.cat.sym : {}).map(([k, o]) => [k, cleanSym(o)]).filter(([, o]) => Object.keys(o).length));
   if (st.lgrLine != null) { const n = Math.trunc(okn(st.lgrLine, 0)); if (n && Math.abs(n) < 100) st.lgrLine = n; else delete st.lgrLine; }
+  if (st.parts != null) { st.parts = cleanParts(st.parts); if (!st.parts.length) delete st.parts; }
   return st;
 }
 
@@ -297,6 +326,52 @@ export function symbolStyle(st, s, g, clip, lat) {
   return under ? [under, top] : top;
 }
 
+/* ---------- слои знака на экране (то же, что symparts.py в печати) ---------- */
+function ringsOf(st, coords) {      // кольца полигона в пикселях экрана, внутренность справа по ходу (y вниз)
+  const t = st.geometry.getType(), out = [];
+  for (const poly of t === "Polygon" ? [coords] : coords) poly.forEach((r, i) => out.push(Math.sign(ringArea(r)) === (i ? -1 : 1) ? r : r.slice().reverse()));
+  return out;
+}
+const linesOf = coords => typeof coords[0][0] === "number" ? [coords] : coords;
+function tracePath(ctx, rings, close) { ctx.beginPath(); for (const r of rings) { r.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); if (close) ctx.closePath(); } }
+/* точки через step вдоль ломаной (первая на step/2): [x, y, ux, uy] — как symparts._stations */
+export function stations(pts, step, closed) {
+  const seq = closed && (pts[0][0] !== pts.at(-1)[0] || pts[0][1] !== pts.at(-1)[1]) ? [...pts, pts[0]] : pts, out = [];
+  let need = step / 2;
+  for (let i = 1; i < seq.length; i++) {
+    const [x0, y0] = seq[i - 1], [x1, y1] = seq[i], d = Math.hypot(x1 - x0, y1 - y0); if (d <= 1e-9) continue;
+    const ux = (x1 - x0) / d, uy = (y1 - y0) / d; let t = 0;
+    while (t + need <= d) { t += need; out.push([x0 + ux * t, y0 + uy * t, ux, uy]); need = step; }
+    need -= d - t;
+  }
+  return out;
+}
+function drawMark(ctx, shape, x, y, ux, uy, side, s) {
+  const nx = -uy * side, ny = ux * side;
+  ctx.beginPath();
+  if (shape === "dot") { ctx.arc(x + nx * s / 2, y + ny * s / 2, s / 2, 0, 2 * Math.PI); ctx.fill(); return; }
+  if (shape === "tri") { ctx.moveTo(x - ux * s / 2, y - uy * s / 2); ctx.lineTo(x + ux * s / 2, y + uy * s / 2); ctx.lineTo(x + nx * s, y + ny * s); ctx.closePath(); ctx.fill(); return; }
+  if (shape === "cross") { const h = s / 2; ctx.moveTo(x - h, y - h); ctx.lineTo(x + h, y + h); ctx.moveTo(x - h, y + h); ctx.lineTo(x + h, y - h); ctx.stroke(); return; }
+  ctx.moveTo(x, y); ctx.lineTo(x + nx * s, y + ny * s); ctx.stroke();
+}
+/* Стили OpenLayers частей знака для вида геометрии g (poly, pline, line); у линий полоса и штриховка не рисуются. */
+export function partStyles(parts, g) {
+  const poly = g === "poly";
+  return (parts || []).filter(p => poly || p.k === "line" || p.k === "marks").map(p => {
+    if (p.k === "hatch") return new Style({ fill: new Fill({ color: hatch(p.c, p.hp, p.hs) }) });
+    if (p.k === "line" && !poly) return new Style({ stroke: new Stroke({ color: rgba(p.c, p.a ?? 1), width: p.w, lineDash: p.dash, lineCap: p.dash ? "butt" : "round", lineJoin: "round" }) });
+    return new Style({ renderer(coords, st) {
+      const ctx = st.context, pr = st.pixelRatio, closed = poly && /Polygon/.test(st.geometry.getType());
+      const lines = closed ? ringsOf(st, coords) : linesOf(coords);
+      ctx.save(); ctx.strokeStyle = ctx.fillStyle = rgba(p.c, p.a ?? 1); ctx.lineWidth = (p.w || 1) * pr; ctx.lineJoin = "round";
+      if (p.k === "band") { if (!closed) { ctx.restore(); return; } tracePath(ctx, lines, true); ctx.clip("evenodd"); ctx.lineWidth = 2 * p.b * pr; tracePath(ctx, lines, true); ctx.stroke(); }
+      else if (p.k === "line") { if (p.dash) ctx.setLineDash(p.dash.map(v => v * pr)); tracePath(ctx, lines, closed); ctx.stroke(); }
+      else for (const ln of lines) if (ln.length > 1) for (const [x, y, ux, uy] of stations(ln, p.step * pr, closed)) drawMark(ctx, p.shape, x, y, ux, uy, p.side, p.size * pr);
+      ctx.restore();
+    } });
+  });
+}
+
 /* Знаки для образца слоя (окно «Слои», шапка «Свойств»): единый — один, категории, диапазоны и правила — до трёх первых
    показанных классов (диапазоны — низ, середина, верх шкалы). */
 export function swatchSymbols(st, fc) {
@@ -323,7 +398,7 @@ export function styleFunction(l, fc, lat) {
       const ft = f.getGeometry()?.getType() || "", g = /Point/.test(ft) ? "point" : /Line/.test(ft) && l.geom !== "line" ? (l.geom === "poly" ? "pline" : "line") : l.geom;
       const clip = g === "poly" && e.width > 0 && !!f.get("_clip");
       const key = `${s.id}|${s.fill}|${s.hatch}|${g}|${clip}`; let base = cache.get(key);
-      if (!base) { base = symbolStyle(e, s, g, clip, lat); cache.set(key, base); }
+      if (!base) { base = symbolStyle(e, s, g, clip, lat); if (e.parts?.length) base = [base, ...partStyles(e.parts, g)].flat(); cache.set(key, base); }
       Array.isArray(base) ? out.push(...base) : out.push(base);
     }
     if (e.label && res < 4) {

@@ -18,7 +18,11 @@
     </div>
     <p v-if="l.visible && !shown(l)" class="hint">Слой не виден на карте: скрыта его группа.</p>
 
-    <h3>Оформление</h3>
+    <div class="row qh">
+      <h3 class="grow">Оформление</h3>
+      <wa-button size="s" appearance="plain" title="Взять оформление из файла стиля QGIS (.qml): цвета, штриховки, слои знака, категории и правила, подписи" @click="qmlIn.click()">Стиль из QGIS…</wa-button>
+      <input ref="qmlIn" type="file" accept=".qml" hidden @change="loadQml" />
+    </div>
     <!-- способ оформления — выпадающим списком: пять кнопок в ряд не помещаются в узкое окно -->
     <label class="f">
       <span>Способ</span>
@@ -192,6 +196,11 @@
       </label>
     </template>
 
+    <template v-if="l.geom !== 'point' && st.mode !== 'lgr'">
+      <h3 title="Как слои символа в QGIS: части рисуются поверх знака снизу вверх, на карте и на листе одинаково">Слои знака</h3>
+      <SymbolParts :o="st" :geom="l.geom" />
+    </template>
+
     <h3>Подписи</h3>
     <label class="f">
       <span>Поле</span>
@@ -247,10 +256,12 @@ import { current, project, shown } from "../store.js";
 import { dataRev } from "../edit.js";
 import { TERR_ROLE, setTerritoryLayer } from "../data.js";
 import { plural } from "../geom.js";
+import { toast } from "../toasts.js";
 import LayerSwatch from "./LayerSwatch.vue";
 import ClassSymbol from "./ClassSymbol.vue";
+import SymbolParts from "./SymbolParts.vue";
 import {
-  CAT, DASHES, DENS, HATCHES, LGR_LINES, OPS, OTHER, RAMPS, RAMP_TITLES, assignCats, breaks, catValues, classStyle, edgeColor, fieldsOf, floorsDenOf, legendItems, loadLibs, numFields, okn, ruleCount,
+  CAT, DASHES, DENS, HATCHES, LGR_LINES, OPS, OTHER, RAMPS, RAMP_TITLES, assignCats, breaks, catValues, classStyle, edgeColor, fieldsOf, floorsDenOf, fullStyle, legendItems, loadLibs, numFields, okn, ruleCount,
 } from "../symbology.js";
 
 window.Roles.load();                                // таблица кодов каталога ГИС ОГД → роль (GET /api/layer_roles)
@@ -314,6 +325,22 @@ function setRole(v) {
   if (v === TERR_ROLE) { if (!setTerritoryLayer(l.value.key)) roleKey.value++; return; }
   if (v === "auto") delete l.value.role; else l.value.role = window.Roles.sane(v);
 }
+/* Стиль из QGIS (.qml, сервер qml_style.py): оформление слоя заменяется целиком, видимость по масштабу и роль остаются. */
+const qmlIn = ref(null);
+const LOOK = ["mode", "fill", "stroke", "strokeOwn", "width", "opacity", "dash", "hatch", "hatchPat", "hatchStep", "hatchColor", "parts", "lgrLine", "cat", "grad", "rules", "label", "labelSize", "labelColor"];
+async function loadQml(ev) {
+  const file = ev.target.files?.[0]; ev.target.value = "";
+  if (!file) return;
+  try {
+    const r = await fetch("/api/style/qml", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: await file.text(), geom: l.value.geom }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "сервер не ответил");
+    const s = st.value, d = fullStyle({});
+    LOOK.forEach(k => { delete s[k]; });
+    Object.assign(s, { mode: d.mode, cat: d.cat, grad: d.grad, rules: d.rules, label: "" }, fullStyle(j.style));
+    toast(`Стиль «${file.name}» применён` + (j.report?.length ? ". Не перенесено: " + j.report.join("; ") : ""));
+  } catch (e) { toast("Стиль QGIS не открылся: " + e.message, { level: "error" }); }
+}
 const roleKey = ref(0);                              // отказ (в слое нет полигонов) — список перерисовывается с прежней ролью
 </script>
 
@@ -346,6 +373,8 @@ const roleKey = ref(0);                              // отказ (в слое 
 .props .rule { border: 1px solid var(--g-line); border-radius: var(--wa-border-radius-s); padding: 8px; margin-bottom: var(--wa-space-s); }
 .props .rule .row:last-child { margin-bottom: 0; }
 .props .grow { flex: 1; }
+.props .row.qh { margin-bottom: 0; }
+.props .row.qh h3 { margin: 0; }
 .props button.symb { all: unset; display: inline-flex; padding: 3px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
 .props button.symb:hover, .props button.symb[aria-expanded="true"] { border-color: var(--g-line); background: var(--wa-color-neutral-fill-quiet); }
 .props button.symb:focus-visible { outline: 2px solid var(--wa-color-focus); }

@@ -95,7 +95,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `Busy`, `Gate`, `portals_of`
 
-### `apps/grado2/print_io.py` — 2742 стр.
+### `apps/grado2/print_io.py` — 2747 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
@@ -103,11 +103,23 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `page_size`, `PaperFrame`, `slide_k`, `layout`, `_mix`, `_nice`, `MapTransform`, `_simplify`, `ops_cache_get`, `ops_cache_put`, `egko_ops`, `_egko_ops`, `_guillemets`, `_text_w`, `_straight_runs`, `flood_ops`, `_callout_box`, `_callout_steps`, `_seg_box`, `_in_ring`, `_chains`, `_axis_windows`, `_obox_hit`, `_seg_cross`, `_pole`, `_ring_centroid`, `clip_ring`, `_parts`, `linetype_ops`, `TileGuard`, `tile_ops`, `SketchMapFrame`, `ColumnFrame`, `TepSheetFrame`, `_wrap`, `_view_mark`, `_swatch`, `SlideFrame`, `photo_map_rect`, `panel_rects`, `PanelFrame`, `PhotoGridFrame`, `_all_to`, `label_fonts`, `_hex`, `album_settings`, `_with_settings`, `build_document`, `apply_edits`, `own_texts`, `_num`, `_edited`, `_pages`, `layout_qa`, `render_pdf`, `not_ready`, `_op_box`, `_meet_box`, `_quad_info`, `_inside`, `_tile_patch`, `pptx_clip_tiles`, `pptx_thin`, `pptx_weight`, `_dash_runs`, `pptx_rasterize`, `rust_plate`, `plate_on`, `plate_ops_json`, `shift_ops`, `_rough_ink`, `map_is_empty`, `render_pptx`, `render_preview_svg`
 
+### `apps/grado2/qml_style.py` — 224 стр.
+
+ГРАДО 2 · стиль слоя из файла стиля QGIS (.qml) — план 08.11.2026, шаг 2: владелец переносит свои стили из QGIS одним файлом. Разбор XML — стандартный xml.etree; файл с объявлением сущностей (<!ENTITY) отклоняется сразу, размер тела ограничен сервером. Отрисовщики: «Единый символ» → единый цвет, «Категории» → категории по полю, «Градуированный» и «Правила» → правила ГРАДО (простые условия `"поле" = 'значение'`, >, <, >=, <=, <>; сложные выражения пропускаются и попадают в отчёт). Символ QGIS — стопка слоёв: первый SimpleFill / SimpleLine / SimpleMarker → основной знак, остальные → части `parts…
+
+Функции: `_props`, `_color`, `_mm`, `_r`, `_sub`, `symbol`, `_filter`, `convert`
+
 ### `apps/grado2/rail_icons.py` — 123 стр.
 
 Значки станций рельсового каркаса для листов альбома (правило 16 label-rules.md, владелец 05.10.2026).
 
 Функции: `flatten`, `icon_id`, `icon_width`, `icon_ops`
+
+### `apps/grado2/rs_wheel.py` — 132 стр.
+
+ГРАДО 2 · модуль Rust (grado_rs) ставится сам: при запуске сервера, если модуля нет или он не той версии, колесо нужной версии скачивается из релиза GitHub `grado-rs-v<WANT>` (его собирает CI `rust.yml`: macOS arm64 и x86_64, Windows, Linux сайта) и ставится pip в то же окружение, фоном — запуск не ждёт; не вышло — ещё раз через 30 минут. Нет сети, нет релиза, pip не смог — одна строка в журнал, программа работает на Python, как раньше (план 08.11.2026, шаг 1). Зовёт server.main(); GRADO_RS_AUTO=0 — не ставить; собранная программа (py2app, PyInstaller) — не ставит. Свой релиз для проверки — GR…
+
+Функции: `installed`, `status`, `_ctx`, `_get`, `wheel_urls`, `_lock`, `install`, `ensure_background`
 
 ### `apps/grado2/sat_io.py` — 241 стр.
 
@@ -115,13 +127,19 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3476 стр.
+### `apps/grado2/server.py` — 3495 стр.
 
 ГРАДО 2: локальный сервер.
 
 Разделы по порядку: Пути, папка проектов, настройки запуска · Источники данных: ключ слоя → (вид, параметр, название) · Пределы области выгрузки, разбиение на части, подписи полей · ЕГКО: пустые строковые поля портал отдаёт одним пробелом " " — _v считает их пустыми · Яндекс: все атрибуты слоя как есть, ключевые — по-русски; площадь и длина на местности даё · поиск участка по кадастровому номеру (НСПД) · Пределы тела запроса, ход выгрузки, понятные ошибки порталов · Подложки: тайлы Esri · OSM (Overpass): выгрузка и кэш по областям · ФГИС ТП: документы территориального планирования (Минэкономразвития) · ТЭП-нормы, район по территории, пешеходный маршрут до станции · Проекты на диске: запись, версии, размер папки · HTTP: заголовки безопасности, вход по ключу, совместный режим · HTTP: Starlette (BSD) под uvicorn (BSD); тела запросов проверяет pydantic (MIT) · GET · POST · совместный режим (hub.py): маршруты /api/hub · вход через Telegram (tglogin.py): /api/hub/tg/start → oauth.telegram.org → /api/hub/tg/cal · вход на сайт без хаба: те же /api/hub/tg/start и callback (их адрес записан в BotFather),  · приём запроса · Запуск: версия кода, повторный запуск, сервер
 
-Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `nspd_zouit_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `orient_by_areas`, `_has_code`, `orient_all_by_areas`, `drop_guid_copies`, `lgr_has_linetype`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `_route_memo_put`, `rail_route`, `_fresh`, `_admin_doc`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `_versions_last`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project` и ещё 93
+Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `nspd_zouit_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `orient_by_areas`, `_has_code`, `orient_all_by_areas`, `drop_guid_copies`, `lgr_has_linetype`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `_route_memo_put`, `rail_route`, `_fresh`, `_admin_doc`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `_versions_last`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project` и ещё 94
+
+### `apps/grado2/symparts.py` — 117 стр.
+
+ГРАДО 2 · слои знака в печати (план 08.11.2026, шаг 2: «знак из слоёв, как в QGIS»): поверх основного знака объекта — стопка частей `parts` стиля слоя или класса (symbology.js cleanParts): линия по контуру, полоса внутрь вдоль границы, штриховка, значки вдоль линии (штрих, треугольник, кружок, крестик) со стороной — внутрь/наружу у полигона, справа/слева по ходу у линии. Размеры в пикселях экрана → мм листа (PX_MM), как остальной знак, поэтому лист повторяет карту. Координаты — мм листа, ось y вниз (как SVG печати и экран). Зовёт print_io.SketchMapFrame; проверяет tests/test_symparts.py.
+
+Функции: `_rgb`, `_area`, `_right_inside`, `_stations`, `_mark`, `_band`, `parts_ops`
 
 ### `apps/grado2/tglogin.py` — 202 стр.
 
