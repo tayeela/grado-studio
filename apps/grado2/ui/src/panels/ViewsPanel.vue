@@ -65,6 +65,19 @@
         <wa-button v-if="fv.frame" size="s" appearance="plain" title="Приблизить карту к рамке" @click="vframes.fit = fv.id">Показать</wa-button>
         <wa-button v-if="fv.frame" size="s" appearance="plain" variant="danger" title="Убрать рамку: листы с этим видом останутся на прежнем месте" @click="dropFrame(fv)">Убрать</wa-button>
       </div>
+      <div class="sect">Лист по территории</div>
+      <wa-checkbox size="s" :checked="!!fv.auto?.on" title="Выбрали территорию — рамка вида встаёт по ней, а в «Макете листа» сам собирается лист этого вида: карта, легенда, линейка, штамп" @change="e => auto(fv, { on: e.target.checked })">Собирать лист вида по территории</wa-checkbox>
+      <template v-if="fv.auto?.on">
+        <div class="frow">
+          <label>Лист<select :value="autoOf(fv).format + autoOf(fv).orient" @change="auto(fv, { format: $event.target.value.slice(0, 2), orient: $event.target.value.slice(2) })">
+            <template v-for="(t, f) in FORMAT_T" :key="f"><option :value="f + 'L'">{{ t }} альбомный</option><option :value="f + 'P'">{{ t }} книжный</option></template></select></label>
+          <label>Масштаб<select :value="autoOf(fv).mode === 'scale' ? String(autoOf(fv).scale) : 'fit'" @change="setMode(fv, $event.target.value)">
+            <option value="fit">Вписать территорию</option><option v-for="s in SCALES" :key="s" :value="String(s)">{{ fmtScale(s) }}</option></select></label>
+          <label>Поле, м<input type="number" min="0" step="10" :value="autoOf(fv).margin" @change="auto(fv, { margin: Math.max(0, +$event.target.value || 0) })"></label>
+        </div>
+        <p class="hint">{{ project.territory ? "Не влезает территория в заданный масштаб — берётся ближайший мельче, где влезает. Ручные правки листа остаются." : "Территория не выбрана: в «Слоях» назначьте слою роль «Граница территории» — листы соберутся сами." }}</p>
+        <div class="frow"><wa-button size="s" :disabled="!project.territory" title="Рамки видов по территории и недостающие листы — сейчас" @click="collect"><LayoutGrid :size="14" /> Собрать листы</wa-button></div>
+      </template>
     </template>
 
     <template v-if="cur">
@@ -81,7 +94,9 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { BookmarkPlus, Eye, Frame, RefreshCw, Scan, SquareDashedMousePointer, Trash2 } from "@lucide/vue";
+import { BookmarkPlus, Eye, Frame, LayoutGrid, RefreshCw, Scan, SquareDashedMousePointer, Trash2 } from "@lucide/vue";
+import { assemble, assembleNote, autoOf, setAuto } from "../autosheets.js";
+import { FORMAT_T, SCALES, fmtScale } from "../sheet/model.js";
 import { ASPECTS, frameLabel, ratioOf, withRatio, VIEW_MIME } from "../viewframes.js";
 import { ALB, NEW, captureView, frameFromExtent, newViewBySelection, vframes, viewOf } from "../viewframesmap.js";
 import { album } from "../albumhost.js";
@@ -121,7 +136,7 @@ function show(v) {
 function update(v) {
   setLabel(`Обновить вид «${v.name}»`);
   const i = project.views.indexOf(v);
-  project.views.splice(i, 1, { ...capture(v.name, !!v.extent), id: v.id, ...(v.frame ? { frame: v.frame } : {}) }); viewCur.value = v.id;   // рамка остаётся
+  project.views.splice(i, 1, { ...capture(v.name, !!v.extent), id: v.id, ...(v.frame ? { frame: v.frame } : {}), ...(v.auto ? { auto: v.auto } : {}) }); viewCur.value = v.id;   // рамка остаётся
   notice.value = `Вид «${v.name}» обновлён`;
 }
 const sheets = () => project.raw?.album?.sheets || [];
@@ -176,6 +191,10 @@ function byScreen(v) {
   v.frame = frameFromExtent(ext, aspectOf(v) === "own" ? "free" : aspectOf(v)); vframes.sel = v.id; vframes.draw = "";
 }
 function dropFrame(v) { delete v.frame; vframes.sel = v.id; }
+/* «Лист по территории» (autosheets.js): настройка вида и сборка сразу; итог — в строке состояния */
+function auto(v, patch) { setLabel(`Лист по территории: «${v.name}»`); const r = setAuto(v, patch); if (r) notice.value = assembleNote(r); }
+const setMode = (v, val) => auto(v, val === "fit" ? { mode: "fit" } : { mode: "scale", scale: +val });
+function collect() { notice.value = assembleNote(assemble({ force: true })); }
 /* на каких листах «Макета листа» стоит вид: «Лист 1, Лист 3» */
 const uses = id => (project.layouts || []).filter(s => (s.blocks || []).some(b => b.kind === "map" && b.view === id)).map(s => s.title || "без названия").join(", ");
 /* Легенда: видимые в виде слои сверху вниз (в порядке окна «Слои») с их знаком и до 12 классов. */

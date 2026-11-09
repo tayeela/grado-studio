@@ -226,3 +226,18 @@ export function ownView(viewId, sheetTitle) {
   project.views.push({ ...JSON.parse(JSON.stringify(v)), id, name });
   return id;
 }
+/* Готовность листа к выгрузке (план 08.11, шаг 4): карта вида без рамки, в рамке нет ни одного объекта, легенда «за видом»
+   пуста — замечание в строке листа (SheetEditor.vue, рядом с model.js problems), а не молча пустой лист */
+export function ready(sheet) {
+  const out = [], blocks = sheet?.blocks || [];
+  blocks.forEach(b => {
+    if (b.kind === "map" && b.view && !b.hidden) {
+      const v = viewOf(b.view);
+      if (!v) out.push({ id: b.id, text: "Карта: вида больше нет — выберите вид в свойствах" });
+      else if (!v.frame) out.push({ id: b.id, text: `Карта: у вида «${v.name}» нет рамки на карте` });
+      else if (b.center && b.scale > 0 && !mapLayers(b).length) out.push({ id: b.id, text: `Карта «${v.name}»: в рамке нет объектов — данные не загружены или слои вида скрыты` });
+    }
+    if (b.kind === "legend" && b.follow && !(b.items || []).length) out.push({ id: b.id, text: "Легенда пуста: в виде нет видимых слоёв с данными" });
+  });
+  return out;
+}
