@@ -60,9 +60,14 @@ export function mapLayers(b) {
   return out;
 }
 
-/* Объект для печати (print_io.py: fill, stroke, w, a, dash, hatch, hp — узор, hs — шаг, hc — цвет штриховки) по стилю
+/* Объект для печати (print_io.py: fill, stroke, w, a, dash, hatch, hp — узор, hs — шаг, hc — цвет штриховки, parts — слои знака) по стилю
    e (слой с полями класса) и знаку k — так же, как карта (symbology.js symbolStyle). */
 export function printFeature(g, geom, e, k) {
+  const f = printBase(g, geom, e, k);
+  if (e.parts?.length && geom !== "point") f.parts = e.parts;     // слои знака поверх — print_io → symparts.py, как partStyles на карте
+  return f;
+}
+function printBase(g, geom, e, k) {
   const dash = e.dash?.length ? e.dash : undefined;
   if (e.lgrLine && geom !== "point") {                    // знак ЛГР слоя: у полигона — контуром, знаки внутрь (print_io lsign)
     const z = lgrLinePrint(e.lgrLine), w = Math.max(1, e.width);

@@ -2738,6 +2738,20 @@ def post_ogd_label_angles(c):
     return _json(200, {"angles": [f["properties"].get("_angle") for f in feats]})
 
 
+def post_style_qml(c):
+    """Стиль QGIS (.qml) → стиль слоя ГРАДО (qml_style.py): {text, geom} → {style, report}."""
+    import qml_style
+    req = c.obj()
+    text, geom = req.get("text"), req.get("geom")
+    if not isinstance(text, str) or geom not in ("poly", "line", "point"):
+        return _json(400, {"error": "нужны текст файла .qml и вид слоя"})
+    try:
+        style, report = qml_style.convert(text, geom)
+    except ValueError as e:
+        return _json(400, {"error": str(e)})
+    return _json(200, {"style": style, "report": report})
+
+
 def post_ogd_styles(c):
     # оформление слоёв портала ГИС ОГД в проекте — как на карте портала (CartoCSS слоя, кэш 30 дней)
     import ogd_all
@@ -2855,6 +2869,7 @@ POST_ROUTES = {
     "/api/ogd_all/start": post_ogd_start,
     "/api/ogd_all/label_angles": post_ogd_label_angles,
     "/api/ogd_all/styles": post_ogd_styles,
+    "/api/style/qml": post_style_qml,
     "/api/ogd_all/scan": post_ogd_scan,
     "/api/ogd_all/cancel": post_ogd_cancel,
     "/api/export/dxf": post_export_dxf,
