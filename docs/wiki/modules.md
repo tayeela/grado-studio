@@ -127,7 +127,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3495 стр.
+### `apps/grado2/server.py` — 3498 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -135,11 +135,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `nspd_zouit_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `orient_by_areas`, `_has_code`, `orient_all_by_areas`, `drop_guid_copies`, `lgr_has_linetype`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `_route_memo_put`, `rail_route`, `_fresh`, `_admin_doc`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `_versions_last`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project` и ещё 94
 
-### `apps/grado2/symparts.py` — 117 стр.
+### `apps/grado2/symparts.py` — 149 стр.
 
-ГРАДО 2 · слои знака в печати (план 08.11.2026, шаг 2: «знак из слоёв, как в QGIS»): поверх основного знака объекта — стопка частей `parts` стиля слоя или класса (symbology.js cleanParts): линия по контуру, полоса внутрь вдоль границы, штриховка, значки вдоль линии (штрих, треугольник, кружок, крестик) со стороной — внутрь/наружу у полигона, справа/слева по ходу у линии. Размеры в пикселях экрана → мм листа (PX_MM), как остальной знак, поэтому лист повторяет карту. Координаты — мм листа, ось y вниз (как SVG печати и экран). Зовёт print_io.SketchMapFrame; проверяет tests/test_symparts.py.
+ГРАДО 2 · слои знака в печати (план 08.11.2026, шаг 2: «знак из слоёв, как в QGIS»): поверх основного знака объекта — стопка частей `parts` стиля слоя или класса (symbology.js cleanParts): линия по контуру, полоса внутрь вдоль границы, штриховка, значки вдоль линии (штрих, треугольник, кружок, крестик) со стороной — внутрь/наружу у полигона, справа/слева по ходу у линии. Размеры в пикселях экрана → мм листа (PX_MM), как остальной знак, поэтому лист повторяет карту. Координаты — мм листа, ось y вниз (как SVG печати и экран). Зовёт print_io.SketchMapFrame; проверяет tests/test_symparts.py. С мод…
 
-Функции: `_rgb`, `_area`, `_right_inside`, `_stations`, `_mark`, `_band`, `parts_ops`
+Функции: `_rgb`, `_area`, `_right_inside`, `_stations`, `_mark`, `_band`, `_rust`, `parts_ops`, `parts_ops_py`
 
 ### `apps/grado2/tglogin.py` — 202 стр.
 
@@ -704,6 +704,11 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 Разделы по порядку: источники данных (server.py SOURCES) · листы альбомов (albums.js выполняется в Node; sheets.js SEC1 — разбор текста) · маршруты сервера · модули: файл, строки, первый комментарий, функции · правила оформления (label-rules.md) · тесты · команда: очередь и последние циклы · журнал: последние записи · оглавление
 
 Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_sections`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
+
+### `tools/build_symbol_wasm.sh` — 11 стр.
+
+ГРАДО 2 · слои знака на Rust для экрана (план 08.11.2026, шаг 3): rust/crates/symbol → WebAssembly в apps/grado2/ui/src/wasm (grado_symbol.js + grado_symbol_bg.wasm, в git), их берёт ui/src/symbology.js; затем сборка интерфейса (cd apps/grado2/ui && npm run build). Нужны: rustup target add wasm32-unknown-unknown, cargo install wasm-bindgen-cli --version <как wasm-bindgen в rust/Cargo.lock>.
+
 
 ### `tools/gate.sh` — 57 стр.
 

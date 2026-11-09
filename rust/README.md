@@ -2,7 +2,7 @@
 
 Перевод ядра с Python на Rust (стратегия «удушающей змеи»: Rust подменяет Python по частям,
 Python-версия остаётся эталоном и запасным путём). Начат агентом zcode на Mac владельца
-(05–06.11.2026, вне git), перенесён в репозиторий 08.11.2026. Workspace из четырёх крейтов:
+(05–06.11.2026, вне git), перенесён в репозиторий 08.11.2026. Workspace из пяти крейтов:
 
 - **`crates/compute`** (`grado_compute_rs`) — порт `core/compute` (ТЭП-движок),
   сверен с Python-эталоном **бит-в-бит**;
@@ -10,9 +10,14 @@ Python-версия остаётся эталоном и запасным пут
   сверен с Python-эталоном **по допуску** (см. ниже — почему не бит-в-бит);
 - **`crates/plate`** (`grado_plate`) — пластина карты: список операций рендера печати (path, circle,
   clip, image, мм листа) → картинка заданного dpi на tiny-skia; тексты не растрируются (см. «Пластина карты»);
+- **`crates/symbol`** (`grado_symbol`) — слои знака (план 08.11.2026, шаг 3): части стиля `parts` (линия,
+  полоса внутрь, штриховка, значки вдоль со стороной) → операции рендера. Один код для печати (`grado_rs.parts_ops` →
+  `apps/grado2/symparts.py` → пластина/PDF) и экрана (WebAssembly `apps/grado2/ui/src/wasm`, собирает
+  `tools/build_symbol_wasm.sh`; `ui/src/symbology.js partStyles`). Сверка с Python-эталоном — `tests/test_symparts.py`
+  (те же операции; полоса — та же картинка), `ui/src/symbolwasm.test.js`;
 - **`crates/py`** (`grado_rs`) — модуль Python (PyO3, abi3 ≥ 3.10): ТЭП-движок на Rust
   с API `grado_compute.Engine`; включается `GRADO_COMPUTE=rust` (см. «Мост в Python»);
-  `render_plate(ops_json, w_mm, h_mm, dpi)` — пластина карты.
+  `render_plate(ops_json, w_mm, h_mm, dpi)` — пластина карты; `parts_ops(kind, shapes, parts, px_mm)` — слои знака (0.2.0).
 
 ## Мост в Python — статус (шаг 1 «змеи»)
 

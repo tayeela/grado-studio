@@ -6,6 +6,7 @@ import { Circle, Fill, Stroke, Style, Text } from "ol/style.js";
 import MultiLineString from "ol/geom/MultiLineString.js";
 import { fromLonLat } from "ol/proj.js";
 import "../../web/linetype.js";
+import initSymbol, { parts_ops as rsPartsOps } from "./wasm/grado_symbol.js";
 
 export const CAT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"], OTHER = "#9aa1a8";
 export const RAMPS = {
@@ -354,22 +355,52 @@ function drawMark(ctx, shape, x, y, ux, uy, side, s) {
   if (shape === "cross") { const h = s / 2; ctx.moveTo(x - h, y - h); ctx.lineTo(x + h, y + h); ctx.moveTo(x - h, y + h); ctx.lineTo(x + h, y - h); ctx.stroke(); return; }
   ctx.moveTo(x, y); ctx.lineTo(x + nx * s, y + ny * s); ctx.stroke();
 }
+/* Слои знака на Rust (rust/crates/symbol → WebAssembly, план 08.11.2026 шаг 3): тот же код, что строит их для печати
+   листа (grado_rs.parts_ops → пластина), — экран и PDF рисуют знак одинаково. Пока модуль не загрузился или в старом
+   браузере — прежнее рисование на canvas ниже (stations, drawMark). */
+let rsOps = null;
+export const symbolEngine = () => (rsOps ? "rust" : "js");
+if (typeof window !== "undefined" && typeof WebAssembly !== "undefined")
+  initSymbol().then(() => { rsOps = rsPartsOps; window.dispatchEvent(new Event("grado-symbol-ready")); }).catch(() => {});
+const cssRgb = c => `rgb(${c.map(v => Math.round(v * 255)).join(",")})`;
+/* операции рендера (path, clip, unclip) на canvas: координаты — пиксели устройства */
+function drawOps(ctx, ops) {
+  let depth = 0;
+  for (const o of ops) {
+    if (o.op === "clip") { ctx.save(); depth++; tracePath(ctx, o.rings, true); ctx.clip("evenodd"); continue; }
+    if (o.op === "unclip") { if (depth) { ctx.restore(); depth--; } continue; }
+    if (o.op !== "path") continue;
+    tracePath(ctx, o.rings, o.closed); ctx.globalAlpha = o.alpha ?? 1;      // экран — настоящая прозрачность части
+    if (o.fill) { ctx.fillStyle = cssRgb(o.fill); ctx.fill("evenodd"); }
+    if (o.stroke && o.width > 0) {
+      ctx.strokeStyle = cssRgb(o.stroke); ctx.lineWidth = o.width; ctx.setLineDash(o.dash || []);
+      ctx.lineJoin = "round"; ctx.lineCap = o.dash ? "butt" : "round"; ctx.stroke();
+    }
+  }
+  while (depth--) ctx.restore();
+}
+/* часть знака p на объекте через Rust: фигуры в пикселях устройства, размеры части × pixelRatio */
+function rustPart(ctx, p, lines, closed, coords, st) {
+  const shapes = closed ? (st.geometry.getType() === "Polygon" ? [coords] : coords) : lines;
+  let ops;
+  try { ops = JSON.parse(rsOps(closed ? "poly" : "line", JSON.stringify(shapes), JSON.stringify([p]), st.pixelRatio)); } catch { return false; }
+  ctx.save(); drawOps(ctx, ops); ctx.restore();
+  return true;
+}
 /* Стили OpenLayers частей знака для вида геометрии g (poly, pline, line); у линий полоса и штриховка не рисуются. */
 export function partStyles(parts, g) {
   const poly = g === "poly";
-  return (parts || []).filter(p => poly || p.k === "line" || p.k === "marks").map(p => {
-    if (p.k === "hatch") return new Style({ fill: new Fill({ color: hatch(p.c, p.hp, p.hs) }) });
-    if (p.k === "line" && !poly) return new Style({ stroke: new Stroke({ color: rgba(p.c, p.a ?? 1), width: p.w, lineDash: p.dash, lineCap: p.dash ? "butt" : "round", lineJoin: "round" }) });
-    return new Style({ renderer(coords, st) {
-      const ctx = st.context, pr = st.pixelRatio, closed = poly && /Polygon/.test(st.geometry.getType());
-      const lines = closed ? ringsOf(st, coords) : linesOf(coords);
-      ctx.save(); ctx.strokeStyle = ctx.fillStyle = rgba(p.c, p.a ?? 1); ctx.lineWidth = (p.w || 1) * pr; ctx.lineJoin = "round";
-      if (p.k === "band") { if (!closed) { ctx.restore(); return; } tracePath(ctx, lines, true); ctx.clip("evenodd"); ctx.lineWidth = 2 * p.b * pr; tracePath(ctx, lines, true); ctx.stroke(); }
-      else if (p.k === "line") { if (p.dash) ctx.setLineDash(p.dash.map(v => v * pr)); tracePath(ctx, lines, closed); ctx.stroke(); }
-      else for (const ln of lines) if (ln.length > 1) for (const [x, y, ux, uy] of stations(ln, p.step * pr, closed)) drawMark(ctx, p.shape, x, y, ux, uy, p.side, p.size * pr);
-      ctx.restore();
-    } });
-  });
+  return (parts || []).filter(p => poly || p.k === "line" || p.k === "marks").map(p => new Style({ renderer(coords, st) {
+    const ctx = st.context, pr = st.pixelRatio, closed = poly && /Polygon/.test(st.geometry.getType());
+    const lines = closed ? ringsOf(st, coords) : linesOf(coords);
+    if (rsOps && rustPart(ctx, p, lines, closed, coords, st)) return;
+    ctx.save(); ctx.strokeStyle = ctx.fillStyle = rgba(p.c, p.a ?? 1); ctx.lineWidth = (p.w || 1) * pr; ctx.lineJoin = "round";
+    if (p.k === "hatch") { if (closed) { tracePath(ctx, lines, true); ctx.fillStyle = hatch(p.c, p.hp, p.hs); ctx.fill("evenodd"); } }
+    else if (p.k === "band") { if (closed) { tracePath(ctx, lines, true); ctx.clip("evenodd"); ctx.lineWidth = 2 * p.b * pr; tracePath(ctx, lines, true); ctx.stroke(); } }
+    else if (p.k === "line") { if (p.dash) ctx.setLineDash(p.dash.map(v => v * pr)); ctx.lineCap = p.dash ? "butt" : "round"; tracePath(ctx, lines, closed); ctx.stroke(); }
+    else for (const ln of lines) if (ln.length > 1) for (const [x, y, ux, uy] of stations(ln, p.step * pr, closed)) drawMark(ctx, p.shape, x, y, ux, uy, p.side, p.size * pr);
+    ctx.restore();
+  } }));
 }
 
 /* Знаки для образца слоя (окно «Слои», шапка «Свойств»): единый — один, категории, диапазоны и правила — до трёх первых
