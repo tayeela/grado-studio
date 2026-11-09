@@ -20,6 +20,7 @@ HTTP — Starlette под uvicorn, тела запросов проверяет 
 """
 
 import contextlib
+import mimetypes
 import hashlib
 import hmac
 import ipaddress
@@ -1993,7 +1994,8 @@ def restore_project(trash_id):
 # connect-src data: — значки Web Awesome нового интерфейса (/next/) читаются fetch из data:-адресов внутри самого скрипта.
 # frame-ancestors 'self' — страницу встраивает в рамку только сам ГРАДО: движок альбома в новом интерфейсе (ui/src/albumhost.js);
 # чужой сайт её в рамку не возьмёт (защита от подмены щелчков остаётся).
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
+# 'wasm-unsafe-eval' — только сборка WebAssembly своего файла (слои знака на Rust, ui/src/wasm), не eval строк.
+CSP = ("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
        "font-src 'self' data:; connect-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'")
 
 # Ключ доступа (необязательный второй слой за паролем обратного прокси): задан GRADO2_TOKEN — без куки grado_token или
@@ -3310,6 +3312,7 @@ async def _lifespan(app):
     yield
 
 
+mimetypes.add_type("application/wasm", ".wasm")         # слои знака на Rust: без этого типа браузер не соберёт модуль потоком
 STATIC = StaticFiles(directory=str(WEB), html=True, check_dir=False)
 APP = Guard(Starlette(routes=[
     Route("/{path:path}", api_get, methods=["GET", "HEAD"]),

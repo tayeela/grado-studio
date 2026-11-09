@@ -18,9 +18,10 @@ def inside(x, y):
 
 
 class SymParts(unittest.TestCase):
+    """Эталон на Python (parts_ops_py) — по нему сверяется Rust (класс ниже)."""
     def test_band_is_inside_and_as_wide_as_asked(self):
         from shapely.geometry import Polygon
-        ops = symparts.parts_ops("poly", [SQ], [{"k": "band", "c": "#ff0000", "a": .5, "b": 10}])
+        ops = symparts.parts_ops_py("poly", [SQ], [{"k": "band", "c": "#ff0000", "a": .5, "b": 10}])
         self.assertEqual(len(ops), 1)
         band = Polygon(ops[0]["rings"][0], ops[0]["rings"][1:])
         b = 10 * symparts.PX_MM
@@ -31,7 +32,7 @@ class SymParts(unittest.TestCase):
     def test_marks_face_inside_or_outside_whatever_the_ring_direction(self):
         for ring in (SQ[0], list(reversed(SQ[0]))):
             for side, want in ((1, True), (-1, False)):
-                ops = symparts.parts_ops("poly", [[ring]], [{"k": "marks", "shape": "tick", "step": 40, "size": 10, "side": side}])
+                ops = symparts.parts_ops_py("poly", [[ring]], [{"k": "marks", "shape": "tick", "step": 40, "size": 10, "side": side}])
                 self.assertGreater(len(ops), 4)
                 for o in ops:
                     (x0, y0), (x1, y1) = o["rings"][0]
@@ -39,21 +40,22 @@ class SymParts(unittest.TestCase):
 
     def test_marks_step_along_a_line_and_right_side(self):
         step = 20 * symparts.PX_MM
-        ops = symparts.parts_ops("line", [[(0, 0), (100, 0)]], [{"k": "marks", "shape": "tick", "step": 20, "size": 5, "side": 1}])
+        ops = symparts.parts_ops_py("line", [[(0, 0), (100, 0)]], [{"k": "marks", "shape": "tick", "step": 20, "size": 5, "side": 1}])
         xs = [o["rings"][0][0][0] for o in ops]
         self.assertAlmostEqual(xs[0], step / 2, places=6)
         self.assertAlmostEqual(xs[1] - xs[0], step, places=6)
         self.assertTrue(all(o["rings"][0][1][1] > 0 for o in ops))   # y вниз: справа по ходу на восток — ниже линии
 
     def test_hatch_and_outline(self):
-        ops = symparts.parts_ops("poly", [SQ], [{"k": "hatch", "c": "#000000", "hp": "x0", "hs": 8, "w": 1}, {"k": "line", "c": "#0000ff", "w": 2, "dash": [6, 4]}])
+        ops = symparts.parts_ops_py("poly", [SQ], [{"k": "hatch", "c": "#000000", "hp": "x0", "hs": 8, "w": 1}, {"k": "line", "c": "#0000ff", "w": 2, "dash": [6, 4]}])
         self.assertGreaterEqual(len(ops), 3)                         # штриховка сеткой (2 направления) + линия
         last = ops[-1]
         self.assertEqual(last["stroke"], (0.0, 0.0, 1.0))
         self.assertEqual(last["dash"], [6 * symparts.PX_MM, 4 * symparts.PX_MM])
 
     def test_polygon_parts_skip_lines(self):
-        self.assertEqual(symparts.parts_ops("line", [[(0, 0), (10, 0)]], [{"k": "band", "b": 5}, {"k": "hatch"}]), [])
+        for f in (symparts.parts_ops, symparts.parts_ops_py):
+            self.assertEqual(f("line", [[(0, 0), (10, 0)]], [{"k": "band", "b": 5}, {"k": "hatch"}]), [])
 
     def test_print_map_draws_parts_on_top(self):
         import print_io
@@ -67,6 +69,58 @@ class SymParts(unittest.TestCase):
         _, ops = layout_io._map_ops(spec, S.REDLN, S.LGR_DASH, None)
         red = [o for o in ops if o.get("op") == "path" and o.get("fill") == print_io.hex_to_rgb("#e34948")]
         self.assertGreater(len(red), 4)
+
+
+RS = symparts._rust()
+HOLE = [[(0, 0), (40, 0), (40, 40), (0, 40)], [(15, 15), (15, 25), (25, 25), (25, 15)]]
+
+
+@unittest.skipUnless(RS, "нет модуля grado_rs 0.2+")
+class RustSameAsPython(unittest.TestCase):
+    """Слои знака на Rust (rust/crates/symbol) дают то же, что эталон: линия, штриховка, значки — те же операции;
+    полоса — та же картинка (на Rust она обрезанный контур, на Python — буфер shapely)."""
+
+    def same_ops(self, kind, shapes, parts):
+        a, b = symparts.parts_ops(kind, shapes, parts), symparts.parts_ops_py(kind, shapes, parts)
+        self.assertEqual(len(a), len(b), parts)
+        for x, y in zip(a, b):
+            self.assertEqual((x["closed"], x["width"] is not None), (y["closed"], y["width"] is not None))
+            self.assertAlmostEqual(x["width"], y["width"], places=9)
+            for k in ("fill", "stroke"):
+                self.assertEqual(x[k] is None, y[k] is None, k)
+                if x[k] is not None:
+                    for u, v in zip(x[k], y[k]):
+                        self.assertAlmostEqual(u, v, places=9)
+            self.assertEqual(len(x["rings"]), len(y["rings"]))
+            for r1, r2 in zip(x["rings"], y["rings"]):
+                self.assertEqual(len(r1), len(r2))
+                for p1, p2 in zip(r1, r2):
+                    self.assertAlmostEqual(p1[0], p2[0], places=6)
+                    self.assertAlmostEqual(p1[1], p2[1], places=6)
+
+    def test_lines_hatch_marks(self):
+        for shape in ("tick", "tri", "dot", "cross"):
+            for side in (1, -1):
+                self.same_ops("poly", [HOLE], [{"k": "marks", "c": "#e34948", "shape": shape, "step": 18, "size": 6, "side": side, "w": 1.5}])
+                self.same_ops("line", [[(0, 0), (30, 5), (60, -10)]], [{"k": "marks", "shape": shape, "step": 12, "size": 4, "side": side}])
+        for hp in ("0", "90", "45", "135", "x45", "x0"):
+            self.same_ops("poly", [HOLE], [{"k": "hatch", "c": "#000000", "hp": hp, "hs": 9, "w": 1}])
+        self.same_ops("poly", [HOLE], [{"k": "line", "c": "#0000ff", "w": 2, "dash": [6, 4], "a": .5}])
+        self.same_ops("line", [[(0, 0), (30, 5)]], [{"k": "line", "c": "#0000ff", "w": 2}])
+
+    def test_band_same_picture(self):
+        import json
+        import grado_rs
+        part = [{"k": "band", "c": "#ff0000", "a": 1, "b": 12}]
+
+        def ink(ops):
+            png, *_ = grado_rs.render_plate(json.dumps(ops), 40, 40, 200)
+            from PIL import Image
+            import io
+            im = Image.open(io.BytesIO(png)).convert("L")
+            return {i for i, v in enumerate(im.tobytes()) if v < 200}
+        a, b = ink(symparts.parts_ops("poly", [HOLE], part)), ink(symparts.parts_ops_py("poly", [HOLE], part))
+        self.assertGreater(len(a & b) / len(a | b), 0.95)
 
 
 if __name__ == "__main__":

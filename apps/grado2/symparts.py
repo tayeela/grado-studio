@@ -2,8 +2,12 @@
 — стопка частей `parts` стиля слоя или класса (symbology.js cleanParts): линия по контуру, полоса внутрь вдоль границы,
 штриховка, значки вдоль линии (штрих, треугольник, кружок, крестик) со стороной — внутрь/наружу у полигона,
 справа/слева по ходу у линии. Размеры в пикселях экрана → мм листа (PX_MM), как остальной знак, поэтому лист повторяет карту.
-Координаты — мм листа, ось y вниз (как SVG печати и экран). Зовёт print_io.SketchMapFrame; проверяет tests/test_symparts.py."""
+Координаты — мм листа, ось y вниз (как SVG печати и экран). Зовёт print_io.SketchMapFrame; проверяет tests/test_symparts.py.
+С модулем grado_rs части знака строит Rust (rust/crates/symbol, план 08.11 шаг 3) — тот же код рисует их на экране
+(WebAssembly); здесь — запасной путь без модуля и эталон сверки. GRADO_SYMBOL=py — всегда Python."""
+import json
 import math
+import os
 
 from grado_render import hex_to_rgb
 from grado_render.scene import hatch_ops
@@ -83,8 +87,36 @@ def _band(rings, b):
     return out
 
 
+def _rust():
+    """parts_ops модуля grado_rs (0.2+) или None."""
+    if os.environ.get("GRADO_SYMBOL", "").strip().lower() == "py":
+        return None
+    try:
+        import grado_rs
+    except ImportError:
+        return None
+    return getattr(grado_rs, "parts_ops", None)
+
+
 def parts_ops(kind, shapes, parts):
     """Операции печати частей знака. kind — "poly" (shapes — кольца каждого полигона) или "line" (shapes — ломаные)."""
+    rs = _rust() if parts else None
+    if rs:
+        try:
+            ops = json.loads(rs(kind, json.dumps(shapes), json.dumps(parts), PX_MM))
+            for o in ops:                       # цвета — кортежи; прозрачность части — смешением с белым листом, как прежде
+                a = o.pop("alpha", None)
+                for k in ("fill", "stroke"):
+                    if isinstance(o.get(k), list):
+                        o[k] = tuple(o[k]) if a is None else tuple(1 - a * (1 - x) for x in o[k])
+            return ops
+        except (ValueError, TypeError):         # кривые данные — тем же путём, что без модуля
+            pass
+    return parts_ops_py(kind, shapes, parts)
+
+
+def parts_ops_py(kind, shapes, parts):
+    """Эталон на Python (без модуля grado_rs)."""
     out = []
     for p in parts or []:
         k, c, w = p.get("k"), p.get("c"), max(0.05, float(p.get("w") or 1) * PX_MM)

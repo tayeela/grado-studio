@@ -1,6 +1,6 @@
 [package]
 name = "grado_rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Мост Python ↔ Rust (PyO3): модуль grado_rs для grado_compute — ТЭП-движок на Rust с тем же API, что Python-версия"
 publish = false
@@ -12,5 +12,6 @@ crate-type = ["cdylib"]
 [dependencies]
 grado_compute_rs = { path = "../compute" }
 grado_plate = { path = "../plate" }
+grado_symbol = { path = "../symbol" }
 num-bigint = "0.4"
 pyo3 = { version = "0.30", features = ["extension-module", "abi3-py310", "num-bigint"] }

@@ -32,7 +32,7 @@ class NextUi(unittest.TestCase):
         # значки Web Awesome читаются fetch из data:-адресов
         connect = next(p for p in S.CSP.split(";") if p.strip().startswith("connect-src"))
         self.assertIn("data:", connect)
-        self.assertNotIn("unsafe-eval", S.CSP)
+        self.assertNotIn("'unsafe-eval'", S.CSP)                 # 'wasm-unsafe-eval' — только сборка WebAssembly
 
     def test_saves_like_working_page(self):
         # новый интерфейс пишет проект теми же адресами, что рабочая страница: под именем и автосохранение
