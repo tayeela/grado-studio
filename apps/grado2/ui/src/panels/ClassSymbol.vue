@@ -1,6 +1,6 @@
 <!-- ГРАДО 2 · знак одного класса в окне «Свойства» (PropsPanel.vue): категория или правило получает полный знак, а не только
      цвет заливки (Марат 08.11.2026): прозрачность заливки, штриховка (узор, шаг, свой цвет — тогда заливка под ней остаётся),
-     цвет, толщина и тип контура, подпись (поле, кегль, цвет). Пустое поле — «как у слоя». Поля пишутся в объект o:
+     цвет, толщина и тип контура, подпись (поле, кегль, цвет), свои слои знака (SymbolParts.vue). Пустое поле — «как у слоя». Поля пишутся в объект o:
      у категории — st.cat.sym[значение], у правила — само правило (symbology.js SYM_KEYS, cleanSym, classStyle). -->
 <template>
   <div class="csym">
@@ -71,12 +71,17 @@
         <span class="u">пт</span>
       </div>
     </div>
+    <template v-if="geom !== 'point'">
+      <div class="f"><span>Слои знака</span><span class="u">{{ o.parts ? "свои у класса" : "как у слоя" }}</span></div>
+      <SymbolParts :o="o" :geom="geom" />
+    </template>
     <wa-button v-if="own" size="s" appearance="plain" class="reset" title="Убрать свой знак класса: всё, кроме заливки, — как у слоя" @click="reset">Как у слоя</wa-button>
   </div>
 </template>
 
 <script setup>
 import { computed } from "vue";
+import SymbolParts from "./SymbolParts.vue";
 import { DASHES, HATCHES, SYM_KEYS, classStyle, edgeColor, hasOwnSym, okn } from "../symbology.js";
 
 const props = defineProps({ st: Object, o: Object, fill: String, geom: String, fields: Array, rule: Boolean });

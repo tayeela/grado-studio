@@ -23,6 +23,7 @@ from grado_render import PdfBackend, hex_to_rgb, render_svg
 from grado_render.scene import hatch_ops
 
 import fonts
+import symparts                                                 # слои знака в печати (план 08.11, шаг 2)
 import gravlog                                                  # журнал сервера: сбои самопроверки оформления — в него, не в stderr печатями
 
 fonts.install()                                     # любой шрифт в печати: семейство «f:<id>» (fonts.py)
@@ -949,6 +950,8 @@ class SketchMapFrame(Frame):
                                         "width": w, "dash": dash})
                         if f.get("lt") or f.get("miss"):                # контур зоны знаком ЛГР слоя: знаки внутрь (lsign > 0)
                             out.extend(self._lgr_contour(poly, tr, rect, f, w))
+                        if f.get("parts"):                              # слои знака поверх (symparts.py, план 08.11 шаг 2)
+                            out.extend(symparts.parts_ops("poly", [rings], f["parts"]))
                         if f.get("label"):
                             c = _ring_centroid(rings[0])
                             if best is None or c[2] > best[2]:
@@ -988,6 +991,8 @@ class SketchMapFrame(Frame):
                                            if rect[0] + hw <= t["x"] <= rect[0] + rect[2] - hw and rect[1] + hw <= t["y"] <= rect[1] + rect[3] - hw)
                         else:
                             out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": w, "dash": dash, "rings": [pts]})
+                        if f.get("parts") and not f.get("nl"):
+                            out.extend(symparts.parts_ops("line", [pts], f["parts"]))
                         if f.get("label"):
                             # подпись вдоль линии (улица): на самом длинном прямом участке без перекрёстков внутри —
                             # подпись на нём не пересекает поперечные улицы; одно название — один раз
