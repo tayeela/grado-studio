@@ -612,10 +612,42 @@ LT_MM = 0.35                                  # мм листа на метр ш
 LT_SHAPE_MM = 0.6                             # масштаб самих знаков ЛГР (засечки, треугольники): крупнее шага (владелец 06.10.2026)
 
 
+_RS_LIBS = {}                                   # id(lib) → (lib, grado_rs.LineLib): библиотека разбирается в Rust один раз
+
+
+def _rs_linelib(lib):
+    """grado_rs.LineLib (0.3+) для библиотеки lib или None (нет модуля, GRADO_SYMBOL=py)."""
+    if os.environ.get("GRADO_SYMBOL", "").strip().lower() == "py":
+        return None
+    hit = _RS_LIBS.get(id(lib))
+    if hit and hit[0] is lib:
+        return hit[1]
+    try:
+        import grado_rs
+        rs = grado_rs.LineLib(json.dumps({"linetypes": lib.get("linetypes", {}), "shapes": lib.get("shapes", {})}))
+    except (ImportError, AttributeError, ValueError, TypeError):
+        rs = None
+    _RS_LIBS.clear()
+    _RS_LIBS[id(lib)] = (lib, rs)
+    return rs
+
+
 def linetype_ops(pts, name, k, color, width, lib, shape_k=None):
     """Сложный тип линии AutoCAD (REDLN97) вдоль ломаной в мм листа; k — мм на метр чертежа.
     shape_k — свой масштаб знаков (легенда: шаг сжат под ширину знака, а сами знаки — как на карте).
-    Короче двух длин шаблона — сплошная линия (правило AutoCAD, как на экране)."""
+    Короче двух длин шаблона — сплошная линия (правило AutoCAD, как на экране).
+    С модулем grado_rs строит Rust (rust/crates/symbol linetype.rs, план 08.11 шаг 3) — тот же код рисует ЛГР на экране."""
+    rs = _rs_linelib(lib)
+    if rs is not None:
+        try:
+            return rs.ops([(p[0], p[1]) for p in pts], name, k, color, width, shape_k)
+        except (ValueError, TypeError, IndexError):
+            pass
+    return linetype_ops_py(pts, name, k, color, width, lib, shape_k)
+
+
+def linetype_ops_py(pts, name, k, color, width, lib, shape_k=None):
+    """Python-эталон linetype_ops (запасной путь без модуля grado_rs, сверка — tests/test_symparts.py)."""
     lt = lib["linetypes"].get(name)
     shapes = {n.upper(): s for n, s in lib["shapes"].items()}
     seg, cum = [], [0.0]
@@ -657,6 +689,10 @@ def linetype_ops(pts, name, k, color, width, lib, shape_k=None):
                     i0 = pos[0]
                     end = at(t1)[:2]
                     rings.append([start] + [tuple(pts[i]) for i in range(i0 + 1, pos[0] + 1) if t < cum[i] < t1] + [end])
+                elif d == 0:                                       # точка шаблона: квадратик толщиной линии
+                    px, py, ux, uy = at(t)
+                    h = width / 2
+                    rings.append([(px - ux * h, py - uy * h), (px + ux * h, py + uy * h)])
                 t += abs(d)
             elif e.get("shape"):
                 s = shapes.get(e["shape"].upper())

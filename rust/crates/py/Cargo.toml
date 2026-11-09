@@ -1,6 +1,6 @@
 [package]
 name = "grado_rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Мост Python ↔ Rust (PyO3): модуль grado_rs для grado_compute — ТЭП-движок на Rust с тем же API, что Python-версия"
 publish = false

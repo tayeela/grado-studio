@@ -17,7 +17,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-WANT = "0.2.0"                                  # = version в rust/crates/py/Cargo.toml (сверяет тест)
+WANT = "0.3.0"                                  # = version в rust/crates/py/Cargo.toml (сверяет тест)
 REPO = "tayeela/grado-studio"
 TAG = f"grado-rs-v{WANT}"
 API = f"https://api.github.com/repos/{REPO}/releases/tags/{TAG}"
