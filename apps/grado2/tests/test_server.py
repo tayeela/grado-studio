@@ -1184,7 +1184,7 @@ class HubHttp(unittest.TestCase):
         return r.getheader("Set-Cookie").split(";")[0]
 
     def test_search_routes_need_session(self):
-        for path in ("/api/search?q=x", "/api/search/address?q=x", "/api/search/cadastral?q=50:27:0000000:126"):
+        for path in ("/api/search?q=x", "/api/search/address?q=x", "/api/search/cadastral?q=50:27:0000000:126", "/api/search/parcel_at?lon=37.6&lat=55.7"):
             with mock.patch.object(S.nspd_mod, "search_cadastral") as m, mock.patch.object(S.geocode_mod, "geocode") as g:
                 self.assertEqual(self.call(path)[0], 401, path)
                 self.assertFalse(m.called or g.called)               # до порталов без входа не доходит
@@ -2109,6 +2109,44 @@ class NonHubUnchanged(unittest.TestCase):
         self.assertTrue(S.hub_enabled(["8672", "--hub"], {}))
         self.assertTrue(S.hub_enabled(["--hub"], {}))
         self.assertTrue(S.hub_enabled([], {"GRADO2_HUB": "1"}))
+
+
+class ParcelAt(unittest.TestCase):
+    """Участок под точкой адреса (план 08.11 шаг 4): один запрос к НСПД по квадрату, участок с точкой; точка на улице —
+    ближайший; пусто — 404; сбой портала — 502. Коннектор подменён, портал не трогаем."""
+
+    @staticmethod
+    def sq(x0, y0, d, key):
+        return {"type": "Feature", "grado_key": key, "properties": {"Кадастровый номер": key},
+                "geometry": {"type": "Polygon", "coordinates": [[[x0, y0], [x0 + d, y0], [x0 + d, y0 + d], [x0, y0 + d], [x0, y0]]]}}
+
+    def nspd(self, feats=None, err=None):
+        calls = []
+
+        class Fake:
+            def fetch(self, bbox, cats):
+                calls.append((bbox, cats))
+                if err:
+                    raise S.ConnectorError(err)
+                return {"features": feats or []}
+        return Fake(), calls
+
+    def test_inside_nearest_none_down(self):
+        a, b = self.sq(37.60, 55.70, 0.001, "77:01:1:1"), self.sq(37.602, 55.70, 0.001, "77:01:1:2")
+        fake, calls = self.nspd([a, b])
+        code, o = S.parcel_at("37.6005", "55.7005", nspd=fake)
+        self.assertEqual(code, 200)
+        self.assertEqual([f["geometry"]["coordinates"][0][0] for f in o["features"]], [[37.60, 55.70]])
+        self.assertEqual(calls[0][1], [36368])
+        w, s_, e, n = calls[0][0]
+        self.assertLess(e - w, 0.0002)                       # маленький квадрат вокруг точки, не квартал
+        code, o = S.parcel_at(37.6015, 55.7005, nspd=self.nspd([a, b])[0])   # между участками — ближайший
+        self.assertEqual(code, 200)
+        self.assertEqual(len(o["features"]), 1)
+        self.assertEqual(S.parcel_at(37.6, 55.7, nspd=self.nspd([])[0])[0], 404)
+        code, o = S.parcel_at(37.6, 55.7, nspd=self.nspd(err="НСПД ответил HTTP 500")[0])
+        self.assertEqual(code, 502)
+        self.assertEqual(S.parcel_at("x", "", nspd=fake)[0], 400)
 
 
 class SearchCadastral(unittest.TestCase):

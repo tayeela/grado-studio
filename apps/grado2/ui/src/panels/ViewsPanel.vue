@@ -75,7 +75,12 @@
             <option value="fit">Вписать территорию</option><option v-for="s in SCALES" :key="s" :value="String(s)">{{ fmtScale(s) }}</option></select></label>
           <label>Поле, м<input type="number" min="0" step="10" :value="autoOf(fv).margin" @change="auto(fv, { margin: Math.max(0, +$event.target.value || 0) })"></label>
         </div>
-        <p class="hint">{{ project.territory ? "Не влезает территория в заданный масштаб — берётся ближайший мельче, где влезает. Ручные правки листа остаются." : "Территория не выбрана: в «Слоях» назначьте слою роль «Граница территории» — листы соберутся сами." }}</p>
+        <div v-if="autoOf(fv).mode === 'scale'" class="frow">
+          <label title="Территория не влезает на один лист в этом масштабе">Не влезает<select :value="autoOf(fv).split" @change="auto(fv, { split: $event.target.value })">
+            <option value="round">мельче масштаб, один лист</option><option value="grid">несколько листов сеткой</option></select></label>
+          <label v-if="autoOf(fv).split === 'grid'" title="Насколько соседние листы заходят друг на друга, % стороны">Перекрытие, %<input type="number" min="0" max="50" step="5" :value="autoOf(fv).overlap" @change="auto(fv, { overlap: Math.min(50, Math.max(0, +$event.target.value || 0)) })"></label>
+        </div>
+        <p class="hint">{{ project.territory ? (autoOf(fv).mode === "scale" && autoOf(fv).split === "grid" ? "Не влезает территория в заданный масштаб — листы сеткой, как атлас: «лист 1 из N», пустые клетки без территории пропускаются. Ручные правки листа остаются." : "Не влезает территория в заданный масштаб — берётся ближайший мельче, где влезает. Ручные правки листа остаются.") : "Территория не выбрана: в «Слоях» назначьте слою роль «Граница территории» — листы соберутся сами." }}</p>
         <div class="frow"><wa-button size="s" :disabled="!project.territory" title="Рамки видов по территории и недостающие листы — сейчас" @click="collect"><LayoutGrid :size="14" /> Собрать листы</wa-button></div>
       </template>
     </template>

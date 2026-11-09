@@ -28,7 +28,7 @@
 | `test_insol.py` | Insolation | 1 |
 | `test_label_qa.py` | LabelQA | 7 |
 | `test_labelfmt_js.py` | LabelFmtJs | 1 |
-| `test_layout_io.py` | LayoutPrint, LayoutsInProject | 14 |
+| `test_layout_io.py` | LayoutPrint, LabelClash, LayoutsInProject | 16 |
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_map_plate.py` | MapPlate, AlbumPlate | 9 |
 | `test_migrate_js.py` | MigrateJs | 1 |
@@ -45,7 +45,7 @@
 | `test_rowsgeom_js.py` | RowsGeomJs | 1 |
 | `test_rs_wheel.py` | RsWheel | 7 |
 | `test_sat.py` | FakeTiles, SatExport | 8 |
-| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, PublicAuthCheck, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, OgdFileResponse, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 173 |
+| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, PublicAuthCheck, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, OgdFileResponse, HubHttp, DxfUidNotExported, NonHubUnchanged, ParcelAt, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 174 |
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |
 | `test_sheetmodel_js.py` | SheetModelJs | 1 |
 | `test_snap_js.py` | SnapJs | 1 |
