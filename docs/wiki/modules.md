@@ -109,13 +109,19 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `flatten`, `icon_id`, `icon_width`, `icon_ops`
 
+### `apps/grado2/rs_wheel.py` — 132 стр.
+
+ГРАДО 2 · модуль Rust (grado_rs) ставится сам: при запуске сервера, если модуля нет или он не той версии, колесо нужной версии скачивается из релиза GitHub `grado-rs-v<WANT>` (его собирает CI `rust.yml`: macOS arm64 и x86_64, Windows, Linux сайта) и ставится pip в то же окружение, фоном — запуск не ждёт; не вышло — ещё раз через 30 минут. Нет сети, нет релиза, pip не смог — одна строка в журнал, программа работает на Python, как раньше (план 08.11.2026, шаг 1). Зовёт server.main(); GRADO_RS_AUTO=0 — не ставить; собранная программа (py2app, PyInstaller) — не ставит. Свой релиз для проверки — GR…
+
+Функции: `installed`, `status`, `_ctx`, `_get`, `wheel_urls`, `_lock`, `install`, `ensure_background`
+
 ### `apps/grado2/sat_io.py` — 241 стр.
 
 Спутник Яндекса для AutoCAD: снимок рамки листа, пересчитанный в МСК (как в QGIS владельца).
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3476 стр.
+### `apps/grado2/server.py` — 3480 стр.
 
 ГРАДО 2: локальный сервер.
 
