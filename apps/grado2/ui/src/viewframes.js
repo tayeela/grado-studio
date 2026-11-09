@@ -87,7 +87,7 @@ export function frameLabel(name, f) {
 /* ---------- лист сам по территории (план 08.11.2026, шаг 4) ----------
    Вид с настройкой auto = { on, mode: "fit" | "scale", scale, margin (м), format, orient }: выбрали территорию — рамка
    вида встаёт по ней, лист вида собирается сам (autosheets.js). Здесь — только расчёт в метрах МСК. */
-export const AUTO_DEF = { on: true, mode: "fit", scale: 2000, margin: 50, format: "A3", orient: "L" };
+export const AUTO_DEF = { on: true, mode: "fit", scale: 2000, margin: 50, format: "A3", orient: "L", split: "round", overlap: 10 };
 /* охват территории в метрах МСК: geom — GeoJSON (WGS84), toM — [долгота, широта] → [x, y] МСК → [x0, y0, x1, y1] или null */
 export function boxM(geom, toM) {
   const b = [Infinity, Infinity, -Infinity, -Infinity];
@@ -110,4 +110,56 @@ export function terrFrame(box, b, auto = AUTO_DEF) {
   const r2 = v => Math.round(v * 100) / 100, mm = v => String(Math.round(v * 10) / 10).replace(".", ",");
   return { c: [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2], w: r2(b.w * scale / 1000), h: r2(b.h * scale / 1000), scale,
     fitted: !!fixed && scale !== fixed, aspect: `${mm(b.w)}:${mm(b.h)}` };
+}
+
+/* ---------- атлас: территория не влезает в заданный масштаб — несколько листов сеткой (как атлас QGIS) ----------
+   split: "grid" у вида с заданным масштабом: охват с полем делится на ячейки размером «блок × масштаб» с перекрытием
+   overlap % стороны ячейки; сетка по середине охвата; ячейки, которых территория не касается, выпадают (Г-образный
+   участок не даёт пустых листов). rings — кольца и линии территории в метрах МСК (для отбора ячеек).
+   → { scale, cells: [{ c: [x, y], i, j }], w, h — охват всей сетки (рамка вида на карте) } или null (влезает на один лист) */
+export function terrGrid(box, b, auto = AUTO_DEF, rings = null) {
+  if (!box || !(b?.w > 0 && b?.h > 0) || auto.mode !== "scale" || auto.split !== "grid" || !(auto.scale > 0)) return null;
+  const m = Math.max(0, +auto.margin || 0), ew = box[2] - box[0] + 2 * m, eh = box[3] - box[1] + 2 * m;
+  const scale = +auto.scale, cw = b.w * scale / 1000, ch = b.h * scale / 1000;
+  if (ew <= cw * 1.0001 && eh <= ch * 1.0001) return null;
+  const ov = Math.min(50, Math.max(0, +(auto.overlap ?? 10))) / 100, sx = cw * (1 - ov), sy = ch * (1 - ov);
+  const nx = Math.max(1, Math.ceil((ew - cw) / sx - 1e-9) + 1), ny = Math.max(1, Math.ceil((eh - ch) / sy - 1e-9) + 1);
+  const gw = cw + (nx - 1) * sx, gh = ch + (ny - 1) * sy, cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
+  const cells = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {         // как читают лист: строки сверху вниз, слева направо
+    const c = [cx - gw / 2 + cw / 2 + i * sx, cy + gh / 2 - ch / 2 - j * sy];
+    const r = [c[0] - cw / 2 + m, c[1] - ch / 2 + m, c[0] + cw / 2 - m, c[1] + ch / 2 - m];   // поле ячейки — не повод для листа
+    if (!rings || rings.some(rg => touches(r, rg))) cells.push({ c, i, j });
+  }
+  const r2 = v => Math.round(v * 100) / 100;
+  return cells.length ? { scale, cells, w: r2(gw), h: r2(gh), nx, ny } : null;
+}
+/* кольцо или линия pts (м) касается прямоугольника r [x0, y0, x1, y1]: вершина внутри, отрезок пересекает, или
+   прямоугольник целиком внутри кольца */
+export function touches(r, pts) {
+  const inR = p => p[0] >= r[0] && p[0] <= r[2] && p[1] >= r[1] && p[1] <= r[3];
+  if (pts.some(inR)) return true;
+  for (let k = 1; k < pts.length; k++) if (segRect(pts[k - 1], pts[k], r)) return true;
+  const x = (r[0] + r[2]) / 2, y = (r[1] + r[3]) / 2; let inside = false;
+  for (let a = 0, z = pts.length - 1; a < pts.length; z = a++) {
+    const [xa, ya] = pts[a], [xz, yz] = pts[z];
+    if ((ya > y) !== (yz > y) && x < (xz - xa) * (y - ya) / (yz - ya) + xa) inside = !inside;
+  }
+  return inside;
+}
+function segRect(p, q, r) {                                   // Лян — Барски: отрезок pq заходит в прямоугольник
+  let t0 = 0, t1 = 1; const dx = q[0] - p[0], dy = q[1] - p[1];
+  for (const [pp, qq] of [[-dx, p[0] - r[0]], [dx, r[2] - p[0]], [-dy, p[1] - r[1]], [dy, r[3] - p[1]]]) {
+    if (pp === 0) { if (qq < 0) return false; continue; }
+    const t = qq / pp;
+    if (pp < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
+/* все кольца и линии GeoJSON-геометрии в метрах (toM — [долгота, широта] → [x, y]) */
+export function ringsM(geom, toM) {
+  const out = [], walk = c => { if (typeof c[0][0] === "number") out.push(c.map(toM)); else c.forEach(walk); };
+  const one = g => { if (!g?.coordinates) return; if (g.type === "Point") out.push([toM(g.coordinates)]); else if (g.type === "MultiPoint") out.push(g.coordinates.map(toM)); else walk(g.coordinates); };
+  if (geom?.type === "GeometryCollection") geom.geometries.forEach(one); else one(geom);
+  return out;
 }

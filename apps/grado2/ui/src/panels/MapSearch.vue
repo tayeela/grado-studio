@@ -1,7 +1,7 @@
 <!-- ГРАДО 2 · поиск над картой нового интерфейса — перенос поиска рабочей страницы (web/app.js «поиск над картой»): адрес
      (OpenStreetMap), кадастровый номер (НСПД) или № КРТ (ГИС ОГД), сервер — /api/search. Адрес — метка и кадр;
      участки — «Показать на карте» (в слой «Земельные участки (ЕГРН)» без повторов) и «Сделать границей территории»;
-     КРТ — контур, граница и номер в шапку альбома. Чужую границу молча не заменяем: первый щелчок — вопрос на месте,
+     КРТ — контур, граница и номер в шапку альбома; адрес — «Участок под адресом — границей территории» (/api/search/parcel_at). Чужую границу молча не заменяем: первый щелчок — вопрос на месте,
      второй за 5 с — замена. Запрос уходит по Enter или кнопке; правка запроса сбрасывает список; Ctrl+F — в поле поиска. -->
 <template>
   <div ref="box" class="msearch" role="search">
@@ -21,6 +21,9 @@
         </div>
         <div v-if="R.missing?.length" class="srm bad">Не найдено: {{ R.missing.join(", ") }}</div>
         <div v-for="n in notes" :key="n" class="srm">{{ n }}</div>
+        <div v-if="R.type === 'address' && picked >= 0" class="sra">
+          <wa-button size="s" :loading="pend" title="Участок ЕГРН под найденным адресом (НСПД) — граница территории; виды с «Листом по территории» соберут листы сами" @click="addrTerr">{{ ask ? "Заменить вашу границу участком?" : "Участок под адресом — границей территории" }}</wa-button>
+        </div>
         <div v-if="R.type !== 'address' && R.list.length" class="sra">
           <wa-button size="s" @click="show">Показать на карте</wa-button>
           <wa-button size="s" @click="terr">{{ ask ? (R.type === "krt" ? "Заменить вашу границу контуром КРТ?" : "Заменить вашу границу участками?") : "Сделать границей территории" }}</wa-button>
@@ -64,7 +67,7 @@ const srchErr = e => { const m = String(e?.message || e);
   return /[а-яё]/i.test(m) ? m
     : /Failed to fetch|NetworkError|Load failed/i.test(m) ? "Нет связи с программой ГРАДО — повторите" : "Поиск не удался — повторите позже"; };
 
-const q = ref(""), R = ref(null), act = ref(-1), pend = ref(false), msg = ref(""), msgBad = ref(false), ask = ref(false);
+const q = ref(""), R = ref(null), act = ref(-1), pend = ref(false), msg = ref(""), msgBad = ref(false), ask = ref(false), picked = ref(-1);
 const inp = ref(null), box = ref(null);
 const notes = computed(() => (R.value?.notes || []).filter(n => !/^Ничего не найдено/.test(n)));
 let tok = 0, ctl = null, tAsk = null;
@@ -81,14 +84,14 @@ const fitExt = ext => view().fit(ext, { padding: [60, 60, 60, 60], maxZoom: 18, 
 const toOl = f => gjFormat.readFeature(f);
 const extOf = list => { const ex = createEmpty(); list.forEach(f => extend(ex, toOl(f).getGeometry().getExtent())); return ex; };
 
-const say = (t, bad = false) => { msg.value = t; msgBad.value = bad; R.value = null; act.value = -1; };
+const say = (t, bad = false) => { msg.value = t; msgBad.value = bad; R.value = null; act.value = -1; picked.value = -1; };
 const untAsk = () => { clearTimeout(tAsk); tAsk = null; ask.value = false; };
 function close() {
   tok++; ctl?.abort(); ctl = null; untAsk();
   msg.value = ""; R.value = null; act.value = -1; mk.clear(); pend.value = false;
 }
 function pick(i) {
-  const x = R.value?.list[i]; if (!x) return; mk.clear();
+  const x = R.value?.list[i]; if (!x) return; mk.clear(); picked.value = i; untAsk();
   if (R.value.type === "address") {
     const [w, s, e, n] = x.bbox || [x.lon, x.lat, x.lon, x.lat], c = fromLonLat([x.lon, x.lat]);
     mk.addFeature(new Feature(new Point(c)));
@@ -114,17 +117,17 @@ async function run() {
       R.value = v;
     } else {
       const list = r.results || []; if (!list.length) return say("Ничего не нашлось в Москве и области");
-      R.value = { type: "address", list, notes: r.notes || [] };
+      R.value = { type: "address", list, notes: r.notes || [] }; picked.value = -1;
     }
     act.value = -1;
   } catch (e) { if (my === tok && e.name !== "AbortError") say(srchErr(e), true); }
   finally { if (my === tok) { ctl = null; pend.value = false; } }
 }
 /* граница по найденным участкам — объединение участков, как «По участкам» окна «Данные» */
-function parcelsToTerritory(feats) {
+function parcelsToTerritory(feats, what = "") {
   const polys = feats.filter(f => /Polygon/.test(f.geometry?.type)); if (!polys.length) { notice.value = "У найденных участков нет контура — граница не изменена"; return false; }
   const u = unionAll(polys); if (!u) { notice.value = "Участки не объединились — граница не изменена"; return false; }
-  addParcels(polys); setTerritory(u); notice.value = `Граница по участкам: ${plural(polys.length, ["участок", "участка", "участков"])}, ${fmt(terrArea() / 1e4, 2)} га`; return true;
+  addParcels(polys); setTerritory(u); notice.value = what ? `Граница — ${what}: ${fmt(terrArea() / 1e4, 2)} га` : `Граница по участкам: ${plural(polys.length, ["участок", "участка", "участков"])}, ${fmt(terrArea() / 1e4, 2)} га`; return true;
 }
 function terr() {
   const r = R.value; if (!r) return; mk.clear();
@@ -139,6 +142,20 @@ function terr() {
     notice.value = `Граница — контур ${(r.cards[0] || "КРТ").split(" · ")[0]}: ${fmt(terrArea() / 1e4, 2)} га`; close(); return;
   }
   if (parcelsToTerritory(r.list)) close();
+}
+/* адрес → граница территории (план 08.11 шаг 4): участок ЕГРН под точкой адреса (сервер /api/search/parcel_at, НСПД);
+   чужую границу — вторым щелчком, как у участков по номеру */
+async function addrTerr() {
+  const x = R.value?.type === "address" && R.value.list[picked.value]; if (!x || pend.value) return;
+  if (project.territory && !ask.value) { ask.value = true; tAsk = setTimeout(untAsk, 5000); return; }
+  untAsk(); pend.value = true; const my = ++tok;
+  try {
+    const res = await fetch(`/api/search/parcel_at?lon=${x.lon}&lat=${x.lat}`), r = await res.json().catch(() => ({}));
+    if (my !== tok) return;
+    if (!res.ok) { say(r.error || "Участок под адресом не найден", true); return; }
+    if (parcelsToTerritory(r.features || [], `участок под адресом «${addrOf(x)[0]}»`)) close();
+  } catch (e) { if (my === tok) say(srchErr(e), true); }
+  finally { if (my === tok) pend.value = false; }
 }
 function show() {
   const r = R.value; if (!r) return; mk.clear(); untAsk();

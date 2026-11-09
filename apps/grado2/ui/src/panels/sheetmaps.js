@@ -8,7 +8,7 @@
    под масштаб, заданный числом, ownView() делает копию вида для одного листа; легенда с follow
    берёт строки из вида своей карты). */
 import { project, shown, scale, viewNow } from "../store.js";
-import { breaks, classStyle, edgeColor, fullStyle, legendItems as classesOf, lgrLinePrint, lgrPrintParts, swatchColor, symbolOf } from "../symbology.js";
+import { breaks, classStyle, edgeColor, floorsDenOf, fullStyle, legendItems as classesOf, lgrLinePrint, lgrPrintParts, swatchColor, symbolOf } from "../symbology.js";
 import { blockBounds } from "../sheet/model.js";
 import { blockFromView, frameForScale } from "../viewframes.js";
 
@@ -53,7 +53,18 @@ export function mapLayers(b) {
       const k = symbolOf(s, f => p[f], br);
       if (k.hide) return;
       let e = effs.get(k.id); if (!e) effs.set(k.id, e = classStyle(s, k.o));   // полный знак класса: контур, штрих, штриховка
-      feats.push(printFeature(g, l.geom, e, k));
+      const f = printFeature(g, l.geom, e, k);
+      // подпись — как на карте (symbology.js styleFunction): поле, размер (пикс. → мм листа), цвет; этажность — от своего
+      // масштаба. Печать ставит подписи без наложений, не поместившиеся — в замечании листа (layout_io label_drop)
+      if (e.label) {
+        let t = p[e.label];
+        const fd = e.label === "Этажность" ? floorsDenOf(l) : 0;
+        if (t != null && t !== "" && (!fd || b.scale <= fd)) {
+          if (e.label === "Этажность" && String(l.key).startsWith("user:")) t = t + " эт.";
+          Object.assign(f, { label: String(t), ls: Math.round(e.labelSize * 0.26 * 100) / 100, ...(e.labelColor ? { lcol: e.labelColor } : {}) });
+        }
+      }
+      feats.push(f);
     });
     if (feats.length) out.push({ title: l.title || l.key, features: feats });
   });
@@ -164,10 +175,22 @@ async function download(body, name) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
   // пластины карт на Rust (layout_io._plated): блоки карт без единого закрашенного места — лист не готов
   const empty = (r.headers.get("X-Empty-Maps") || "").split(",").filter(Boolean);
-  return { empty, titles: empty.map(id => body.sheets ? body.sheets.find(x => x.sheet.blocks?.some(b => b.id === id))?.sheet.title || "" : body.sheet?.title || "") };
+  const titleOf = id => body.sheets ? body.sheets.find(x => x.sheet.blocks?.some(b => b.id === id))?.sheet.title || "" : body.sheet?.title || "";
+  // подписи карт налезают друг на друга (layout_io.label_clashes): «id:пар»
+  // подписи карт: налезают друг на друга (layout_io.label_clashes) и не поместились (print_io dropped): «id:сколько»
+  const counts = h => (r.headers.get(h) || "").split(",").filter(Boolean).map(x => { const i = x.lastIndexOf(":"); return { id: x.slice(0, i), n: +x.slice(i + 1) || 0, title: titleOf(x.slice(0, i)) }; });
+  return { empty, titles: empty.map(titleOf), clash: counts("X-Label-Clash"), drop: counts("X-Label-Drop") };
 }
-/* текст «карта пустая» для строки состояния: лист собран, но в нём карта без объектов */
-export const emptyNote = res => !res?.empty?.length ? "" : `PDF собран, но карта пустая (${res.empty.length}): ${[...new Set(res.titles.filter(Boolean))].join(", ") || "проверьте охват и слои блока"}`;
+/* текст для строки состояния: лист собран, но карта без объектов или подписи налезают — выгрузка не молчит */
+export const emptyNote = res => {
+  const out = [];
+  if (res?.empty?.length) out.push(`карта пустая (${res.empty.length}): ${[...new Set(res.titles.filter(Boolean))].join(", ") || "проверьте охват и слои блока"}`);
+  const sum = l => [l.reduce((a, c) => a + c.n, 0), [...new Set(l.map(c => c.title).filter(Boolean))]];
+  if (res?.clash?.length) { const [n, t] = sum(res.clash); out.push(`подписи налезают друг на друга (${n}${n >= 50 ? "+" : ""}${t.length ? ": " + t.join(", ") : ""})`); }
+  if (res?.drop?.length) { const [n, t] = sum(res.drop); out.push(`не поместились подписи (${n}${t.length ? ": " + t.join(", ") : ""})`); }
+  if (res?.clash?.length || res?.drop?.length) out.push("крупнее масштаб, меньше подписей или мельче шрифт");
+  return out.length ? `PDF собран, но ${out.join("; ")}` : "";
+};
 
 /* Лист — в PDF той же печатью, что и альбом; page — его номер в списке листов (для штампа). */
 export function printPdf(sheet, meta, page) {
@@ -197,7 +220,8 @@ export function sync(sheet) {
   const blocks = sheet?.blocks || [];
   blocks.forEach(b => {
     if (b.kind !== "map" || !b.view) return;
-    const r = blockFromView(b, viewOf(b.view)); if (!r) return;
+    // ячейка атласа (autosheets.js): своя середина в заданном масштабе вида, рамка вида — вся сетка
+    const r = b.cell?.center && b.cell.scale > 0 ? { center: b.cell.center, scale: b.cell.scale } : blockFromView(b, viewOf(b.view)); if (!r) return;
     if (JSON.stringify(r.center) !== JSON.stringify(b.center) || r.scale !== b.scale) { Object.assign(b, r); changed = true; }
   });
   blocks.forEach(b => {

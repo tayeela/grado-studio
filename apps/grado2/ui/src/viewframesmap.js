@@ -108,6 +108,22 @@ export function attachViewFrames(map) {
       ...(on && !f.get("draft") ? [cov ? gripB : grip] : [])];
   } });
   map.addLayer(layer);
+  /* листы атласа (autosheets.js, вид с «несколько листов сеткой»): тонкие клетки с номером листа внутри рамки вида —
+     видно, как территория поделена; мышь не ловят */
+  const cellSrc = new VectorSource(), cellLayer = new VectorLayer({ source: cellSrc, zIndex: 9988, style: f => [
+    new Style({ stroke: new Stroke({ color: "rgba(122,63,209,.55)", width: 1, lineDash: [4, 4] }) }),
+    new Style({ geometry: new Point(f.getGeometry().getInteriorPoint().getCoordinates().slice(0, 2)), text: new Text({ text: f.get("n"), font: "500 12px Onest, system-ui, sans-serif",
+      fill: new Fill({ color: VIOLET }), stroke: new Stroke({ color: "#fff", width: 3 }) }) })] });
+  map.addLayer(cellLayer);
+  function cells() {
+    cellSrc.clear(true); cellLayer.setVisible(views()); if (!views()) return;
+    for (const s of project.layouts || []) {
+      const b = s.auto && s.blocks?.find(x => x.kind === "map" && x.view === s.auto && x.cell?.center);
+      if (!b || !(b.w > 0)) continue;
+      const k = b.cell.scale / 1000, r = cornersM(MSK.fromWgs(b.cell.center), b.w * k, b.h * k).map(fromM);
+      const f = new Feature(new Polygon([[...r, r[0]]])); f.set("n", String((s.autoCell || 0) + 1)); cellSrc.addFeature(f);
+    }
+  }
 
   const views = () => vframes.on > 0 || !!vframes.draw;
   const shown = () => views() || coverOn.value || album.tab;
@@ -198,6 +214,7 @@ export function attachViewFrames(map) {
   const stops = [
     watch(() => [vframes.on, vframes.draw, vframes.sel, project.views.map(v => [v.id, v.name, v.frame]), coverOn.value, coverRev.value, project.territory, project.raw,
       album.tab, album.frames], redraw, { deep: true }),
+    watch(() => [vframes.on, (project.layouts || []).map(s => s.auto ? [s.autoCell, s.blocks?.find(x => x.kind === "map" && x.cell)?.cell] : 0)], cells, { deep: true, immediate: true }),
     // «Виды» или «Макет листа» открыты — рамки листов альбома нужны и без вкладки альбома
     watch(() => vframes.on > 0, wantFrames, { immediate: true }),
     // выбор листа во вкладке — выбор его рамки; «приблизить» (album.fit) — к рамке выбранного листа
@@ -220,5 +237,5 @@ export function attachViewFrames(map) {
   ];
   redraw();
   return () => { stops.forEach(s => s()); map.un("pointermove", onMove); window.removeEventListener("keydown", onKey);
-    map.getInteractions().un("add", onAdd); map.removeInteraction(it); map.removeLayer(layer); };
+    map.getInteractions().un("add", onAdd); map.removeInteraction(it); map.removeLayer(layer); map.removeLayer(cellLayer); };
 }

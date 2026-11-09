@@ -845,6 +845,7 @@ class SketchMapFrame(Frame):
         # только если своё занято (выноска, номер), тогда подпись сдвигается или пропадает
         self.memo = memo if memo is not None else {}
         self.album_sheet = None                                         # лист альбома: пустая карта — пометка «не готов» на нём
+        self.dropped = []                                               # подписи объектов в рамке, которым не нашлось места (лист не готов)
 
     def ops(self, ctx):
         sh, rect = self.sheet, self.rect
@@ -1566,6 +1567,8 @@ class SketchMapFrame(Frame):
                     spot = (cx, cy)
                     break
             if not spot:
+                if rx <= x <= rx + rw and ry <= y <= ry + rh:
+                    self.dropped.append(str(text))
                 continue
             x, y = spot
             if not f.get("circle"):

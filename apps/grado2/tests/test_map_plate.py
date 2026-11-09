@@ -83,6 +83,7 @@ class MapPlate(unittest.TestCase):
         self.assertFalse(any(o["op"] == "path" and o.get("fill") == layout_io._rgb("#cc0000") for o in ops), "геометрия карты — не вектором")
         self.assertEqual(rep["empty_maps"], ["map-2"])
         self.assertEqual([m["id"] for m in rep["maps"]], ["map-1", "map-2"])
+        self.assertNotIn("label_clash", rep, "одна подпись — не налезает")
         pdf = layout_io.render_pdf({"sheets": [item]}, S.REDLN, S.LGR_DASH)
         self.assertTrue(pdf.startswith(b"%PDF"))
 
