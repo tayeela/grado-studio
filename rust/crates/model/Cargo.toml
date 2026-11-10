@@ -1,0 +1,15 @@
+[package]
+name = "grado_model"
+version = "0.1.0"
+edition = "2021"
+description = "Формат проекта ГРАДО .grado2 (план 09.11.2026, шаг С1): типы, чтение и запись без потерь, проверка, перевод старых файлов; типы TypeScript для интерфейса строит ts-rs"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+ts-rs = { version = "11", features = ["serde-json-impl", "no-serde-warnings"] }
+
+[[bin]]
+name = "grado_model"
+path = "src/bin/grado_model.rs"

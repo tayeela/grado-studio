@@ -2,7 +2,7 @@
 
 Перевод ядра с Python на Rust (стратегия «удушающей змеи»: Rust подменяет Python по частям,
 Python-версия остаётся эталоном и запасным путём). Начат агентом zcode на Mac владельца
-(05–06.11.2026, вне git), перенесён в репозиторий 08.11.2026. Workspace из пяти крейтов:
+(05–06.11.2026, вне git), перенесён в репозиторий 08.11.2026. Workspace из восьми крейтов:
 
 - **`crates/compute`** (`grado_compute_rs`) — порт `core/compute` (ТЭП-движок),
   сверен с Python-эталоном **бит-в-бит**;
@@ -16,6 +16,15 @@ Python-версия остаётся эталоном и запасным пут
   `tools/build_symbol_wasm.sh`; `ui/src/symbology.js partStyles`). Сверка с Python-эталоном — `tests/test_symparts.py`
   (те же операции; полоса — та же картинка), `ui/src/symbolwasm.test.js`; типы линий ЛГР (REDLN97) — `linetype.rs`
   (`print_io.linetype_ops` и `symbology.js drawLt`);
+- **`crates/crs`** (`grado_crs`) — координаты (план 09.11.2026, шаг С1): МСК (как в QGIS), система ГИС ОГД, WGS84,
+  Web Mercator, UTM 37N — перенос `core/connectors/grado_connectors/crs.py`; сверка с Python **бит-в-бит** на 2880 точках
+  на одной машине (`parity/crs/dump_reference.py` → файл в `GRADO_CRS_REF`, `tests/parity.rs`; так делает CI); с закоммиченным `parity/crs/reference.json` — допуск 1e-9 (другая glibc, Mac, Windows);
+- **`crates/model`** (`grado_model`) — формат проекта `.grado2` (шаг С1): типы, чтение и запись **без потерь** (незнакомые поля,
+  `null` и порядок ключей сохраняются, листы — последним ключом), проверка файла с замечаниями по-русски, перевод старых
+  файлов как `apps/grado2/web/migrate.js`; типы TypeScript для `apps/grado3/ui/src/types` строит ts-rs; CLI
+  `grado_model check|roundtrip <файл>`;
+- **`crates/wasm`** (`grado_core_wasm`) — ядро для браузера: координаты и формат проекта в WebAssembly для нового интерфейса
+  `/g3/` (`tools/build_core_wasm.sh`); в браузере совпадение с Python — до 0,000003 мм (своя библиотека math у WebAssembly);
 - **`crates/py`** (`grado_rs`) — модуль Python (PyO3, abi3 ≥ 3.10): ТЭП-движок на Rust
   с API `grado_compute.Engine`; включается `GRADO_COMPUTE=rust` (см. «Мост в Python»);
   `render_plate(ops_json, w_mm, h_mm, dpi)` — пластина карты; `parts_ops(kind, shapes, parts, px_mm)` — слои знака (0.2.0); `LineLib(lib_json).ops(pts, name, k, color, width, shape_k)` — типы линий ЛГР REDLN97 (0.3.0).

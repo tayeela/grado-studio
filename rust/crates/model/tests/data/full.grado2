@@ -1,0 +1,11 @@
+{"format":"grado2","version":2,"app":"ГРАДО 2 0.99.142","name":"Полный образец","file":null,"saved_at":"2026-11-09T20:00:00.000Z","dirty":false,
+ "view":{"center":[37.61,55.75],"zoom":14.25,"basemap":"yandex","rotation":0},"current":"user:territory","checked":[],
+ "groups":[{"id":"g1","title":"Ограничения","visible":true,"open":false,"color":"#123"}],
+ "layers":[{"key":"user:territory","title":"Граница территории","geom":"poly","visible":false,"group":null,"role":"territory","layerOpacity":1,"open":false,"style":{"fill":"#b0228c","opacity":0,"stroke":"#b0228c","width":2,"dash":[6,4],"cat":{"field":"","sym":{}},"parts":[{"kind":"band","width":3.5}]}},
+           {"key":"ogd.11.02.04.03","title":"Водоохранные зоны","geom":"poly","visible":true,"group":"g1","style":{"mode":"single","fill":"#4dabf7","opacity":0.35,"lgrLine":"ZOUIT_5"}}],
+ "data":{"user:territory":{"title":"Граница территории","source":"граница","fetched_at":"2026-11-09","fc":{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[37.6,55.75],[37.62,55.75],[37.62,55.76],[37.6,55.76],[37.6,55.75]]]}}]}},
+         "ogd.11.02.04.03":{"title":"Водоохранные зоны","source":"ГИС ОГД","fetched_at":"2026-11-08","fc":{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"Наименование":"р. Яуза","S":0.1000000000000000055511151231257827,"n":12345678901234,"x":1e-7},"geometry":{"type":"Polygon","coordinates":[[[37.6000000000001,55.75],[37.61,55.75],[37.61,55.755],[37.6000000000001,55.75]]]}}]},"original":"=fc","bbox":[37.5,55.7,37.7,55.8]}},
+ "views":[{"id":"v1","title":"Ограничения","layers":["ogd.11.02.04.03"],"frame":{"c":[1000.5,-2000.25],"w":800,"h":565.69},"scale":2000,"auto":{"fit":"round","margin":50,"atlas":"grid","overlap":10}}],
+ "territory":{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[37.6,55.75],[37.62,55.75],[37.62,55.76],[37.6,55.75]]]}},
+ "album":{"meta":{"title":"КРТ"},"sheets":[]},"graph":{"nodes":[],"links":[]},
+ "layouts":[{"id":"s1","format":"A3","orient":"L","stamp":true,"title":"Лист 1","blocks":[{"id":"map-1","kind":"map","x":20,"y":5,"w":270,"h":224,"view":"v1"}],"guides":{"x":[],"y":[]},"grid":{"step":5,"show":false,"snap":true},"autoCell":null}]}

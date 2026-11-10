@@ -705,12 +705,17 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_sections`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
 
+### `tools/build_core_wasm.sh` — 12 стр.
+
+ГРАДО · ядро для браузера (план 09.11.2026, шаг С1): rust/crates/wasm (координаты и формат проекта) → WebAssembly в apps/grado3/ui/src/wasm (grado_core_wasm.js + grado_core_wasm_bg.wasm, в git), их берёт apps/grado3/ui/src/core.ts; затем типы TypeScript из Rust (ts-rs, apps/grado3/ui/src/types). Нужны: rustup target add wasm32-unknown-unknown, cargo install wasm-bindgen-cli --version <как wasm-bindgen в rust/Cargo.lock>.
+
+
 ### `tools/build_symbol_wasm.sh` — 11 стр.
 
 ГРАДО 2 · слои знака на Rust для экрана (план 08.11.2026, шаг 3): rust/crates/symbol → WebAssembly в apps/grado2/ui/src/wasm (grado_symbol.js + grado_symbol_bg.wasm, в git), их берёт ui/src/symbology.js; затем сборка интерфейса (cd apps/grado2/ui && npm run build). Нужны: rustup target add wasm32-unknown-unknown, cargo install wasm-bindgen-cli --version <как wasm-bindgen в rust/Cargo.lock>.
 
 
-### `tools/gate.sh` — 57 стр.
+### `tools/gate.sh` — 63 стр.
 
 Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой): tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py), свежесть сборки нового интерфейса (tools/ui_check.sh) E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин) и проверка раскладки нового интерфейса (tools/ui_layout_check.mjs, ≈3 мин); E2E_ONLY=t71,t82 — только эти группы Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое. Тесты идут под pytest (apps/grado2/requirements-dev.txt); б…
 
@@ -719,6 +724,11 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 ### `tools/prune-merged-branches.sh` — 24 стр.
 
 Показывает (и по флагу --yes удаляет на GitHub) ветки, целиком влитые в main или в team/t60: их коммиты остаются в истории, ничего не теряется. Не трогает main, team/t60 и ветки открытых PR. По умолчанию — только список (SHA рядом: ветку можно вернуть командой `git push origin <sha>:refs/heads/<имя>`). tools/prune-merged-branches.sh          — список tools/prune-merged-branches.sh --yes    — удалить перечисленные ветки Лучше включить и встроенную очистку GitHub: Settings → General → Pull Requests → «Automatically delete head branches».
+
+
+### `tools/ui3_check.sh` — 16 стр.
+
+Новый интерфейс ГРАДО (apps/grado3/ui, план 09.11.2026): проверка типов TypeScript (vue-tsc), тесты (Vitest: шина команд, команды, ядро Rust в WebAssembly против эталона Python) и свежесть сборки apps/grado2/web/g3. Вызывают tools/gate.sh (шаг ui3, если есть apps/grado3/ui/node_modules) и CI grado2-release.yml.
 
 
 ### `tools/ui_check.sh` — 14 стр.
@@ -742,6 +752,12 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 Снимок панорамы Яндекса для листа «Фотофиксация» без наложений (владелец 06.10.2026: «должно быть только фото»): Chrome headless + CDP, скрыты метки домов, кнопки, логотип и миникарта. Запуск: node tools/panorama_shot.mjs <ссылка> <out.png> (WAIT=мс — ожидание загрузки, по умолчанию 12000). Кадр для листа: вырезать (550, 0, 2650, 1400) и уменьшить до 1500×1000; точка и направление съёмки — из развёрнутой ссылки (panorama[point], panorama[direction]).
 
 Функции: `sleep`, `cmd`
+
+### `tools/ui_baseline.mjs` — 76 стр.
+
+ГРАДО · замер скорости интерфейса — точка отсчёта плана 09.11.2026 (шаг И1): нынешний /next/ и новый /g3/ на одном проекте. Свой сервер на порту 8654 и временная папка проектов с копией образца tests/fixtures/next_ui_project.grado2 — проекты владельца не трогаются, порталы не нужны (данные лежат в файле). Замер: страница загружена, карта нарисована (первый холст карты), сколько окон открыто, сколько скачано своих файлов (скрипты, стили, WebAssembly), медиана из N прогонов. Запуск: node tools/ui_baseline.mjs [--runs 3] [--out файл.md]; браузер — $CHROME или встроенный Chromium Playwright.
+
+Функции: `pw`, `arg`, `stop`, `med`, `once`
 
 ### `tools/ui_layout_check.mjs` — 353 стр.
 

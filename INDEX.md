@@ -9,9 +9,10 @@
 | папка | что в ней | живое? |
 |---|---|---|
 | [apps/grado2/](apps/grado2/README.md) | **рабочая программа ГРАДО 2**: сервер, страница в браузере, печать, экспорт, тесты | да |
+| [apps/grado3/](apps/grado3/README.md) | новый интерфейс, собираемый рядом с нынешним (план 09.11.2026), адрес `/g3/` | да, в работе |
 | `apps/studio/`, `apps/wizard/`, `apps/calc-web/` | закрытые 23.09.2026 старая студия, мастер, калькулятор ТЭП ([apps/README.md](apps/README.md)); не править | нет |
 | [core/](core/README.md) | ядро: `compute` (ТЭП), `model` (проект .grado), `reactive` (правки), `geom`, `connectors` (порталы), `render` (PDF/SVG/PPTX/DXF), `layout` (вёрстка) | да |
-| [rust/](rust/README.md) | перевод ядра на Rust («удушающая змея»): `compute` (ТЭП, бит-в-бит с Python), `geom` (геометрия, по допуску), `py` — модуль `grado_rs` для Python (ТЭП на Rust при `GRADO_COMPUTE=rust`); сверка с Python — `parity/` | да, по умолчанию выключен |
+| [rust/](rust/README.md) | перевод ядра на Rust («удушающая змея»): `compute` (ТЭП, бит-в-бит с Python), `geom` (геометрия, по допуску), `crs` (координаты, бит-в-бит), `model` (формат проекта), `wasm` (ядро для браузера), `py` — модуль `grado_rs` для Python (ТЭП на Rust при `GRADO_COMPUTE=rust`); сверка с Python — `parity/` | да, по умолчанию выключен |
 | [docs/](docs/INDEX.md) | документы: `wiki/`, `standards/`, `specs/`, `product/`, `ux/`, `guides/`, `team/`, `archive/` | да |
 | [tools/](tools/README.md) | скрипты разработки: `gate.sh`, `wiki.py`, `docs_check.py`, `server_pull/` (выкладка сервером), `album_check.py`, генераторы стилей, хуки git | да |
 | [packaging/](packaging/README.md) | сборка установщиков Windows и macOS (ГРАДО 2) и прежней студии | частично |
