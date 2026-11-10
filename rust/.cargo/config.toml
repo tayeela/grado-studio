@@ -1,0 +1,4 @@
+# Типы TypeScript нового интерфейса строит ts-rs из типов Rust (crates/model): cargo test -p grado_model export_bindings
+# пишет их в apps/grado3/ui/src/types; CI сверяет, что записанное совпадает с репозиторием (rust.yml).
+[env]
+TS_RS_EXPORT_DIR = { value = "../apps/grado3/ui/src/types", relative = true }

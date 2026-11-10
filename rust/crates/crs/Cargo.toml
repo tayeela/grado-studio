@@ -1,0 +1,11 @@
+[package]
+name = "grado_crs"
+version = "0.1.0"
+edition = "2021"
+description = "Системы координат ГРАДО (план 09.11.2026, шаг С1): МСК (как в QGIS), система ГИС ОГД, WGS84, Web Mercator, UTM 37N — перенос core/connectors/grado_connectors/crs.py, сверка с Python бит-в-бит"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["float_roundtrip"] }

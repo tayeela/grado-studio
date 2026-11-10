@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "apps/grado2/**"
+      - "apps/grado3/**"
       - "core/**"
       - "packaging/**"                              # правки инфраструктуры проверок не проходят мимо тестов (аудит 06.11, 1.2)
       - "tools/**"
@@ -47,6 +48,8 @@ jobs:
         run: tools/node_modules/.bin/tsc -p tools/ts/tsconfig.json   # локально без node_modules gate это пропускает (аудит 06.11, 1.4)
       - name: New interface build is fresh (apps/grado2/ui -> apps/grado2/web/next)
         run: tools/ui_check.sh
+      - name: Interface /g3/ (apps/grado3/ui) — types, tests, build is fresh
+        run: tools/ui3_check.sh
       - name: Unit tests (server, import, print, insolation under node)
         run: |
           export PYTHONPATH="apps/grado2:core/render:core/connectors:core/compute:core/layout"

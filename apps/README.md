@@ -1,10 +1,11 @@
 # apps — программы репозитория
 
-Здесь четыре папки с программами. Рабочая программа одна: `grado2` (ГРАДО 2). Папки `studio`, `wizard` и `calc-web` закрыты решением владельца 23.09.2026: они не развиваются и не чинятся, их не править.
+Здесь пять папок с программами. Рабочая программа одна: `grado2` (ГРАДО 2); `grado3` — её новый интерфейс, собираемый рядом (план 09.11.2026). Папки `studio`, `wizard` и `calc-web` закрыты решением владельца 23.09.2026: они не развиваются и не чинятся, их не править.
 
 | файл или папка | что это | кто использует |
 |---|---|---|
 | `grado2/` | ГРАДО 2: рабочая программа, локальный сервер и браузерный интерфейс | `ГРАДО 2.command`, `ГРАДО 2.bat`, `packaging/grado2_entry.py`, `tools/gate.sh`, `.github/workflows/grado2-release.yml` |
+| `grado3/` | новый интерфейс ГРАДО (TypeScript, Pinia, ядро Rust в WebAssembly), адрес `/g3/` того же сервера; [grado3/README.md](grado3/README.md) | `tools/ui3_check.sh`, `tools/gate.sh`, CI `grado2-release.yml` |
 | `studio/` | старая ГРАДО Студия, закрыта: `server.py`, `studio_core.py`, `webhub.py`, `web/`, `tests/`. Не править | `core/render/tests/test_render.py` (импорт `studio_core`), `packaging/build_pages.py`, `packaging/py2app_setup.py`, `packaging/windows.spec`, `packaging/windows_version.py`, `Dockerfile` (копирует папку и запускает `apps/studio/server.py --cloud`) |
 | `wizard/` | мастер территории, закрыт: пакет `grado_wizard/`, `tests/`. Не править | `packaging/py2app_setup.py`, `packaging/windows.spec`, `Dockerfile` (копирует папку) |
 | `calc-web/` | веб-калькулятор ТЭП, закрыт: `index.html`, `engine.js`. Не править | `packaging/py2app_setup.py`, `packaging/windows.spec` (копируют папку в сборку) |

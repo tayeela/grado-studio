@@ -1,0 +1,29 @@
+{
+  "name": "grado3-ui",
+  "private": true,
+  "description": "ГРАДО: новый интерфейс (план 09.11.2026, шаги И1–И6) — Vue 3 + TypeScript + Pinia, ядро Rust в WebAssembly. Собирается Vite в apps/grado2/web/g3/, собранное лежит в репозитории.",
+  "type": "module",
+  "scripts": {
+    "build": "vue-tsc --noEmit && vite build",
+    "dev": "vite",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@awesome.me/webawesome": "3.13.0",
+    "@fontsource/onest": "5.1.0",
+    "dockview-core": "8.4.1",
+    "dockview-vue": "8.3.1",
+    "ol": "10.10.0",
+    "pinia": "3.0.3",
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.1",
+    "@vitejs/plugin-vue": "6.0.9",
+    "typescript": "5.9.3",
+    "vite": "8.3.0",
+    "vitest": "4.1.12",
+    "vue-tsc": "3.3.14"
+  }
+}
