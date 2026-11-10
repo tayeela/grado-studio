@@ -136,9 +136,25 @@ pub fn merc_to_wgs84(x: f64, y: f64) -> (f64, f64) {
     (degrees(x / R), degrees((y / R).sinh().atan()))
 }
 
+/// asinh из системной libm, как math.asinh в Python: f64::asinh в Rust
+/// считается своей формулой и в разных версиях Rust расходится в последнем бите.
+#[cfg(not(target_arch = "wasm32"))]
+fn c_asinh(x: f64) -> f64 {
+    extern "C" {
+        fn asinh(x: f64) -> f64;
+    }
+    // SAFETY: чистая функция libm без побочных действий.
+    unsafe { asinh(x) }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn c_asinh(x: f64) -> f64 {
+    x.asinh()
+}
+
 /// WGS84 → Web Mercator (EPSG:3857), метры.
 pub fn wgs84_to_merc(lon: f64, lat: f64) -> (f64, f64) {
-    (radians(lon) * R, radians(lat).tan().asinh() * R)
+    (radians(lon) * R, c_asinh(radians(lat).tan()) * R)
 }
 
 /// WGS84 → UTM 37N (ряды Снайдера, точность около миллиметра).
