@@ -18,7 +18,7 @@ Python-версия остаётся эталоном и запасным пут
   (`print_io.linetype_ops` и `symbology.js drawLt`);
 - **`crates/crs`** (`grado_crs`) — координаты (план 09.11.2026, шаг С1): МСК (как в QGIS), система ГИС ОГД, WGS84,
   Web Mercator, UTM 37N — перенос `core/connectors/grado_connectors/crs.py`; сверка с Python **бит-в-бит** на 2880 точках
-  (`parity/crs/dump_reference.py` → `reference.json`, `tests/parity.rs`; вне Linux — допуск 1e-9);
+  на одной машине (`parity/crs/dump_reference.py` → файл в `GRADO_CRS_REF`, `tests/parity.rs`; так делает CI); с закоммиченным `parity/crs/reference.json` — допуск 1e-9 (другая glibc, Mac, Windows);
 - **`crates/model`** (`grado_model`) — формат проекта `.grado2` (шаг С1): типы, чтение и запись **без потерь** (незнакомые поля,
   `null` и порядок ключей сохраняются, листы — последним ключом), проверка файла с замечаниями по-русски, перевод старых
   файлов как `apps/grado2/web/migrate.js`; типы TypeScript для `apps/grado3/ui/src/types` строит ts-rs; CLI

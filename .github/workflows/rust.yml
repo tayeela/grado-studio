@@ -79,8 +79,7 @@ jobs:
       - name: Координаты (crates/crs) = crs.py бит-в-бит, формат проекта (crates/model), типы TypeScript и ядро в WebAssembly
         run: |
           python rust/parity/crs/dump_reference.py /tmp/crs-ref.json
-          cmp /tmp/crs-ref.json rust/parity/crs/reference.json || { echo "crs.py изменился: python3 rust/parity/crs/dump_reference.py и закоммитить"; exit 1; }
-          (cd rust && cargo test -p grado_crs -p grado_model -p grado_core_wasm)
+          (cd rust && GRADO_CRS_REF=/tmp/crs-ref.json cargo test -p grado_crs -p grado_model -p grado_core_wasm)
           git diff --exit-code -- apps/grado3/ui/src/types || { echo "типы TypeScript устарели: cargo test -p grado_model export_bindings"; exit 1; }
           (cd rust && cargo build --release --target wasm32-unknown-unknown -p grado_core_wasm)
       - name: Сверка CLI с Python (rust/parity)

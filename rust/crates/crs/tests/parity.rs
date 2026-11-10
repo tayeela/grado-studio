@@ -1,7 +1,7 @@
-//! Сверка с Python бит-в-бит: rust/parity/crs/reference.json пишет rust/parity/crs/dump_reference.py
-//! (тот же core/connectors/grado_connectors/crs.py) на Linux. На Linux (CI, сайт) числа сравниваются по битам: синус,
-//! степень и прочее у Rust и Python там из одной системной библиотеки. На Mac и Windows своя библиотека math —
-//! там допуск 1e-9 (метры: нанометры, градусы: десятые доли миллиметра и меньше).
+//! Сверка с Python. Эталон пишет rust/parity/crs/dump_reference.py (тот же core/connectors/grado_connectors/crs.py).
+//! Бит-в-бит — только с эталоном, снятым на этой же машине: путь в GRADO_CRS_REF (так делает CI). Синус, tan, asinh
+//! у Rust и Python тогда из одной системной libm. С закоммиченным rust/parity/crs/reference.json — допуск 1e-9:
+//! другая версия glibc, Mac, Windows дают другой последний бит (метры: нанометры, градусы: доли миллиметра).
 
 use grado_crs as crs;
 use serde_json::Value;
@@ -12,11 +12,12 @@ fn f(v: &Value) -> f64 {
 
 #[test]
 fn same_bits_as_python() {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../parity/crs/reference.json"
-    );
-    let text = std::fs::read_to_string(path)
+    let fresh = std::env::var("GRADO_CRS_REF").ok();
+    let path = fresh.clone().unwrap_or_else(|| {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../parity/crs/reference.json").to_string()
+    });
+    let exact = fresh.is_some();
+    let text = std::fs::read_to_string(&path)
         .expect("reference.json: запустите rust/parity/crs/dump_reference.py");
     let cases: Value = serde_json::from_str(&text).unwrap();
     let mut n = 0usize;
@@ -40,7 +41,7 @@ fn same_bits_as_python() {
         };
         let want = (f(&c["out"][0]), f(&c["out"][1]));
         n += 1;
-        let same = if cfg!(target_os = "linux") {
+        let same = if exact {
             got.0.to_bits() == want.0.to_bits() && got.1.to_bits() == want.1.to_bits()
         } else {
             (got.0 - want.0).abs() <= 1e-9 * want.0.abs().max(1.0)
@@ -56,8 +57,9 @@ fn same_bits_as_python() {
     assert!(n > 1000, "мало случаев: {n}");
     assert!(
         bad.is_empty(),
-        "{} из {n} не совпали бит-в-бит:\n{}",
+        "{} из {n} не совпали ({}):\n{}",
         bad.len(),
+        if exact { "бит-в-бит" } else { "допуск 1e-9" },
         bad[..bad.len().min(20)].join("\n")
     );
 }
