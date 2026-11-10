@@ -42,6 +42,12 @@ elif [ "$HAVE_NODE" = 0 ] && [ -d apps/grado2/ui/node_modules ]; then
 elif [ "$UI_TOUCHED" != 0 ]; then
   echo "FAIL ui — правки интерфейса есть, а apps/grado2/ui/node_modules нет: (cd apps/grado2/ui && npm ci)"; fail+=(ui)
 else echo "skip ui — no apps/grado2/ui/node_modules (cd apps/grado2/ui && npm ci)"; fi
+UI3_TOUCHED=$(git diff HEAD --name-only -- apps/grado3/ui apps/grado2/web/g3 | wc -l | tr -d ' ')
+if [ -d apps/grado3/ui/node_modules ] && [ "$HAVE_NODE" = 1 ]; then  # новый интерфейс /g3/ (план 09.11.2026): типы, тесты, свежая сборка; install: (cd apps/grado3/ui && npm ci)
+  step ui3      tools/ui3_check.sh
+elif [ "$UI3_TOUCHED" != 0 ]; then
+  echo "FAIL ui3 — правки /g3/ есть, а apps/grado3/ui/node_modules нет: (cd apps/grado3/ui && npm ci)"; fail+=(ui3)
+else echo "skip ui3 — no apps/grado3/ui/node_modules (cd apps/grado3/ui && npm ci)"; fi
 if [ "${E2E:-}" = 1 ] || [ -n "${E2E_ONLY:-}" ]; then
   # драйвер сценариев (tests/e2e/driver.mjs) берёт module.registerHooks — он есть только в Node 22+
   if [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 22 ]; then

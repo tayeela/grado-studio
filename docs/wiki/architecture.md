@@ -18,6 +18,9 @@
   Окно «Листы и альбом» встраивает прежнюю страницу `/old?embed=album` (`ui/src/albumhost.js`): сборка альбома ППТ КРТ
   ещё живёт там. Проект пишут оба: `ui/src/project.js` и `web/project.js` (одни адреса `/api/project`, запись с `base` —
   чужие правки другой вкладки не затираются, ответ 409).
+- **Интерфейс `/g3/`** (с 09.11.2026, план `docs/product/plan-2026-11-09-frontend-rust.md`) — собирается заново рядом:
+  исходники `apps/grado3/ui` (TypeScript, Pinia, шина команд с общей отменой, ядро Rust в WebAssembly — `rust/crates/wasm`),
+  сборка в `apps/grado2/web/g3/`, проверка `tools/ui3_check.sh`. Те же адреса `/api/…`, тот же файл проекта.
 - **Прежняя страница** `apps/grado2/web` (`/old`) — OpenLayers + turf, без сборки. `app.js` (карта, территория, поиск, данные),
   `layers.js` (слои, стили, «Свойства»), `cad.js` (черчение), `sheets.js` (листы, альбом, выгрузки), `albums.js`
   (альбом ППТ КРТ: шаблоны листов `PPTKRT_C` и `PPTKRT_D`, порядок выдачи `PPTKRT_ORDER`, выбор источников — `conceptSheet`), малые модули с чистыми функциями (`labelfmt.js`, `roadsrc.js`,

@@ -1,0 +1,17 @@
+[package]
+name = "grado_core_wasm"
+version = "0.1.0"
+edition = "2021"
+description = "Ядро ГРАДО для браузера (план 09.11.2026, шаг С1): координаты (crates/crs) и формат проекта (crates/model) в WebAssembly для нового интерфейса apps/grado3/ui; собирает tools/build_core_wasm.sh"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+grado_crs = { path = "../crs" }
+grado_model = { path = "../model" }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"

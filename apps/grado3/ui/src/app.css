@@ -1,0 +1,33 @@
+/* ГРАДО · раскладка окна нового интерфейса: шапка со строкой шагов, рабочее поле dockview, командная строка, строка
+   состояния. Цвета — токены темы «Синька» (apps/grado2/ui/src/theme.css). */
+html, body, #app { height: 100%; margin: 0; }
+body { background: var(--g-desk, #e8ebf0); color: var(--wa-color-text-normal); font-family: var(--wa-font-family-body); font-size: 13px; }
+.g3 { display: grid; grid-template-rows: auto 1fr auto auto; height: 100%; }
+.g3-head { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: var(--wa-color-surface-default); border-bottom: 1px solid var(--wa-color-surface-border); min-width: 0; }
+.g3-brand { font-weight: 600; letter-spacing: .04em; }
+.g3-proj { color: var(--wa-color-text-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 24ch; }
+.g3-steps { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; }
+.g3-step { display: flex; align-items: center; gap: 6px; border: 1px solid transparent; background: none; border-radius: 8px; padding: 4px 10px; cursor: pointer; color: inherit; font: inherit; white-space: nowrap; }
+.g3-step:hover { background: var(--wa-color-surface-lowered); }
+.g3-step[aria-current="step"] { background: var(--wa-color-brand-fill-quiet); border-color: var(--wa-color-brand-border-normal); color: var(--wa-color-brand-on-quiet); }
+.g3-step .n { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--wa-color-surface-lowered); font-size: 11px; font-variant-numeric: tabular-nums; }
+.g3-step .n.ok { background: var(--wa-color-success-fill-loud); color: #fff; }
+.g3-step[aria-current="step"] .n { background: var(--wa-color-brand-fill-loud); color: #fff; }
+.g3-undo { display: flex; gap: 4px; }
+.g3-dock { min-height: 0; }
+.g3-cmd { display: grid; grid-template-rows: auto auto; background: var(--wa-color-surface-default); border-top: 1px solid var(--wa-color-surface-border); }
+.g3-log { max-height: 66px; overflow-y: auto; padding: 2px 12px; font-variant-numeric: tabular-nums; color: var(--wa-color-text-quiet); }
+.g3-log .bad { color: var(--wa-color-danger-on-quiet, #b3261e); }
+.g3-line { display: flex; align-items: center; gap: 8px; padding: 4px 12px; position: relative; }
+.g3-line label { white-space: nowrap; color: var(--wa-color-text-quiet); }
+.g3-line input { flex: 1; min-width: 0; border: 1px solid var(--wa-color-surface-border); border-radius: 6px; padding: 4px 8px; font: inherit; background: var(--wa-color-surface-lowered); color: inherit; }
+.g3-line input:focus { outline: 2px solid var(--wa-color-focus); outline-offset: -1px; }
+.g3-hints { position: absolute; bottom: 100%; left: 120px; background: var(--wa-color-surface-raised); border: 1px solid var(--wa-color-surface-border); border-radius: 8px; box-shadow: 0 4px 16px #0002; padding: 4px 0; min-width: 260px; z-index: 10; }
+.g3-hints div { padding: 3px 10px; cursor: pointer; }
+.g3-hints div[aria-selected="true"] { background: var(--wa-color-brand-fill-quiet); }
+.g3-hints small { color: var(--wa-color-text-quiet); margin-left: 6px; }
+.g3-status { display: flex; gap: 16px; padding: 3px 12px; font-size: 11px; color: var(--wa-color-text-quiet); background: var(--wa-color-surface-lowered); font-variant-numeric: tabular-nums; }
+.g3-status .grow { flex: 1; }
+.g3-panel { height: 100%; overflow: auto; padding: 8px 10px; box-sizing: border-box; background: var(--wa-color-surface-default); }
+.g3-muted { color: var(--wa-color-text-quiet); }
+@media (max-width: 720px) { .g3-step .t { display: none; } .g3-proj { display: none; } }
