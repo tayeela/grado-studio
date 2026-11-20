@@ -29,8 +29,7 @@ export const WORKSPACES: Workspace[] = [
       { id: "map", component: "map", title: "Карта" },
       { id: "layers", component: "layers", title: "Слои", at: { ref: "map", dir: "left" }, size: 300 },
       { id: "project", component: "project", title: "Проект", at: { ref: "layers", dir: "within" } },
-      { id: "search", component: "stub", title: "Поиск", at: { ref: "map", dir: "right" }, size: 300,
-        stub: "Поиск по адресу и кадастровому номеру, участок под адресом — границей. Переезжает на шаге И2." },
+      { id: "search", component: "search", title: "Поиск", at: { ref: "map", dir: "right" }, size: 320 },
     ],
   },
   {

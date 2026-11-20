@@ -5,7 +5,7 @@
 
 import unittest
 
-from grado_geom.overlay import union_intersection_area
+from grado_geom.overlay import _rs_overlay, union_intersection_area, union_intersection_area_py
 
 
 def square(x, y, s):
@@ -52,6 +52,28 @@ class UnionIntersectionAreaTests(unittest.TestCase):
     def test_self_intersecting_ring_is_repaired(self):
         bow = [[(0, 0), (100, 100), (100, 0), (0, 100)]]          # «бабочка»: два треугольника по 2500
         self.assertAlmostEqual(5000, union_intersection_area([bow], [square(0, 0, 100)]), delta=0.5)
+
+    @unittest.skipIf(_rs_overlay() is None, "модуль grado_rs не собран")
+    def test_rust_overlay_matches_python_reference(self):
+        ring = [(0, 0), (0, 100), (100, 100), (100, 0)]
+        hole = [(40, 40), (60, 40), (60, 60), (40, 60)]
+        bow = [[(0, 0), (100, 100), (100, 0), (0, 100)]]
+        terr = [[(37.70, 55.80), (37.71, 55.80), (37.70, 55.81)]]
+        west = [[(37.60, 55.70), (37.705, 55.70), (37.705, 55.90), (37.60, 55.90)]]
+        cases = [
+            ([square(50, 50, 100)], [square(0, 0, 100)]),
+            ([square(0, 0, 100), square(0, 0, 100), square(20, 20, 30)], [square(0, 0, 100)]),
+            ([square(0, 0, 50), [[(50, 0), (100, 0), (100, 50), (50, 50)]]], [square(0, 0, 100)]),
+            ([[ring, hole]], [square(-10, -10, 200)]),
+            ([bow], [square(0, 0, 100)]),
+            ([terr], [west]),
+            # далёкие полигоны вне области пересечения отсекаются по габариту без потери точности
+            ([square(0, 0, 100), square(50000, 50000, 500)], [square(20, 20, 60)]),
+        ]
+        for regions, clips in cases:
+            py_a = union_intersection_area_py(regions, clips)
+            rs_a = union_intersection_area(regions, clips)
+            self.assertAlmostEqual(py_a, rs_a, places=9)
 
 
 if __name__ == "__main__":

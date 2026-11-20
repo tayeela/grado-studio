@@ -10,7 +10,9 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 grado_crs = { path = "../crs" }
+grado_geom_rs = { path = "../geom" }
 grado_model = { path = "../model" }
+grado_symbol = { path = "../symbol" }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
