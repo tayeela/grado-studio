@@ -1,8 +1,8 @@
 [package]
 name = "grado_rs"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
-description = "Мост Python ↔ Rust (PyO3): модуль grado_rs для grado_compute — ТЭП-движок на Rust с тем же API, что Python-версия"
+description = "Мост Python ↔ Rust (PyO3): модуль grado_rs — ТЭП-движок, геометрия наложений, пластина карты и слои знака на Rust"
 publish = false
 
 [lib]
@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 grado_compute_rs = { path = "../compute" }
+grado_geom_rs = { path = "../geom" }
 grado_plate = { path = "../plate" }
 grado_symbol = { path = "../symbol" }
 num-bigint = "0.4"

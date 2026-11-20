@@ -199,11 +199,20 @@ impl LineLib {
     }
 }
 
+/// Площадь объединения полигонов внутри объединения других полигонов (crates/geom overlay.rs, план 09.11 шаг С2):
+/// (∪ regions) ∩ (∪ clips) в единицах координат². Полигон — список колец [(x, y), …] (первое внешнее, остальные дыры).
+#[pyfunction]
+#[pyo3(signature = (regions, clips))]
+fn union_intersection_area(py: Python<'_>, regions: Vec<Vec<Vec<(f64, f64)>>>, clips: Vec<Vec<Vec<(f64, f64)>>>) -> f64 {
+    py.detach(|| grado_geom_rs::overlay::union_intersection_area(&regions, &clips))
+}
+
 #[pymodule]
 fn grado_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ComputeEngine>()?;
     m.add_function(wrap_pyfunction!(render_plate, m)?)?;
     m.add_function(wrap_pyfunction!(parts_ops, m)?)?;
+    m.add_function(wrap_pyfunction!(union_intersection_area, m)?)?;
     m.add_class::<LineLib>()?;
     m.add("ExpressionError", m.py().get_type::<ExpressionError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

@@ -224,7 +224,9 @@ name = "grado_core_wasm"
 version = "0.1.0"
 dependencies = [
  "grado_crs",
+ "grado_geom_rs",
  "grado_model",
+ "grado_symbol",
  "serde_json",
  "wasm-bindgen",
 ]
@@ -268,9 +270,10 @@ dependencies = [
 
 [[package]]
 name = "grado_rs"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "grado_compute_rs",
+ "grado_geom_rs",
  "grado_plate",
  "grado_symbol",
  "num-bigint",

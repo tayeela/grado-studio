@@ -23,11 +23,14 @@ Python-версия остаётся эталоном и запасным пут
   `null` и порядок ключей сохраняются, листы — последним ключом), проверка файла с замечаниями по-русски, перевод старых
   файлов как `apps/grado2/web/migrate.js`; типы TypeScript для `apps/grado3/ui/src/types` строит ts-rs; CLI
   `grado_model check|roundtrip <файл>`;
-- **`crates/wasm`** (`grado_core_wasm`) — ядро для браузера: координаты и формат проекта в WebAssembly для нового интерфейса
-  `/g3/` (`tools/build_core_wasm.sh`); в браузере совпадение с Python — до 0,000003 мм (своя библиотека math у WebAssembly);
+- **`crates/wasm`** (`grado_core_wasm`) — ядро для браузера: координаты, формат проекта, плановые площади и наложения в МСК,
+  части знака и типы линий ЛГР REDLN97 в WebAssembly для нового интерфейса `/g3/` (`tools/build_core_wasm.sh`); в браузере
+  совпадение координат с Python — до 0,000003 мм (своя библиотека math у WebAssembly);
 - **`crates/py`** (`grado_rs`) — модуль Python (PyO3, abi3 ≥ 3.10): ТЭП-движок на Rust
   с API `grado_compute.Engine`; включается `GRADO_COMPUTE=rust` (см. «Мост в Python»);
-  `render_plate(ops_json, w_mm, h_mm, dpi)` — пластина карты; `parts_ops(kind, shapes, parts, px_mm)` — слои знака (0.2.0); `LineLib(lib_json).ops(pts, name, k, color, width, shape_k)` — типы линий ЛГР REDLN97 (0.3.0).
+  `render_plate(ops_json, w_mm, h_mm, dpi)` — пластина карты; `parts_ops(kind, shapes, parts, px_mm)` — слои знака (0.2.0);
+  `LineLib(lib_json).ops(pts, name, k, color, width, shape_k)` — типы линий ЛГР REDLN97 (0.3.0);
+  `union_intersection_area(regions, clips)` — площадь наложения полигонов `(∪ regions) ∩ (∪ clips)` (0.4.0, шаг С2).
 
 ## Мост в Python — статус (шаг 1 «змеи»)
 

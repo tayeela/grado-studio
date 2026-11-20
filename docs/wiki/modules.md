@@ -567,11 +567,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `CurveError`, `Arc`, `_finite`, `curve_spec`, `tessellate_curve`
 
-### `core/geom/grado_geom/overlay.py` — 50 стр.
+### `core/geom/grado_geom/overlay.py` — 84 стр.
 
 Площадь объединения полигонов внутри объединения других полигонов.
 
-Функции: `_union`, `union_intersection_area`
+Функции: `_clean_polys`, `_union`, `union_intersection_area_py`, `_rs_overlay`, `union_intersection_area`
 
 ### `core/geom/grado_geom/path.py` — 194 стр.
 

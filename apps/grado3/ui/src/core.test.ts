@@ -2,7 +2,10 @@
    В браузере библиотека math у WebAssembly своя, поэтому здесь допуск: метры — 1e-8 м, градусы — 1e-13°. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it, beforeAll } from "vitest";
-import { checkProject, loadCore, migrateProject, mskToWgs, wgsToMsk, mskToWgsMany, formatVersion } from "./core";
+import {
+  areaMsk, checkProject, formatVersion, hasLinetype, lengthMsk, linetypeOps,
+  loadCore, loadLinetypes, migrateProject, mskToWgs, mskToWgsMany, overlayAreaMsk, partsOps, unionAreaMsk, wgsToMsk,
+} from "./core";
 
 const here = (p: string) => new URL(p, import.meta.url);
 
@@ -48,5 +51,29 @@ describe("проект", () => {
     const inp = readFileSync(here("../../../../rust/crates/model/tests/data/migrate_in.json"), "utf8");
     const out = JSON.parse(readFileSync(here("../../../../rust/crates/model/tests/data/migrate_out.json"), "utf8"));
     expect(JSON.parse(migrateProject(inp))).toEqual(out);
+  });
+});
+
+describe("геометрия МСК и рисование знаков (шаги С2 и И2)", () => {
+  it("площадь, объединение, пересечение и длина в МСК", () => {
+    const ring = [[0, 0], [100, 0], [100, 50], [0, 50], [0, 0]].map(([x, y]) => mskToWgs([x, y]));
+    const feat = { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } };
+    expect(Math.abs(areaMsk(feat) - 5000)).toBeLessThan(0.05);
+    expect(Math.abs(unionAreaMsk({ type: "FeatureCollection", features: [feat, feat] }) - 5000)).toBeLessThan(0.05);
+    const clipRing = [[50, 0], [150, 0], [150, 50], [50, 50], [50, 0]].map(([x, y]) => mskToWgs([x, y]));
+    const clip = { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [clipRing] } };
+    expect(Math.abs(overlayAreaMsk(feat, clip) - 2500)).toBeLessThan(0.05);
+    const line = { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [mskToWgs([0, 0]), mskToWgs([30, 40])] } };
+    expect(Math.abs(lengthMsk(line) - 50)).toBeLessThan(0.01);
+  });
+  it("части знака и типы линий ЛГР через ядро Rust", () => {
+    const ops = partsOps("poly", [[[[0, 0], [100, 0], [100, 100], [0, 100]]]], [{ k: "band", b: 5, c: "#2446d8", a: 0.4 }], 1);
+    expect(ops.map(o => o.op)).toEqual(["clip", "path", "unclip"]);
+    const lib = readFileSync(here("../../../../core/render/grado_render/styles/redln97.json"), "utf8");
+    expect(loadLinetypes(lib)).toBe(true);
+    expect(hasLinetype("L00s01s")).toBe(true);
+    const lops = linetypeOps([[0, 0], [400, 0]], "L00s01s", 2, 0, "#e01b24", 1.5);
+    expect(lops.length).toBeGreaterThanOrEqual(1);
+    expect(lops[0].rings.length).toBeGreaterThan(1);
   });
 });

@@ -22,7 +22,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::{ord_pt, OrdPt, Pt};
+use crate::Pt;
 
 /// Полигон — список колец (первое внешнее, остальные дыры; порядок обхода
 /// не важен).
@@ -34,14 +34,48 @@ fn ring_is_usable(ring: &[Pt]) -> bool {
     ring.len() >= 3 && ring.iter().all(|p| p.0.is_finite() && p.1.is_finite())
 }
 
-/// Рёбра одного кольца (по кругу, без нулевых).
-fn ring_edges(ring: &[Pt]) -> Vec<(Pt, Pt)> {
+/// Габарит кольца или набора точек: (min_x, min_y, max_x, max_y).
+type BBox = (f64, f64, f64, f64);
+
+fn ring_bbox(ring: &[Pt]) -> BBox {
+    let mut b = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for &(x, y) in ring {
+        b.0 = b.0.min(x);
+        b.1 = b.1.min(y);
+        b.2 = b.2.max(x);
+        b.3 = b.3.max(y);
+    }
+    b
+}
+
+fn bbox_union(a: BBox, b: BBox) -> BBox {
+    (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3))
+}
+
+fn bbox_inter(a: BBox, b: BBox) -> Option<BBox> {
+    let r = (a.0.max(b.0), a.1.max(b.1), a.2.min(b.2), a.3.min(b.3));
+    if r.0 <= r.2 && r.1 <= r.3 {
+        Some(r)
+    } else {
+        None
+    }
+}
+
+fn bbox_overlaps(a: BBox, b: BBox, pad: f64) -> bool {
+    a.2 + pad >= b.0 && a.0 - pad <= b.2 && a.3 + pad >= b.1 && a.1 - pad <= b.3
+}
+
+/// Рёбра одного кольца (по кругу, без нулевых), пересекающие габарит области `clip` с запасом `pad`.
+fn ring_edges_in(ring: &[Pt], clip: BBox, pad: f64) -> Vec<(Pt, Pt)> {
     let mut edges = Vec::new();
     for i in 0..ring.len() {
         let a = ring[i];
         let b = ring[(i + 1) % ring.len()];
         if a != b {
-            edges.push((a, b));
+            let eb = (a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
+            if bbox_overlaps(eb, clip, pad) {
+                edges.push((a, b));
+            }
         }
     }
     edges
@@ -49,19 +83,35 @@ fn ring_edges(ring: &[Pt]) -> Vec<(Pt, Pt)> {
 
 /// Точки деления на каждом рёбре от парных пересечений; концы рёбер — тоже
 /// узлы. Точка считается один раз на пару рёбер и вставляется в оба.
-fn noded_splits(edges: &[(Pt, Pt)]) -> Vec<Vec<(f64, Pt)>> {
+fn noded_splits(edges: &[(Pt, Pt)], tol: f64) -> Vec<Vec<(f64, Pt)>> {
     let n = edges.len();
     let mut splits: Vec<Vec<(f64, Pt)>> = vec![Vec::new(); n];
     let eps = 1e-12;
+    let boxes: Vec<BBox> = edges
+        .iter()
+        .map(|&(a, b)| (a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1)))
+        .collect();
 
     for i in 0..n {
+        let bi = boxes[i];
         for j in i + 1..n {
+            if !bbox_overlaps(bi, boxes[j], tol) {
+                continue;
+            }
             let (p, q) = edges[i];
             let (r, s) = edges[j];
             let d0 = (q.0 - p.0, q.1 - p.1);
             let d1 = (s.0 - r.0, s.1 - r.1);
+            let len2 = d0.0 * d0.0 + d0.1 * d0.1;
+            let len1 = d1.0 * d1.0 + d1.1 * d1.1;
+            if len2 == 0.0 || len1 == 0.0 {
+                continue;
+            }
+            let l0 = len2.sqrt();
+            let l1 = len1.sqrt();
             let det = d0.0 * d1.1 - d0.1 * d1.0;
-            if det.abs() >= eps {
+            // почти параллельные рёбра (угол < 1e-7 рад) проверяем на коллинеарное перекрытие в допуске tol
+            if det.abs() >= 1e-7 * l0 * l1 {
                 // собственное пересечение прямых
                 let t = ((r.0 - p.0) * d1.1 - (r.1 - p.1) * d1.0) / det;
                 let u = ((r.0 - p.0) * d0.1 - (r.1 - p.1) * d0.0) / det;
@@ -74,24 +124,16 @@ fn noded_splits(edges: &[(Pt, Pt)]) -> Vec<Vec<(f64, Pt)>> {
                 }
                 continue;
             }
-            // параллельны; коллинеарны ли?
+            // параллельны; коллинеарны ли в пределах допуска tol?
             let cross = (r.0 - p.0) * d0.1 - (r.1 - p.1) * d0.0;
-            if cross.abs() > eps {
+            if cross.abs() > tol * l0 {
                 continue;
             }
             // коллинеарны: перекрытие в параметрах ребра i
-            let len2 = d0.0 * d0.0 + d0.1 * d0.1;
-            if len2 == 0.0 {
-                continue;
-            }
             let sr = ((r.0 - p.0) * d0.0 + (r.1 - p.1) * d0.1) / len2;
             let ss = ((s.0 - p.0) * d0.0 + (s.1 - p.1) * d0.1) / len2;
             let (lo, hi) = (sr.min(ss).max(0.0), sr.max(ss).min(1.0));
-            if hi < lo {
-                continue;
-            }
-            let len1 = d1.0 * d1.0 + d1.1 * d1.1;
-            if len1 == 0.0 {
+            if hi < lo - eps {
                 continue;
             }
             let params: Vec<f64> = if hi - lo <= eps {
@@ -144,21 +186,17 @@ fn point_in_ring(p: Pt, ring: &[Pt]) -> bool {
     inside
 }
 
-/// Внутренность полигона: внешнее кольцо нечётно и дыры чётны.
-fn point_in_poly(p: Pt, shell: &[Pt], holes: &[&[Pt]]) -> bool {
-    if !point_in_ring(p, shell) {
-        return false;
-    }
-    holes.iter().all(|h| !point_in_ring(p, h))
-}
-
 /// Площадь (∪ regions) ∩ (∪ clips) в единицах координат².
 ///
 /// max_rows, min_step прежнего приближённого метода не переносятся —
 /// в Python-эталоне они не используются.
 pub fn union_intersection_area(regions: &[Poly], clips: &[Poly]) -> f64 {
-    // выжившие полигоны: (внешнее кольцо, дыры); пустые и вырожденные отпадают
-    let mut group_polys: [Vec<(Vec<Pt>, Vec<Vec<Pt>>)>; 2] = [Vec::new(), Vec::new()];
+    // выжившие полигоны: (габарит внешнего кольца, внешнее кольцо, дыры); пустые и вырожденные отпадают
+    let mut raw_polys: [Vec<(BBox, Vec<Pt>, Vec<(BBox, Vec<Pt>)>)>; 2] = [Vec::new(), Vec::new()];
+    let mut group_box = [
+        (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
+        (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
+    ];
     for (group, group_polygons) in [(0usize, regions), (1usize, clips)] {
         for poly in group_polygons {
             let usable: Vec<&Vec<Pt>> = poly.iter().filter(|r| ring_is_usable(r)).collect();
@@ -166,65 +204,88 @@ pub fn union_intersection_area(regions: &[Poly], clips: &[Poly]) -> f64 {
                 continue;
             }
             let shell = usable[0].clone();
-            let holes: Vec<Vec<Pt>> = usable[1..].iter().map(|r| (*r).clone()).collect();
-            group_polys[group].push((shell, holes));
+            let sb = ring_bbox(&shell);
+            group_box[group] = bbox_union(group_box[group], sb);
+            let holes: Vec<(BBox, Vec<Pt>)> = usable[1..]
+                .iter()
+                .map(|r| {
+                    let h = (*r).clone();
+                    (ring_bbox(&h), h)
+                })
+                .collect();
+            raw_polys[group].push((sb, shell, holes));
         }
     }
+    if raw_polys[0].is_empty() || raw_polys[1].is_empty() {
+        return 0.0;
+    }
+    let Some(clip_box) = bbox_inter(group_box[0], group_box[1]) else {
+        return 0.0;
+    };
+
+    // масштаб области пересечения для отступа статус-точек от ребра
+    let diag = (clip_box.2 - clip_box.0).hypot(clip_box.3 - clip_box.1);
+    let eps = 1e-7 * diag.max(1e-6);
+    let tol = 0.5 * eps;
+    let pad = 4.0 * eps;
+
+    // полигоны, чей габарит не пересекает общий габарит, не могут ни содержать точек пересечения, ни давать рёбер границы
+    let [raw0, raw1] = raw_polys;
+    let group_polys: [Vec<(BBox, Vec<Pt>, Vec<(BBox, Vec<Pt>)>)>; 2] = [
+        raw0.into_iter()
+            .filter(|(b, _, _)| bbox_overlaps(*b, clip_box, pad))
+            .collect(),
+        raw1.into_iter()
+            .filter(|(b, _, _)| bbox_overlaps(*b, clip_box, pad))
+            .collect(),
+    ];
     if group_polys[0].is_empty() || group_polys[1].is_empty() {
         return 0.0;
     }
 
-    // все рёбра всех колец; нодинг делит их во всех пересечениях
+    // рёбра колец внутри области пересечения; нодинг делит их во всех пересечениях
     let mut edges: Vec<(Pt, Pt)> = Vec::new();
     for polys in &group_polys {
-        for (shell, holes) in polys {
-            for e in ring_edges(shell) {
+        for (_, shell, holes) in polys {
+            for e in ring_edges_in(shell, clip_box, pad) {
                 edges.push(e);
             }
-            for hole in holes {
-                for e in ring_edges(hole) {
+            for (_, hole) in holes {
+                for e in ring_edges_in(hole, clip_box, pad) {
                     edges.push(e);
                 }
             }
         }
     }
-    if edges.is_empty() {
-        return 0.0;
-    }
-    let splits = noded_splits(&edges);
-
-    // масштаб сцены для отступа статус-точек от ребра
-    let mut min = (f64::INFINITY, f64::INFINITY);
-    let mut max = (f64::NEG_INFINITY, f64::NEG_INFINITY);
-    for &(a, b) in &edges {
-        for p in [a, b] {
-            min.0 = min.0.min(p.0);
-            min.1 = min.1.min(p.1);
-            max.0 = max.0.max(p.0);
-            max.1 = max.1.max(p.1);
-        }
-    }
-    let diag = (max.0 - min.0).hypot(max.1 - min.1);
-    let eps = 1e-7 * diag.max(1.0);
+    let splits = noded_splits(&edges, tol);
 
     let inside_group = |group: usize, p: Pt| -> bool {
-        group_polys[group].iter().any(|(shell, holes)| {
-            let hole_refs: Vec<&[Pt]> = holes.iter().map(|h| h.as_slice()).collect();
-            point_in_poly(p, shell, &hole_refs)
+        group_polys[group].iter().any(|(sb, shell, holes)| {
+            if p.0 < sb.0 || p.0 > sb.2 || p.1 < sb.1 || p.1 > sb.3 {
+                return false;
+            }
+            if !point_in_ring(p, shell) {
+                return false;
+            }
+            holes.iter().all(|(hb, h)| {
+                p.0 < hb.0 || p.0 > hb.2 || p.1 < hb.1 || p.1 > hb.3 || !point_in_ring(p, h)
+            })
         })
     };
 
-    // уникальные подребра: совпадающие (общие границы, дубли) схлопываются —
-    // статус точки от копии не зависит, вклад границы считается один раз
-    let mut unique: BTreeMap<(OrdPt, OrdPt), (Pt, Pt)> = BTreeMap::new();
+    // уникальные подребра: совпадающие в пределах tol (общие границы, дубли после перевода координат)
+    // схлопываются — статус точки на расстоянии eps от копии не зависит, вклад границы считается один раз
+    let q_pt = |p: Pt| -> (i64, i64) { ((p.0 / tol).round() as i64, (p.1 / tol).round() as i64) };
+    let mut unique: BTreeMap<((i64, i64), (i64, i64)), (Pt, Pt)> = BTreeMap::new();
     for list in &splits {
         for w in list.windows(2) {
             let (a, b) = (w[0].1, w[1].1);
-            if a == b {
+            let (qa, qb) = (q_pt(a), q_pt(b));
+            if qa == qb {
                 continue;
             }
-            let (p1, p2) = if a < b { (a, b) } else { (b, a) };
-            unique.entry((ord_pt(p1), ord_pt(p2))).or_insert((p1, p2));
+            let (key, pair) = if qa < qb { ((qa, qb), (a, b)) } else { ((qb, qa), (b, a)) };
+            unique.entry(key).or_insert(pair);
         }
     }
 
@@ -238,9 +299,10 @@ pub fn union_intersection_area(regions: &[Poly], clips: &[Poly]) -> f64 {
             continue;
         }
         let mid = ((p1.0 + p2.0) / 2.0, (p1.1 + p2.1) / 2.0);
+        let step = eps.min(0.25 * len);
         let n = (-d.1 / len, d.0 / len); // левая нормаль по ходу p1 -> p2
-        let left = (mid.0 + n.0 * eps, mid.1 + n.1 * eps);
-        let right = (mid.0 - n.0 * eps, mid.1 - n.1 * eps);
+        let left = (mid.0 + n.0 * step, mid.1 + n.1 * step);
+        let right = (mid.0 - n.0 * step, mid.1 - n.1 * step);
         let sl = inside_group(0, left) && inside_group(1, left);
         let sr = inside_group(0, right) && inside_group(1, right);
         if sl == sr {

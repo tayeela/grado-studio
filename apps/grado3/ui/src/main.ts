@@ -18,6 +18,7 @@ import App from "./App.vue";
 import MapPanel from "./panels/MapPanel.vue";
 import LayersPanel from "./panels/LayersPanel.vue";
 import ProjectPanel from "./panels/ProjectPanel.vue";
+import SearchPanel from "./panels/SearchPanel.vue";
 import CheckPanel from "./panels/CheckPanel.vue";
 import StubPanel from "./panels/StubPanel.vue";
 import { loadCore } from "./core";
@@ -33,7 +34,7 @@ loadCore({ module_or_path: wasmUrl }).then(() => {
   app.use(createPinia());
   /* окна dockview находят содержимое по имени компонента (workspaces.ts component) */
   app.component("map", MapPanel).component("layers", LayersPanel).component("project", ProjectPanel)
-    .component("check", CheckPanel).component("stub", StubPanel);
+    .component("search", SearchPanel).component("check", CheckPanel).component("stub", StubPanel);
   app.mount("#app");
 }).catch(e => {
   document.body.textContent = "Ядро программы не загрузилось: " + (e?.message || e) + ". Обновите страницу; если не помогло — нужен браузер посвежее.";
