@@ -84,6 +84,7 @@ function refresh(full = false) {
     }
     v.setStyle(layerStyleFunction(l, fc, viewLat));
     v.setVisible(project.shown(l) || l.role === "territory");
+    v.setOpacity(typeof l.layerOpacity === "number" ? l.layerOpacity : 1);
     v.setZIndex(l.role === "territory" ? 1000 : n - i);
   });
 }
@@ -124,12 +125,22 @@ function markFeatures(features: GeoFeature[]) {
   if (ext && !isEmpty(ext)) map.getView().fit(ext, { padding: [60, 60, 60, 60], maxZoom: 18, duration: 250 });
 }
 
+function viewBbox(): [number, number, number, number] | null {
+  if (!map) return null;
+  const sz = map.getSize();
+  if (!sz) return null;
+  const ext = map.getView().calculateExtent(sz);
+  const wgs = transformExtent(ext, "EPSG:3857", "EPSG:4326");
+  return [wgs[0], wgs[1], wgs[2], wgs[3]];
+}
+
 function clearMark() {
   markSrc.clear();
 }
 
 function scaleNow() {
-  const v = map!.getView(), c = v.getCenter(), r = v.getResolution();
+  if (!map) return;
+  const v = map.getView(), c = v.getCenter(), r = v.getResolution();
   if (!c || !r) return;
   const lat = (toLonLat(c)[1] * Math.PI) / 180;
   ui.scale = (r * Math.cos(lat) * 96) / 0.0254;
@@ -163,6 +174,7 @@ onMounted(() => {
   ui.map.api = {
     refresh,
     fit,
+    viewBbox,
     syncBasemap,
     markAddress,
     markFeatures,

@@ -56,7 +56,11 @@ function stepDone(id: string): boolean {
   return false;
 }
 
-const KEY = (id: string) => "grado3.layout." + id;
+const KEY = (id: string) => {
+  const w = workspace(id);
+  const sig = w ? w.panels.map(p => `${p.id}=${p.component}`).join(",") : "";
+  return `grado3.layout.${id}.${sig}`;
+};
 function build(id: string) {
   if (!api) return;
   const w = workspace(id);

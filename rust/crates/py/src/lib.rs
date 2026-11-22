@@ -207,12 +207,99 @@ fn union_intersection_area(py: Python<'_>, regions: Vec<Vec<Vec<(f64, f64)>>>, c
     py.detach(|| grado_geom_rs::overlay::union_intersection_area(&regions, &clips))
 }
 
+/// Выборка объектов слоя из дискового хранилища Rust (crates/store, план 09.11 шаг С3):
+/// возвращает None (слоя нет или истёк TTL) или список `(grado_key, payload_json)`.
+#[pyfunction]
+#[pyo3(signature = (cache_dir, map_name, code, bbox, ttl_secs=None))]
+fn store_query(
+    py: Python<'_>,
+    cache_dir: &str,
+    map_name: &str,
+    code: &str,
+    bbox: (f64, f64, f64, f64),
+    ttl_secs: Option<f64>,
+) -> PyResult<Option<Vec<(String, String)>>> {
+    let store = grado_store::LayerStore::new(cache_dir, map_name);
+    let q = [bbox.0, bbox.1, bbox.2, bbox.3];
+    let res = py
+        .detach(|| store.query(code, q, ttl_secs))
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(res.map(|items| items.into_iter().map(|f| (f.key, f.payload_json)).collect()))
+}
+
+/// Быстрый подсчёт объектов по списку кодов каталога в области (crates/store, ускоряет ogd_all.scan).
+#[pyfunction]
+#[pyo3(signature = (cache_dir, map_name, codes, bbox, ttl_secs=None, exact_geom=true))]
+fn store_scan(
+    py: Python<'_>,
+    cache_dir: &str,
+    map_name: &str,
+    codes: Vec<String>,
+    bbox: (f64, f64, f64, f64),
+    ttl_secs: Option<f64>,
+    exact_geom: bool,
+) -> std::collections::HashMap<String, Option<usize>> {
+    let store = grado_store::LayerStore::new(cache_dir, map_name);
+    let q = [bbox.0, bbox.1, bbox.2, bbox.3];
+    py.detach(|| store.scan(&codes, q, ttl_secs, exact_geom))
+}
+
+/// Построить или обновить пространственный индекс `.gstore` для слоя (вызывается из `ogd_warm.py` и после выгрузки).
+#[pyfunction]
+#[pyo3(signature = (cache_dir, map_name, code))]
+fn store_sync(py: Python<'_>, cache_dir: &str, map_name: &str, code: &str) -> PyResult<Option<u64>> {
+    let store = grado_store::LayerStore::new(cache_dir, map_name);
+    let res = py
+        .detach(|| store.sync_layer(code))
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(res.map(|m| m.feature_count))
+}
+
+/// Вырезка плитки карты XYZ (Web Mercator) из хранилища Rust в формате GeoJSON FeatureCollection.
+#[pyfunction]
+#[pyo3(signature = (cache_dir, map_name, code, z, x, y, ttl_secs=None, buffer_frac=0.05))]
+fn store_tile(
+    py: Python<'_>,
+    cache_dir: &str,
+    map_name: &str,
+    code: &str,
+    z: u32,
+    x: u32,
+    y: u32,
+    ttl_secs: Option<f64>,
+    buffer_frac: f64,
+) -> PyResult<Option<String>> {
+    let store = grado_store::LayerStore::new(cache_dir, map_name);
+    py.detach(|| store.tile_geojson(code, z, x, y, ttl_secs, buffer_frac))
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// Очередь устаревших слоёв (старше `refresh_secs`, самые старые и отсутствующие первыми — как `ogd_warm.stale`).
+#[pyfunction]
+#[pyo3(signature = (cache_dir, map_name, codes, refresh_secs=72000.0))]
+fn store_stale(
+    py: Python<'_>,
+    cache_dir: &str,
+    map_name: &str,
+    codes: Vec<String>,
+    refresh_secs: f64,
+) -> Vec<String> {
+    let now = grado_store::freshness::now_unix();
+    let dir = std::path::PathBuf::from(cache_dir);
+    py.detach(|| grado_store::stale_codes(&dir, map_name, &codes, refresh_secs, now))
+}
+
 #[pymodule]
 fn grado_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ComputeEngine>()?;
     m.add_function(wrap_pyfunction!(render_plate, m)?)?;
     m.add_function(wrap_pyfunction!(parts_ops, m)?)?;
     m.add_function(wrap_pyfunction!(union_intersection_area, m)?)?;
+    m.add_function(wrap_pyfunction!(store_query, m)?)?;
+    m.add_function(wrap_pyfunction!(store_scan, m)?)?;
+    m.add_function(wrap_pyfunction!(store_sync, m)?)?;
+    m.add_function(wrap_pyfunction!(store_tile, m)?)?;
+    m.add_function(wrap_pyfunction!(store_stale, m)?)?;
     m.add_class::<LineLib>()?;
     m.add("ExpressionError", m.py().get_type::<ExpressionError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

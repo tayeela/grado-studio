@@ -1,0 +1,12 @@
+[package]
+name = "grado_store"
+version = "0.1.0"
+edition = "2021"
+description = "ГРАДО: дисковое хранилище слоёв с пространственным индексом rstar, вырезкой по рамке, плитками и журналом свежести (план 09.11.2026, шаг С3)"
+license = "MIT"
+
+[dependencies]
+flate2 = "1"
+rstar = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

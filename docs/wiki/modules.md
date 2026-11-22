@@ -75,7 +75,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_num`, `page_size`, `frame_rect`, `_rgb`, `_fade`, `_rect`, `_path`, `_baseline`, `_text`, `_fit`, `_wrap`, `fmt_m`, `fmt_scale`, `linked_scale`, `scalebar_step`, `_legend`, `_table`, `_textblock`, `_picture`, `_north`, `_scalebar`, `_ellipse`, `_line`, `_placeholder`, `map_sheet`, `_label_box`, `_boxes_hit`, `label_clashes`, `_plated`, `_map`, `_local`, `_frame_ops`, `_place`, `_block`, `_Blocks`, `_PaperBorder`, `_doc`, `_page`, `build_pages`, `build_page`, `render_pdf`, `render_page_svg`, `_map_ops`, `map_plate`, `map_svg`
 
-### `apps/grado2/ogd_all.py` — 947 стр.
+### `apps/grado2/ogd_all.py` — 956 стр.
 
 «Всё из ГИС ОГД в DWG»: все слои портала ИСОГД по области — одним чертежом, слой портала = слой чертежа.
 
@@ -83,11 +83,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_load_failed`, `_save_failed`, `catalog_tree`, `layer_list`, `_linetypes`, `_first_sign`, `_orient`, `_lgr_code`, `_polys`, `orient_lines`, `_cut_bytes`, `_xdata`, `sheet_box`, `sheet_bbox_wgs`, `portal_color`, `_decls`, `_hex`, `_num`, `etalon_code`, `lgr_entry`, `dxf_hatch`, `etalon_style`, `layer_style`, `portal_style`, `label_siblings`, `label_angles`, `set_label_angles`, `_zone_hatch`, `_label`, `build_drawing`, `portal_styles`, `_save_json`, `scan`, `_rgb_hex`, `Job`
 
-### `apps/grado2/ogd_warm.py` — 172 стр.
+### `apps/grado2/ogd_warm.py` — 195 стр.
 
 Ночная выгрузка ГИС ОГД и ЕГКО на сервер: все слои лежат на диске свежими, «Данные» и DXF берут их оттуда, а не с портала.
 
-Функции: `busy`, `ogd_age`, `egko_age`, `stale`, `late`, `run`, `main`
+Функции: `busy`, `ogd_age`, `egko_age`, `stale`, `late`, `run`, `_sync_gstore`, `main`
 
 ### `apps/grado2/portalgate.py` — 93 стр.
 
@@ -127,13 +127,13 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 3552 стр.
+### `apps/grado2/server.py` — 3590 стр.
 
 ГРАДО 2: локальный сервер.
 
 Разделы по порядку: Пути, папка проектов, настройки запуска · Источники данных: ключ слоя → (вид, параметр, название) · Пределы области выгрузки, разбиение на части, подписи полей · ЕГКО: пустые строковые поля портал отдаёт одним пробелом " " — _v считает их пустыми · Яндекс: все атрибуты слоя как есть, ключевые — по-русски; площадь и длина на местности даё · поиск участка по кадастровому номеру (НСПД) · Пределы тела запроса, ход выгрузки, понятные ошибки порталов · Подложки: тайлы Esri · OSM (Overpass): выгрузка и кэш по областям · ФГИС ТП: документы территориального планирования (Минэкономразвития) · ТЭП-нормы, район по территории, пешеходный маршрут до станции · Проекты на диске: запись, версии, размер папки · HTTP: заголовки безопасности, вход по ключу, совместный режим · HTTP: Starlette (BSD) под uvicorn (BSD); тела запросов проверяет pydantic (MIT) · GET · POST · совместный режим (hub.py): маршруты /api/hub · вход через Telegram (tglogin.py): /api/hub/tg/start → oauth.telegram.org → /api/hub/tg/cal · вход на сайт без хаба: те же /api/hub/tg/start и callback (их адрес записан в BotFather),  · приём запроса · Запуск: версия кода, повторный запуск, сервер
 
-Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `nspd_zouit_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `orient_by_areas`, `_has_code`, `orient_all_by_areas`, `drop_guid_copies`, `lgr_has_linetype`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `parcel_at`, `get_parcel_at`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `_route_memo_put`, `rail_route`, `_fresh`, `_admin_doc`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `_versions_last`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts` и ещё 96
+Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `nspd_zouit_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `orient_by_areas`, `_has_code`, `orient_all_by_areas`, `drop_guid_copies`, `lgr_has_linetype`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `parcel_at`, `get_parcel_at`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `_route_memo_put`, `rail_route`, `_fresh`, `_admin_doc`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `_versions_last`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts` и ещё 97
 
 ### `apps/grado2/symparts.py` — 149 стр.
 
@@ -407,11 +407,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_windows_ogr2ogr_candidates`, `find_ogr2ogr`, `clean_msg`, `_safe_extract`, `_extract_recursive`, `GisogdZip`
 
-### `core/connectors/grado_connectors/gisogd_api.py` — 840 стр.
+### `core/connectors/grado_connectors/gisogd_api.py` — 889 стр.
 
 Коннектор ГИС ОГД Москвы — прямая выгрузка слоёв по открытому REST API.
 
-Функции: `_check_code`, `_inflate`, `_tmp_beside`, `_nowhere`, `_expected_size`, `_net_error`, `_http_get`, `_http_stream`, `_layer_lock`, `catalog`, `_full_names`, `_shp_features`, `_zip_of`, `_geom_bbox`, `_overlaps`, `norm_id`, `GisogdApi`
+Функции: `_check_code`, `_inflate`, `_tmp_beside`, `_nowhere`, `_expected_size`, `_net_error`, `_http_get`, `_http_stream`, `_rust_store`, `_layer_lock`, `catalog`, `_full_names`, `_shp_features`, `_zip_of`, `_geom_bbox`, `_overlaps`, `norm_id`, `GisogdApi`
 
 ### `core/connectors/grado_connectors/importer.py` — 67 стр.
 

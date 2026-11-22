@@ -780,10 +780,19 @@ def _save_json(path, data):
 # ---------- Просмотр области: сколько объектов каждого слоя есть в кэше ----------
 def scan(bbox, cache_dir, cat):
     """Сколько объектов каждого слоя на листе — только из кэша на диске (портал не трогается): {code: n};
-    слоя нет в кэше или он устарел — None (узнать можно только выгрузкой)."""
+    слоя нет в кэше или он устарел — None (узнать можно только выгрузкой). При наличии grado_rs (шаг С3)
+    сканирует пространственные индексы `.gstore` на Rust, иначе — запасной путь по `.shp.lines2.gz`."""
+    items = layer_list(cat)
     api = GisogdApi(cache_dir=cache_dir)
+    if os.environ.get("GRADO_STORE", "rust").lower() != "python":
+        try:
+            import grado_rs
+            if hasattr(grado_rs, "store_scan"):
+                return grado_rs.store_scan(str(cache_dir), "isogd", [it["code"] for it in items], tuple(bbox), float(api.ttl), True)
+        except Exception:
+            pass
     counts = {}
-    for it in layer_list(cat):
+    for it in items:
         try:
             feats = api._from_lines(it["code"], tuple(bbox))
         except Exception:

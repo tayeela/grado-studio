@@ -37,12 +37,9 @@ export const WORKSPACES: Workspace[] = [
     panels: [
       { id: "map", component: "map", title: "Карта" },
       { id: "layers", component: "layers", title: "Слои", at: { ref: "map", dir: "left" }, size: 300 },
-      { id: "catalog", component: "stub", title: "Каталог данных", at: { ref: "layers", dir: "within" },
-        stub: "Каталог ГИС ОГД и ЕГКО с нашего сервера, слой приходит уже оформленным. Шаг И3." },
-      { id: "props", component: "stub", title: "Свойства", at: { ref: "map", dir: "right" }, size: 340,
-        stub: "Знак из слоёв как в QGIS, классы по атрибутам, библиотека знаков, стиль из QGIS. Шаг И3." },
-      { id: "table", component: "stub", title: "Таблица атрибутов", at: { ref: "map", dir: "below" }, size: 220,
-        stub: "Таблица атрибутов слоя. Шаг И3." },
+      { id: "catalog", component: "catalog", title: "Каталог данных", at: { ref: "layers", dir: "within" } },
+      { id: "props", component: "props", title: "Свойства", at: { ref: "map", dir: "right" }, size: 340 },
+      { id: "table", component: "table", title: "Таблица атрибутов", at: { ref: "map", dir: "below" }, size: 220 },
     ],
   },
   {

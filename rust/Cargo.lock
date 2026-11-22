@@ -270,14 +270,25 @@ dependencies = [
 
 [[package]]
 name = "grado_rs"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "grado_compute_rs",
  "grado_geom_rs",
  "grado_plate",
+ "grado_store",
  "grado_symbol",
  "num-bigint",
  "pyo3",
+]
+
+[[package]]
+name = "grado_store"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "rstar 0.12.2",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@
 
 Перевод ядра с Python на Rust (стратегия «удушающей змеи»: Rust подменяет Python по частям,
 Python-версия остаётся эталоном и запасным путём). Начат агентом zcode на Mac владельца
-(05–06.11.2026, вне git), перенесён в репозиторий 08.11.2026. Workspace из восьми крейтов:
+(05–06.11.2026, вне git), перенесён в репозиторий 08.11.2026. Workspace из девяти крейтов:
 
 - **`crates/compute`** (`grado_compute_rs`) — порт `core/compute` (ТЭП-движок),
   сверен с Python-эталоном **бит-в-бит**;
@@ -26,11 +26,18 @@ Python-версия остаётся эталоном и запасным пут
 - **`crates/wasm`** (`grado_core_wasm`) — ядро для браузера: координаты, формат проекта, плановые площади и наложения в МСК,
   части знака и типы линий ЛГР REDLN97 в WebAssembly для нового интерфейса `/g3/` (`tools/build_core_wasm.sh`); в браузере
   совпадение координат с Python — до 0,000003 мм (своя библиотека math у WebAssembly);
+- **`crates/store`** (`grado_store`) — дисковое хранилище слоёв (план 09.11.2026, шаг С3): бинарный формат `.gstore`
+  со сжатыми пространственными блоками (Z-порядок) и R-деревом `rstar`, вырезка по прямоугольнику WGS84, подсчёт
+  объектов каталога (`ogd_all.scan`), плитки карты XYZ (`GET /api/store/tile`) и журнал свежести для `ogd_warm.py`;
+  CLI `grado_store index|query|scan|tile|status`. FlatGeobuf проверен в начале шага: требует фиксированной схемы колонок
+  на слой (риск потери разнотипных атрибутов ГИС ОГД) и тянет `geozero`/`flatbuffers`; `.gstore` хранит сырой GeoJSON +
+  `grado_key` без потерь и ускоряет выборку и `scan` на реальных слоях ГИС ОГД в 47–127 раз;
 - **`crates/py`** (`grado_rs`) — модуль Python (PyO3, abi3 ≥ 3.10): ТЭП-движок на Rust
   с API `grado_compute.Engine`; включается `GRADO_COMPUTE=rust` (см. «Мост в Python»);
   `render_plate(ops_json, w_mm, h_mm, dpi)` — пластина карты; `parts_ops(kind, shapes, parts, px_mm)` — слои знака (0.2.0);
   `LineLib(lib_json).ops(pts, name, k, color, width, shape_k)` — типы линий ЛГР REDLN97 (0.3.0);
-  `union_intersection_area(regions, clips)` — площадь наложения полигонов `(∪ regions) ∩ (∪ clips)` (0.4.0, шаг С2).
+  `union_intersection_area(regions, clips)` — площадь наложения полигонов `(∪ regions) ∩ (∪ clips)` (0.4.0, шаг С2);
+  `store_query`, `store_scan`, `store_sync`, `store_tile`, `store_stale` — дисковое хранилище слоёв (0.5.0, шаг С3).
 
 ## Мост в Python — статус (шаг 1 «змеи»)
 

@@ -2566,12 +2566,50 @@ def post_font(c):
     return _json(200, {"ids": ids, **fonts.listing()})
 
 
+def get_store_tile(c):
+    """Плитка слоя из дискового хранилища (план 09.11 шаг С3): GET /api/store/tile?map=isogd&code=l1&z=12&x=2475&y=1281."""
+    from grado_connectors.gisogd_api import _check_code
+    map_name = c.arg("map", "isogd")
+    if map_name not in ("isogd", "base2"):
+        return _json(400, {"error": "неверная карта хранилища (нужно isogd или base2)"})
+    code = c.arg("code", "")
+    try:
+        _check_code(code)
+        z, x, y = int(c.arg("z")), int(c.arg("x")), int(c.arg("y"))
+    except (ConnectorError, TypeError, ValueError):
+        return _json(400, {"error": "нужны корректные code, z, x, y"})
+    if not (0 <= z <= 22) or x < 0 or y < 0 or x >= (1 << z) or y >= (1 << z):
+        return _json(400, {"error": "координаты плитки вне диапазона"})
+    cache_dir = CACHE / ("gisogd" if map_name == "isogd" else "egko")
+    if os.environ.get("GRADO_STORE", "rust").lower() != "python":
+        try:
+            import grado_rs
+            if hasattr(grado_rs, "store_tile"):
+                body = grado_rs.store_tile(str(cache_dir), map_name, code, z, x, y, None, 0.05)
+                if body is None:
+                    return _json(404, {"error": "слоя нет в хранилище на диске"})
+                return _file(body.encode("utf-8"), "application/geo+json; charset=utf-8")
+        except Exception:
+            pass
+    # запасной путь на Python, если grado_rs отсутствует
+    n = 1 << z
+    lon = lambda tx: tx / n * 360.0 - 180.0
+    lat = lambda ty: math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * ty / n))))
+    bb = (lon(x - 0.05), lat(min(n, y + 1.05)), lon(x + 1.05), lat(max(0.0, y - 0.05)))
+    api = GisogdApi(cache_dir=cache_dir, map_name=map_name, ttl=1e12)
+    feats = api._from_lines(code, bb) if map_name == "isogd" else (api._grid_read(code, bb) if api._grid_fresh(code) else None)
+    if feats is None:
+        return _json(404, {"error": "слоя нет в хранилище на диске"})
+    return _json(200, {"type": "FeatureCollection", "features": feats})
+
+
 GET_ROUTES = {
     "/api/search/cadastral": get_search_cadastral,
     "/api/search/address": get_search,
     "/api/search/parcel_at": get_parcel_at,
     "/api/search": get_search,
     "/api/sources": get_sources,
+    "/api/store/tile": get_store_tile,
     "/api/layer_roles": lambda c: _json(200, layer_roles()),
     "/api/tep/norms": lambda c: _json(200, tep_norms()),
     "/api/health": get_health,

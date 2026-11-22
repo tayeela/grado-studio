@@ -275,6 +275,17 @@ _CELL = 0.01                    # ° ≈ 0,63 × 1,1 км в Москве: зд�
 _LOCKS, _LOCKS_GUARD = {}, threading.Lock()
 
 
+def _rust_store():
+    """Модуль Rust-хранилища слоёв (crates/store, план 09.11 шаг С3) или None при GRADO_STORE=python / без grado_rs."""
+    if os.environ.get("GRADO_STORE", "rust").lower() == "python":
+        return None
+    try:
+        import grado_rs
+        return grado_rs if hasattr(grado_rs, "store_query") else None
+    except ImportError:
+        return None
+
+
 def _layer_lock(key):
     with _LOCKS_GUARD:
         return _LOCKS.setdefault(key, threading.Lock())
@@ -508,6 +519,12 @@ class GisogdApi(Connector):
                 shutil.rmtree(grid, ignore_errors=True)
                 tmp.replace(grid)
                 tmp = None
+                rs = _rust_store()
+                if rs and self.cache_dir:
+                    try:
+                        rs.store_sync(str(self.cache_dir), self.map_name, code)
+                    except Exception:
+                        pass
         finally:
             Path(zpath).unlink(missing_ok=True)
             if tmp is not None:
@@ -516,7 +533,20 @@ class GisogdApi(Connector):
         return out, count
 
     def _grid_read(self, code, query):
-        """Выборка из сетки: клетки области и соседние слева/снизу (объект лежит в клетке своего угла) + крупные."""
+        """Выборка из сетки: через пространственный индекс Rust (.gstore) или запасным путём по клеткам на диске."""
+        rs = _rust_store()
+        if rs and self.cache_dir:
+            try:
+                rows = rs.store_query(str(self.cache_dir), self.map_name, code, tuple(query), float(self.ttl))
+                if rows is not None:
+                    out = []
+                    for key, js in rows:
+                        f = json.loads(js)
+                        out.append({"type": "Feature", "geometry": f.get("geometry"),
+                                    "properties": f.get("properties") or {}, "grado_key": key})
+                    return out
+            except Exception:
+                pass
         g = self._grid_dir(code)
         w, s, e, n = query
         names = [f"{ix}_{iy}" for ix in range(math.floor((w - _CELL) / _CELL), math.floor(e / _CELL) + 1)
@@ -725,13 +755,25 @@ class GisogdApi(Connector):
         return self._cache_child(code, f"{code}.shp.lines2.gz")     # lines2: кэш до CSV-слияния (lines) держал обрезанные названия — не читается
 
     def _from_lines(self, code, query):
-        """Быстрый путь по кэшу: строка на объект «w,s,e,n<TAB>ключ<TAB>json».
-        Разбирается только то, что попало в область: слой ПЗЗ старой Москвы — 221 МБ JSON,
-        целиком json.loads — ~5 с и 1,5 ГБ памяти, построчно — около секунды."""
+        """Быстрый путь по кэшу: пространственный индекс Rust (.gstore, план 09.11 шаг С3) или построчное чтение
+        «.shp.lines2.gz» («w,s,e,n<TAB>ключ<TAB>json»). Разбирается только то, что попало в область."""
         lp, gz = self._lines_path(code), self._cache_path(code)
         if not (lp and lp.exists() and gz and gz.exists()) or lp.stat().st_mtime < gz.stat().st_mtime \
                 or (time.time() - gz.stat().st_mtime) >= self.ttl:
             return None
+        rs = _rust_store()
+        if rs and self.cache_dir:
+            try:
+                rows = rs.store_query(str(self.cache_dir), self.map_name, code, tuple(query), float(self.ttl))
+                if rows is not None:
+                    out = []
+                    for key, js in rows:
+                        f = json.loads(js)
+                        out.append({"type": "Feature", "geometry": f["geometry"],
+                                    "properties": f["properties"], "grado_key": key})
+                    return out
+            except Exception:
+                pass
         out = []
         try:
             with gzip.open(lp, "rt", encoding="utf-8") as fh:
@@ -816,6 +858,13 @@ class GisogdApi(Connector):
                 # снова попробовал CSV, а обрезанные названия не пролежали в кэше неделю
                 old = self._cache_path(code).stat().st_mtime - 10
                 os.utime(lp, (old, old))
+            elif lp and lp.exists() and self.cache_dir:
+                rs = _rust_store()
+                if rs:
+                    try:
+                        rs.store_sync(str(self.cache_dir), self.map_name, code)
+                    except Exception:
+                        pass
         except Exception as e:
             if cached and self._cache_path(code):
                 self._cache_path(code).unlink(missing_ok=True)   # следующая попытка скачает заново

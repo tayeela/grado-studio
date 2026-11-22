@@ -14,5 +14,6 @@ export const useCommands = defineStore("commands", () => {
   const journal = shallowRef<Entry[]>([]);
   bus.onChange = () => { tick.value++; journal.value = [...bus.journal]; };
   const run = (line: string) => bus.line(line);
-  return { bus, tick, journal, run };
+  const exec = (id: string, args: string[] = []) => bus.exec(id, args);
+  return { bus, tick, journal, run, exec };
 });

@@ -22,13 +22,13 @@
       </div>
 
       <template v-if="!g.id || isOpen(g.id)">
-        <div v-for="l in g.layers" :key="l.key" class="row" :class="{ terr: l.role === 'territory', off: !project.shown(l) }">
+        <div v-for="l in g.layers" :key="l.key" class="row" :class="{ terr: l.role === 'territory', off: !project.shown(l), cur: ui.selectedLayer === l.key }">
           <wa-switch size="small" :checked="l.visible !== false" :title="l.visible !== false ? 'Скрыть слой' : 'Показать слой'"
                      @change="cmd.run((l.visible !== false ? 'скрыть ' : 'показать ') + l.key)" />
           <span class="sw" :class="{ dash: swatchOf(l).dash, line: l.geom === 'line' }"
                 :style="{ background: swatchOf(l).fill, borderColor: swatchOf(l).stroke }" />
-          <button type="button" class="t" :title="`${l.title || l.key} (${l.key}) — показать на карте`"
-                  @click="cmd.run('показать-всё ' + l.key)">
+          <button type="button" class="t" :title="`${l.title || l.key} (${l.key}) — выбрать для свойств и таблицы; двойной щелчок — показать на карте`"
+                  @click="selectLayer(l.key)" @dblclick="cmd.run('показать-всё ' + l.key)">
             <span class="tn">{{ l.title || l.key }}</span>
             <span class="tm g3-muted">
               {{ project.layerCount(l.key) }}
@@ -39,6 +39,7 @@
                     title="Снять роль границы территории" @click="cmd.run('граница нет')">граница</wa-badge>
           <wa-button v-else-if="l.geom === 'poly' || !l.geom" size="small" appearance="plain"
                      title="Сделать этот слой границей территории" @click="cmd.run('граница ' + l.key)">граница</wa-button>
+          <button type="button" class="act" title="Показать слой на карте" @click="cmd.run('показать-всё ' + l.key)">◎</button>
           <button type="button" class="act" title="Поднять слой выше" @click="cmd.run('выше ' + l.key)">↑</button>
           <button type="button" class="act" title="Опустить слой ниже" @click="cmd.run('ниже ' + l.key)">↓</button>
         </div>
@@ -51,12 +52,18 @@
 import { computed, reactive, ref } from "vue";
 import { swatchOf } from "../symbology";
 import { useProject } from "../stores/project";
+import { useUi } from "../stores/ui";
 import { useCommands } from "../stores/commands";
 import type { Layer } from "../types/project";
 
-const project = useProject(), cmd = useCommands();
+const project = useProject(), ui = useUi(), cmd = useCommands();
 const newGrp = ref("");
 const closed = reactive<Record<string, boolean>>({});
+
+function selectLayer(key: string) {
+  ui.selectedLayer = key;
+  ui.selectedFeatureIdx = null;
+}
 
 const isOpen = (id: string): boolean => !closed[id];
 const toggleOpen = (id: string) => { closed[id] = !closed[id]; };
@@ -87,7 +94,8 @@ const tree = computed(() => {
 .l-inp { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--wa-color-neutral-border-normal); border-radius: 6px; background: var(--wa-color-surface-default); color: inherit; font: inherit; font-size: 12px; }
 .grp-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 3px 4px; border-radius: 6px; background: var(--wa-color-surface-lowered); }
 .grp-title { flex: 1; display: flex; justify-content: space-between; align-items: center; border: 0; background: none; color: inherit; font: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; padding: 2px 4px; }
-.row { display: flex; align-items: center; gap: 6px; padding: 2px 0; min-height: 28px; }
+.row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; min-height: 28px; border-radius: 6px; }
+.row.cur { background: var(--wa-color-brand-fill-quiet); }
 .row.off .tn { opacity: 0.55; }
 .sw { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid; flex-shrink: 0; box-sizing: border-box; }
 .sw.dash { border-style: dashed; }

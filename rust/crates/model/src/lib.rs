@@ -147,6 +147,10 @@ pub struct Layer {
     #[serde(default, skip_serializing_if = "Maybe::is_absent")]
     #[ts(as = "Option<bool>", optional = nullable)]
     pub visible: Maybe<bool>,
+    /// непрозрачность всего слоя (0..1)
+    #[serde(rename = "layerOpacity", default, skip_serializing_if = "Maybe::is_absent")]
+    #[ts(rename = "layerOpacity", as = "Option<f64>", optional = nullable)]
+    pub layer_opacity: Maybe<Value>,
     #[serde(default, skip_serializing_if = "Maybe::is_absent")]
     #[ts(as = "Option<String>", optional = nullable)]
     pub group: Maybe<String>,

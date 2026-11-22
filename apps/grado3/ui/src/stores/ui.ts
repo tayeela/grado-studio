@@ -36,6 +36,8 @@ export interface MapApi {
   clearMark(): void;
   /** вписать слой (ключ) или всё */
   fit(key?: string): boolean;
+  /** текущий прямоугольник видимой карты в WGS84 [w, s, e, n] */
+  viewBbox(): [number, number, number, number] | null;
   /** перерисовать слои проекта (full — пересоздать источники при замене данных слоя) */
   refresh(full?: boolean): void;
   /** переключить подложку на карте */
@@ -46,9 +48,11 @@ export const useUi = defineStore("ui", () => {
   const ws = ref("territory");
   const cursor = ref<XY | null>(null);      // МСК, м
   const scale = ref(0);
+  const selectedLayer = ref("");
+  const selectedFeatureIdx = ref<number | null>(null);
   const search = shallowRef<SearchState | null>(null);
   const map: { api: MapApi | null } = { api: null };
-  return { ws, cursor, scale, search, map };
+  return { ws, cursor, scale, selectedLayer, selectedFeatureIdx, search, map };
 });
 
 export type UiStore = ReturnType<typeof useUi>;

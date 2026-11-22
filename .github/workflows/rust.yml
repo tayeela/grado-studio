@@ -14,9 +14,13 @@ on:
       - "core/compute/**"
       - "core/geom/**"
       - "apps/grado2/layout_io.py"
+      - "apps/grado2/ogd_all.py"
+      - "apps/grado2/ogd_warm.py"
       - "apps/grado2/tests/test_map_plate.py"
+      - "apps/grado2/tests/test_rust_store.py"
       - "apps/grado2/rs_wheel.py"
       - "core/connectors/grado_connectors/crs.py"
+      - "core/connectors/grado_connectors/gisogd_api.py"
       - "apps/grado2/web/migrate.js"
       - "apps/grado3/ui/src/types/**"
       - ".github/workflows/rust.yml"
@@ -74,6 +78,10 @@ jobs:
           python -m pip install -q -r apps/grado2/requirements.txt
           python -c "import grado_rs; assert hasattr(grado_rs, 'render_plate')"
           python -m unittest apps/grado2/tests/test_map_plate.py
+      - name: Хранилище слоёв на диске на Rust (crates/store = эталон Python)
+        run: |
+          python -c "import grado_rs; assert hasattr(grado_rs, 'store_query') and hasattr(grado_rs, 'store_scan')"
+          PYTHONPATH=apps/grado2:core/connectors:core/render python -m unittest apps/grado2/tests/test_rust_store.py
       - name: Слои знака на Rust (crates/symbol) = эталон Python; модуль WebAssembly для экрана собирается
         run: |
           python -c "import grado_rs; assert hasattr(grado_rs, 'parts_ops')"
