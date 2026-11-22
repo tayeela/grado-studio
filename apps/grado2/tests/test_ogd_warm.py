@@ -66,6 +66,8 @@ class WarmStart(unittest.TestCase):
                 self.assertIsNone(server.start_warm(8650, d))        # программа на Маке — не начинает
             with mock.patch.dict(os.environ, env), mock.patch.object(server, "GUEST", True):
                 self.assertIsNone(server.start_warm(8650, d))        # гостевая копия — не начинает
+            with mock.patch.dict(os.environ, {**env, "GRADO2_SITE_ROLE": "guest"}):
+                self.assertIsNone(server.start_warm(8650, d))        # гостевая роль сайта — не начинает
             with mock.patch.dict(os.environ, env):
                 server.start_warm(8650, d)
                 self.assertEqual(popen.call_count, 1)

@@ -3519,7 +3519,7 @@ def start_warm(port, cache=None):
     """Сайт: ночной выгрузки ГИС ОГД и ЕГКО ещё не было или итог старше WARM_EVERY — начать её сразу, отдельным
     процессом с пониженным приоритетом (владелец 16.10.2026: «начинай сейчас»). Второй прогон ogd_warm.py не начнёт сам
     (замок warm.lock); перезапуск сайта прерывает прогон, следующий запуск продолжает со старейших слоёв. Вывод — в журнал сайта."""
-    if GUEST or not os.environ.get("GRADO2_PUBLIC_HOST"):
+    if GUEST or os.environ.get("GRADO2_SITE_ROLE") == "guest" or not os.environ.get("GRADO2_PUBLIC_HOST"):
         return None
     cache = Path(cache or CACHE / "gisogd")
     st = cache / "warm_status.json"
