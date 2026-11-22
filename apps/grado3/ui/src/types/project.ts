@@ -21,7 +21,11 @@ key: string, title?: string | null,
 /**
  * poly, line, point
  */
-geom?: string | null, visible?: boolean | null, group?: string | null, 
+geom?: string | null, visible?: boolean | null, 
+/**
+ * непрозрачность всего слоя (0..1)
+ */
+layerOpacity?: number | null, group?: string | null, 
 /**
  * роль слоя: `territory` — граница территории
  */

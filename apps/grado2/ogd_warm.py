@@ -112,6 +112,27 @@ def run(todo, api, failed, port, limit, workers, label, stats):
         list(pool.map(one, todo))
 
 
+def _sync_gstore(cache_dir, map_name, items):
+    """Доиндексировать свежие слои в `.gstore` (Rust, план 09.11 шаг С3), если индекс ещё не собран."""
+    try:
+        import os
+        if os.environ.get("GRADO_STORE", "rust").lower() == "python":
+            return 0
+        import grado_rs
+        if not hasattr(grado_rs, "store_sync"):
+            return 0
+    except ImportError:
+        return 0
+    n = 0
+    for it in items:
+        try:
+            if grado_rs.store_sync(str(cache_dir), map_name, it["code"]) is not None:
+                n += 1
+        except Exception:
+            pass
+    return n
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--cache", default=str(Path.home() / ".grado2/cache/gisogd"))
@@ -139,6 +160,7 @@ def main():
     todo = stale(items, lambda c: ogd_age(api, c))
     st = {"got": 0, "err": 0, "left": 0}
     run(todo, api, failed, a.port, a.limit, WORKERS, "ГИС ОГД", st)
+    _sync_gstore(cache, "isogd", items)
     ogd_all._save_failed(cache, failed)
     report["gisogd"] = {"layers": len(items), "fresh": len(items) - len(todo), **st}
     print(f"ГИС ОГД: слоёв {len(items)}, были свежими {len(items) - len(todo)}, обновлено {st['got']}, "
@@ -158,6 +180,7 @@ def main():
         if not a.limit or left:
             run(etodo, eapi, efailed, a.port, left, 1, "ЕГКО", es)
         egko_cache.mkdir(parents=True, exist_ok=True)
+        _sync_gstore(egko_cache, "base2", eitems)
         ogd_all._save_failed(egko_cache, efailed)
         report["egko"] = {"layers": len(eitems), "fresh": len(eitems) - len(etodo), **es}
         print(f"ЕГКО: слоёв {len(eitems)}, были свежими {len(eitems) - len(etodo)}, обновлено {es['got']}, "

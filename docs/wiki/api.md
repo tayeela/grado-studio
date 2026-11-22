@@ -24,7 +24,7 @@ HTTP — Starlette под uvicorn, тела запросов проверяет 
 Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 ```
 
-Все упомянутые в коде пути (66):
+Все упомянутые в коде пути (67):
 
 - `/api/export/`
 - `/api/export/dxf`
@@ -89,6 +89,7 @@ HTTP — Starlette под uvicorn, тела запросов проверяет 
 - `/api/search/parcel_at`
 - `/api/site`
 - `/api/sources`
+- `/api/store/tile`
 - `/api/style/qml`
 - `/api/tep`
 - `/api/tep/norms`

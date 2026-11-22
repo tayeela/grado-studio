@@ -1,8 +1,8 @@
 [package]
 name = "grado_rs"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
-description = "Мост Python ↔ Rust (PyO3): модуль grado_rs — ТЭП-движок, геометрия наложений, пластина карты и слои знака на Rust"
+description = "Мост Python ↔ Rust (PyO3): модуль grado_rs — ТЭП-движок, геометрия наложений, хранилище слоёв, пластина карты и слои знака на Rust"
 publish = false
 
 [lib]
@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 grado_compute_rs = { path = "../compute" }
 grado_geom_rs = { path = "../geom" }
 grado_plate = { path = "../plate" }
+grado_store = { path = "../store" }
 grado_symbol = { path = "../symbol" }
 num-bigint = "0.4"
 pyo3 = { version = "0.30", features = ["extension-module", "abi3-py310", "num-bigint"] }

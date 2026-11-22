@@ -44,6 +44,7 @@
 | `test_roles_js.py` | RolesJs, LayerRolesApi | 5 |
 | `test_rowsgeom_js.py` | RowsGeomJs | 1 |
 | `test_rs_wheel.py` | RsWheel | 7 |
+| `test_rust_store.py` | RustStoreParity | 3 |
 | `test_sat.py` | FakeTiles, SatExport | 8 |
 | `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, PublicAuthCheck, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, OgdFileResponse, HubHttp, DxfUidNotExported, NonHubUnchanged, ParcelAt, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 174 |
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |

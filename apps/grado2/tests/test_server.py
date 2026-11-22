@@ -1024,7 +1024,8 @@ class AccessToken(unittest.TestCase):
     def test_rotated_cookie_with_wrong_signature_is_401(self):
         with self.on():
             nonce, _, sig = S.rotated_cookie().partition(".")
-            for bad in (f"{nonce}.{'0' * 64}", "no-sig-at-all", f".{sig}", f"{nonce}.{sig[:-1]}a"):
+            wrong_last = "b" if sig[-1] == "a" else "a"
+            for bad in (f"{nonce}.{'0' * 64}", "no-sig-at-all", f".{sig}", f"{nonce}.{sig[:-1]}{wrong_last}"):
                 self.assertEqual(self.call("/api/sources", headers={"Cookie": f"grado_token={bad}"})[0], 401, bad)
             self.assertEqual(self.call("/api/sources", headers={"Cookie": "a=b; grado_token=wrong"})[0], 401)
             self.assertFalse(S.cookie_token_ok(f"{nonce}.подпись"))     # не-ASCII подпись — отказ, а не сбой сравнения

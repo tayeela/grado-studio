@@ -3,6 +3,7 @@
    команда с отменой Ctrl+Z. Имена — русские, псевдонимы — как в AutoCAD. Проверка: commands.test.ts. */
 import { CommandError, setter, type Bus, type Command, type Undo } from "./bus";
 import { unionAreaMsk, wgsToMsk } from "../core";
+import { defaultStyleFor, geomOfFc, PREFERRED_ORDER, type LayerStyle } from "../symbology";
 import { WORKSPACES, workspace } from "../workspaces";
 import {
   BASEMAPS, EXAMPLE_RING, PARCELS_KEY, TERR_KEY,
@@ -57,7 +58,135 @@ const num = (s: string | undefined, what: string) => {
   return v;
 };
 
-const cloneLayers = (ls: Layer[]): Layer[] => ls.map(l => ({ ...l }));
+const deepClone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+const cloneLayers = (ls: Layer[]): Layer[] => ls.map(l => deepClone(l));
+
+/** Прямоугольник WGS84 [w, s, e, n] по координатам GeoJSON-объектов (с запасом marginDeg). */
+export function featuresBbox(features: GeoFeature[], marginDeg = 0): [number, number, number, number] | null {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  const walk = (c: unknown) => {
+    if (!Array.isArray(c) || !c.length) return;
+    if (typeof c[0] === "number" && typeof c[1] === "number") {
+      if (c[0] < w) w = c[0];
+      if (c[0] > e) e = c[0];
+      if (c[1] < s) s = c[1];
+      if (c[1] > n) n = c[1];
+      return;
+    }
+    for (const x of c) walk(x);
+  };
+  for (const f of features) if (f.geometry?.coordinates) walk(f.geometry.coordinates);
+  if (!Number.isFinite(w)) return null;
+  return [w - marginDeg, s - marginDeg, e + marginDeg, n + marginDeg];
+}
+
+/** Прямоугольник загрузки WGS84 по границе территории (с запасом ~150 м) или текущей области карты. */
+export function coverBbox(c: Ctx): [number, number, number, number] | null {
+  const t = c.project.territory;
+  if (t) {
+    const fc = c.project.data(t.key);
+    const bb = featuresBbox(fc?.features || [], 0.002);
+    if (bb) return bb;
+  }
+  return c.ui.map.api?.viewBbox() || null;
+}
+
+export interface FetchedLayerPayload {
+  title: string;
+  source?: string;
+  fetched_at?: string;
+  notes?: string[];
+  features: FeatureCollection;
+}
+
+const layerRank = (k: string): number => {
+  const i = PREFERRED_ORDER.indexOf(k);
+  return i < 0 ? 1000 : i;
+};
+
+/** Вносит загруженные с сервера слои в проект с автостилем и полной отменой Ctrl+Z. */
+export function applyCatalogLayers(
+  c: Ctx,
+  loaded: Record<string, FetchedLayerPayload>,
+  portalStyles: Record<string, Partial<LayerStyle>> = {},
+  bbox?: [number, number, number, number],
+): { undo: Undo; added: string[]; empty: string[] } {
+  const prevLayers = cloneLayers(c.project.layers);
+  const prevData = new Map<string, LayerData | undefined>();
+  const added: string[] = [];
+  const empty: string[] = [];
+
+  for (const [k, v] of Object.entries(loaded)) {
+    const feats = v.features?.features || [];
+    if (!feats.length && !c.project.dataEntry(k)) {
+      empty.push(v.title || k);
+      continue;
+    }
+    prevData.set(k, c.project.dataEntry(k));
+    added.push(k);
+  }
+
+  const nextData = new Map<string, LayerData>();
+  const apply = () => {
+    for (const k of added) {
+      const v = loaded[k];
+      const prev = prevData.get(k);
+      const entry: LayerData = {
+        ...(prev || {}),
+        title: prev?.title || v.title || k,
+        source: v.source || prev?.source || "каталог ГРАДО",
+        fetched_at: v.fetched_at || today(),
+        ...(v.notes ? { notes: v.notes } : {}),
+        ...(bbox ? { bbox } : {}),
+        fc: v.features,
+      };
+      nextData.set(k, entry);
+      c.project.setLayerData(k, entry);
+      if (!c.project.layer(k)) {
+        const geom = geomOfFc(v.features);
+        const code = k.startsWith("ogd.") ? k.slice(4) : k;
+        const st = defaultStyleFor(k, v.features, c.project.layers.length, portalStyles[code] || portalStyles[k]);
+        const layer: Layer = {
+          key: k,
+          title: entry.title || k,
+          geom,
+          visible: true,
+          layerOpacity: 1,
+          group: null,
+          style: st as unknown as Record<string, unknown>,
+        };
+        const r = layerRank(k);
+        const at = c.project.layers.findIndex(x => x.role !== "territory" && layerRank(x.key) > r);
+        c.project.layers.splice(at < 0 ? c.project.layers.length : at, 0, layer);
+      } else if (portalStyles[k.startsWith("ogd.") ? k.slice(4) : k]) {
+        const l = c.project.layer(k)!;
+        const code = k.startsWith("ogd.") ? k.slice(4) : k;
+        l.style = defaultStyleFor(k, v.features, c.project.layers.length, portalStyles[code]) as unknown as Record<string, unknown>;
+      }
+    }
+    if (added.length) c.ui.selectedLayer = added[0];
+    c.project.touch();
+    c.ui.map.api?.refresh(true);
+  };
+
+  apply();
+  const snapLayers = cloneLayers(c.project.layers);
+  const undo: Undo = {
+    undo: () => {
+      for (const [k, prev] of prevData) c.project.setLayerData(k, prev);
+      c.project.layers = cloneLayers(prevLayers);
+      c.project.touch();
+      c.ui.map.api?.refresh(true);
+    },
+    redo: () => {
+      for (const [k, next] of nextData) c.project.setLayerData(k, next);
+      c.project.layers = cloneLayers(snapLayers);
+      c.project.touch();
+      c.ui.map.api?.refresh(true);
+    },
+  };
+  return { undo, added, empty };
+}
 
 /** Добавляет полигоны участков в слой nspd.parcels без повторов (по кадастровому номеру или _key). */
 function mergeParcelsData(c: Ctx, feats: GeoFeature[]): { prevLayers: Layer[]; prevData: LayerData | undefined } {
@@ -161,6 +290,8 @@ export function builtins(bus: Bus<Ctx>): Command<Ctx>[] {
         }
         const r = await c.project.open(name);
         bus.resetHistory();
+        c.ui.selectedLayer = c.project.layers[0]?.key || "";
+        c.ui.selectedFeatureIdx = null;
         c.ui.map.api?.clearMark();
         c.ui.map.api?.syncBasemap();
         c.ui.map.api?.refresh(true);
@@ -471,6 +602,148 @@ export function builtins(bus: Bus<Ctx>): Command<Ctx>[] {
         const p = Math.abs(x) <= 90 && Math.abs(y) <= 180 ? wgsToMsk([y, x]) : ([x, y] as [number, number]);
         c.ui.map.api?.centerMsk(p);
         bus.say(`Точка МСК ${p[0].toFixed(2)} ${p[1].toFixed(2)}`);
+      },
+    },
+    {
+      id: "выбрать-слой", title: "Выбрать активный слой", aliases: ["SELLAYER"], args: "<ключ слоя>",
+      run(c, a) {
+        const l = layerOf(c, a.join(" "));
+        c.ui.selectedLayer = l.key;
+        c.ui.selectedFeatureIdx = null;
+        bus.say(`Выбран слой «${l.title || l.key}»`);
+      },
+    },
+    {
+      id: "стиль", title: "Изменить оформление слоя", aliases: ["STYLE"], args: "<ключ слоя> <json-стиля>",
+      hint: "применить стиль слоя (цвет, штриховка, слои знака, категории, правила, .qml) с отменой Ctrl+Z",
+      run(c, a) {
+        const l = layerOf(c, a[0]);
+        const raw = a.slice(1).join(" ").trim();
+        if (!raw) throw new CommandError("Нужен JSON стиля после ключа слоя");
+        let next: Record<string, unknown>;
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+          next = parsed as Record<string, unknown>;
+        } catch {
+          throw new CommandError("Стиль должен быть JSON-объектом");
+        }
+        const prev = l.style ? deepClone(l.style as Record<string, unknown>) : undefined;
+        const nextCopy = deepClone(next);
+        const set = (st: Record<string, unknown> | undefined) => {
+          l.style = st ? deepClone(st) : undefined;
+          c.project.touch();
+          c.ui.map.api?.refresh();
+        };
+        set(nextCopy);
+        return { undo: () => set(prev), redo: () => set(nextCopy) };
+      },
+    },
+    {
+      id: "слой-прозрачность", title: "Непрозрачность слоя", aliases: ["OPACITY"], args: "<ключ слоя> <0..1>",
+      run(c, a) {
+        const l = layerOf(c, a[0]);
+        const v = Math.max(0, Math.min(1, num(a[1], "Непрозрачность")));
+        return edit(c, l, "layerOpacity", v);
+      },
+    },
+    {
+      id: "атрибут", title: "Изменить атрибут объекта", aliases: ["ATTR"], args: "<ключ слоя> <индекс> <поле> <значение>",
+      hint: "изменить значение поля у объекта слоя с отменой Ctrl+Z",
+      run(c, a) {
+        const l = layerOf(c, a[0]);
+        const idx = Math.trunc(num(a[1], "Индекс объекта"));
+        const field = (a[2] || "").trim();
+        if (!field || field.startsWith("_")) throw new CommandError("Нужно имя поля атрибута");
+        const val = a.slice(3).join(" ");
+        const fc = c.project.data(l.key);
+        const feat = fc?.features?.[idx];
+        if (!feat) throw new CommandError(`В слое «${l.title || l.key}» нет объекта № ${idx + 1}`);
+        feat.properties ||= {};
+        const had = Object.prototype.hasOwnProperty.call(feat.properties, field);
+        const prevVal = feat.properties[field];
+        const prevEdited = feat.properties._edited;
+        const apply = () => {
+          feat.properties![field] = val;
+          feat.properties!._edited = true;
+          c.project.touch();
+          c.ui.map.api?.refresh(true);
+        };
+        const undo = () => {
+          if (had) feat.properties![field] = prevVal;
+          else delete feat.properties![field];
+          if (prevEdited === undefined) delete feat.properties!._edited;
+          else feat.properties!._edited = prevEdited;
+          c.project.touch();
+          c.ui.map.api?.refresh(true);
+        };
+        apply();
+        return { undo, redo: apply };
+      },
+    },
+    {
+      id: "загрузить", title: "Загрузить слои из каталога сервера", aliases: ["FETCH", "LOAD"], args: "<ключ1> [ключ2 ...]",
+      hint: "загрузить слои ГИС ОГД, ЕГКО, НСПД, OSM по территории с автооформлением",
+      async run(c, a) {
+        need(c);
+        const keys = [...new Set(a.map(s => s.trim()).filter(Boolean))];
+        if (!keys.length) throw new CommandError("Укажите хотя бы один ключ слоя (например gisogd.zouit)");
+        const bb = coverBbox(c);
+        if (!bb) throw new CommandError("Сначала задайте границу территории или откройте карту");
+        const terrFc = c.project.territory ? c.project.data(c.project.territory.key) : null;
+        const terrBb = terrFc ? featuresBbox(terrFc.features || []) : null;
+
+        let r: Response;
+        try {
+          r = await fetch("/api/fetch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ bbox: bb, sources: keys, ...(terrBb ? { territory: terrBb } : {}) }),
+          });
+        } catch {
+          throw new CommandError("Нет связи с сервером ГРАДО — загрузка не выполнена");
+        }
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new CommandError(j.error || `Загрузка не удалась (${r.status})`);
+        const loaded = (j.layers || {}) as Record<string, FetchedLayerPayload>;
+        const errs = (j.errors || {}) as Record<string, string>;
+
+        // Запрашиваем автостили ГИС ОГД (Эталон ЛГР / CartoCSS портала) для ogd.* слоёв
+        const ogdReq: Record<string, [string, unknown]> = {};
+        for (const [k, v] of Object.entries(loaded)) {
+          if (!k.startsWith("ogd.") || !v.features?.features?.length) continue;
+          const g = geomOfFc(v.features);
+          let fieldVal: unknown = null;
+          for (const f of v.features.features.slice(0, 50)) {
+            const p = f.properties || {};
+            const cand = p.zonelineco ?? p.textlineco;
+            if (cand != null && cand !== "" && Number(cand)) { fieldVal = cand; break; }
+          }
+          ogdReq[k.slice(4)] = [g, fieldVal];
+        }
+        let portalStyles: Record<string, Partial<LayerStyle>> = {};
+        if (Object.keys(ogdReq).length) {
+          try {
+            const sr = await fetch("/api/ogd_all/styles", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+              body: JSON.stringify({ layers: ogdReq }),
+            });
+            if (sr.ok) portalStyles = ((await sr.json()).styles || {}) as Record<string, Partial<LayerStyle>>;
+          } catch { /* без стилей портала сработает defaultStyleFor */ }
+        }
+
+        const { undo, added, empty } = applyCatalogLayers(c, loaded, portalStyles, bb);
+        const errList = Object.entries(errs);
+        if (!added.length && errList.length) {
+          throw new CommandError(errList.map(([k, m]) => `${k}: ${m}`).join("; "));
+        }
+        const msg: string[] = [];
+        if (added.length) msg.push(`Загружено слоёв: ${added.length}`);
+        if (empty.length) msg.push(`пусто в области: ${empty.slice(0, 3).join(", ")}${empty.length > 3 ? ` и ещё ${empty.length - 3}` : ""}`);
+        if (errList.length) msg.push(`ошибок: ${errList.length} (${errList[0][1]})`);
+        bus.say(msg.join(" · ") || "Нет новых объектов в области");
+        return added.length ? undo : undefined;
       },
     },
     {

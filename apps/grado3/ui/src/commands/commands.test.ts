@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { loadCore } from "../core";
+import { SYMBOL_LIBRARY, ZOUIT_HATCH, type LayerStyle } from "../symbology";
 import { useCommands } from "../stores/commands";
 import { useProject } from "../stores/project";
 import { useUi } from "../stores/ui";
@@ -21,11 +22,45 @@ const PARCEL_FEAT = {
   },
 };
 
+const ZOUIT_FEAT = {
+  type: "Feature" as const,
+  properties: { "Вид зоны": "Водоохранная зона", "Наименование": "Водоохранная зона р. Москвы" },
+  geometry: {
+    type: "Polygon",
+    coordinates: [[[37.52, 55.79], [37.525, 55.79], [37.525, 55.794], [37.52, 55.794], [37.52, 55.79]]],
+  },
+};
+
 let saved: { url: string; body: string }[] = [];
 beforeEach(() => {
   setActivePinia(createPinia());
   saved = [];
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (url === "/api/fetch" && init?.method === "POST") {
+      return new Response(JSON.stringify({
+        layers: {
+          "gisogd.zouit": {
+            title: "ЗОУИТ (ОГД)",
+            source: "ГИС ОГД Москвы",
+            fetched_at: "2026-11-20",
+            features: { type: "FeatureCollection", features: [ZOUIT_FEAT] },
+          },
+          "ogd.virtual138": {
+            title: "Природные и озеленённые территории",
+            source: "ГИС ОГД Москвы",
+            fetched_at: "2026-11-20",
+            features: { type: "FeatureCollection", features: [ZOUIT_FEAT] },
+          },
+        },
+        errors: {},
+      }));
+    }
+    if (url === "/api/ogd_all/styles" && init?.method === "POST") {
+      return new Response(JSON.stringify({
+        styles: { virtual138: { mode: "single", fill: "#009f3c", opacity: 0.2, stroke: "#009f3c", lgrLine: 18 } },
+        rev: { virtual138: 2 },
+      }));
+    }
     if (init?.method === "POST") { saved.push({ url, body: String(init.body) }); return new Response(JSON.stringify({ saved: "Тест", modified: 2 })); }
     if (url.startsWith("/api/projects")) return new Response(JSON.stringify({ dir: "/x", projects: [{ name: "Тест", modified: 1, size: 1 }] }));
     if (url.startsWith("/api/project?name=")) return new Response(FIXTURE, { headers: { "X-Grado-Modified": "1.5" } });
@@ -149,5 +184,53 @@ describe("команды каркаса", () => {
     expect(p.basemap).toBe("esri");
     await cmd.run("отменить");
     expect(p.basemap).toBe("osm");
+  });
+
+  it("шаг И3: загрузка ЗОУИТ с автостилем, правка стиля и слоёв знака, правка атрибута и отмена Ctrl+Z", async () => {
+    const cmd = useCommands(), p = useProject(), ui = useUi();
+    await cmd.run("открыть Тест");
+    await cmd.run("граница-пример");
+
+    const rLoad = await cmd.exec("загрузить", ["gisogd.zouit", "ogd.virtual138"]);
+    expect(rLoad.ok).toBe(true);
+    const zouit = p.layer("gisogd.zouit")!;
+    expect(zouit).not.toBeNull();
+    const zSt = zouit.style as LayerStyle;
+    expect(zSt.mode).toBe("cat");
+    expect(zSt.hatch).toBe(true);
+    expect(zSt.cat?.colors?.["Водоохранная зона"]).toBe(ZOUIT_HATCH["Водоохранная зона"]);
+
+    const pk = p.layer("ogd.virtual138")!;
+    expect((pk.style as LayerStyle).lgrLine).toBe(18);
+    expect(ui.selectedLayer).toBe("gisogd.zouit");
+
+    // применение знака из библиотеки (с частью знака band) + отмена
+    const bandPreset = SYMBOL_LIBRARY.find(x => x.id === "zouit_band")!;
+    await cmd.exec("стиль", ["gisogd.zouit", JSON.stringify(bandPreset.style)]);
+    expect((p.layer("gisogd.zouit")!.style as LayerStyle).parts?.[0]?.k).toBe("band");
+    await cmd.run("отменить");
+    expect((p.layer("gisogd.zouit")!.style as LayerStyle).mode).toBe("cat");
+
+    // прозрачность слоя + отмена
+    await cmd.exec("слой-прозрачность", ["gisogd.zouit", "0.5"]);
+    expect(p.layer("gisogd.zouit")!.layerOpacity).toBe(0.5);
+    await cmd.run("отменить");
+    expect(p.layer("gisogd.zouit")!.layerOpacity).toBe(1);
+
+    // правка атрибута в таблице + _edited + отмена
+    await cmd.exec("атрибут", ["gisogd.zouit", "0", "Вид зоны", "Прибрежная защитная полоса"]);
+    const feat = p.data("gisogd.zouit")!.features[0];
+    expect(feat.properties?.["Вид зоны"]).toBe("Прибрежная защитная полоса");
+    expect(feat.properties?._edited).toBe(true);
+    await cmd.run("отменить");
+    expect(feat.properties?.["Вид зоны"]).toBe("Водоохранная зона");
+    expect(feat.properties?._edited).toBeUndefined();
+
+    // отмена загрузки убирает загруженные слои целиком
+    await cmd.run("отменить");
+    expect(p.layer("gisogd.zouit")).toBeNull();
+    expect(p.layer("ogd.virtual138")).toBeNull();
+    await cmd.run("вернуть");
+    expect(p.layer("gisogd.zouit")).not.toBeNull();
   });
 });

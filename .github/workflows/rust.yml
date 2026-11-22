@@ -14,9 +14,13 @@ on:
       - "core/compute/**"
       - "core/geom/**"
       - "apps/grado2/layout_io.py"
+      - "apps/grado2/ogd_all.py"
+      - "apps/grado2/ogd_warm.py"
       - "apps/grado2/tests/test_map_plate.py"
+      - "apps/grado2/tests/test_rust_store.py"
       - "apps/grado2/rs_wheel.py"
       - "core/connectors/grado_connectors/crs.py"
+      - "core/connectors/grado_connectors/gisogd_api.py"
       - "apps/grado2/web/migrate.js"
       - "apps/grado3/ui/src/types/**"
       - ".github/workflows/rust.yml"
@@ -69,6 +73,10 @@ jobs:
         run: |
           python -c "import grado_rs; assert hasattr(grado_rs, 'union_intersection_area')"
           PYTHONPATH=core/geom python -m unittest discover -s core/geom/tests
+      - name: Хранилище слоёв на диске на Rust (crates/store = эталон Python)
+        run: |
+          python -c "import grado_rs; assert hasattr(grado_rs, 'store_query') and hasattr(grado_rs, 'store_scan')"
+          PYTHONPATH=apps/grado2:core/connectors:core/render python -m unittest apps/grado2/tests/test_rust_store.py
       - name: Пластина карты на Rust (render_plate) из печати ГРАДО 2
         run: |
           python -m pip install -q -r apps/grado2/requirements.txt
